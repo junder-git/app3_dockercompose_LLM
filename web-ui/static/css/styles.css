@@ -1,0 +1,259 @@
+/* File: styles.css (continued)
+   Directory: /deepseek-coder-setup/web-ui/static/css/ */
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--secondary-color);
+}
+
+/* Selection style */
+::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: var(--text-color);
+}
+
+/* Model Selection Dropdown Styling */
+.model-selection select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px;
+    padding-right: 2.5rem;
+}
+
+.model-selection select option {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+}
+
+/* Focus styles for better accessibility */
+a:focus, button:focus, input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+a:focus:not(:focus-visible), button:focus:not(:focus-visible), 
+input:focus:not(:focus-visible), select:focus:not(:focus-visible), 
+textarea:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* Animation for loading state */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.loading {
+    animation: pulse 1.5s infinite;
+}
+
+/* SVG icons styling */
+svg {
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+}
+
+/* Button hover effects */
+button:hover svg {
+    stroke: currentColor;
+}
+
+/* Different syntax highlighting colors for different languages */
+.language-python .kw { color: #c084fc; } /* Purple */
+.language-javascript .kw { color: #fbbf24; } /* Amber */
+.language-typescript .kw { color: #3b82f6; } /* Blue */
+.language-java .kw { color: #f472b6; } /* Pink */
+.language-go .kw { color: #34d399; } /* Emerald */
+.language-rust .kw { color: #fb923c; } /* Orange */
+
+/* Hover effects for clickable elements */
+.chat-item, .artifact-item, .back-button, .save-btn, 
+.create-button, .login-button, .new-chat-button {
+    transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+}
+
+.chat-item:hover, .artifact-item:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow);
+}
+
+/* Special styling for code artifacts */
+.artifact-item[data-language="javascript"],
+.artifact-item[data-language="python"],
+.artifact-item[data-language="typescript"],
+.artifact-item[data-language="java"],
+.artifact-item[data-language="cpp"],
+.artifact-item[data-language="go"],
+.artifact-item[data-language="rust"] {
+    border-left: 3px solid;
+}
+
+.artifact-item[data-language="javascript"] { border-left-color: #fbbf24; }
+.artifact-item[data-language="python"] { border-left-color: #3b82f6; }
+.artifact-item[data-language="typescript"] { border-left-color: #60a5fa; }
+.artifact-item[data-language="java"] { border-left-color: #f472b6; }
+.artifact-item[data-language="cpp"] { border-left-color: #c084fc; }
+.artifact-item[data-language="go"] { border-left-color: #34d399; }
+.artifact-item[data-language="rust"] { border-left-color: #fb923c; }
+
+/* Better rendering for disabled inputs */
+input:disabled, textarea:disabled, select:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    background-color: rgba(15, 23, 42, 0.5);
+}
+
+/* Tooltip styling */
+[title] {
+    position: relative;
+}
+
+[title]:hover::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 10px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border-radius: var(--border-radius);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    z-index: 10;
+    margin-bottom: 5px;
+}
+
+/* Visual feedback for active elements */
+button:active, .back-button:active, .save-btn:active, 
+.create-button:active, .login-button:active {
+    transform: scale(0.97);
+}
+
+/* Improve focus visibility on dark background */
+.user-message:focus-within,
+.assistant-message:focus-within {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Special styles for syntax highlighting of different languages */
+.message-content code[class*="language-"] {
+    color: #e2e8f0;
+}
+
+/* Styles for JSON display */
+.language-json .string { color: #fca5a5; }
+.language-json .number { color: #fb923c; }
+.language-json .boolean { color: #60a5fa; }
+.language-json .null { color: #c084fc; }
+
+/* Styles for HTML display */
+.language-html .tag { color: #3b82f6; }
+.language-html .attr-name { color: #fb923c; }
+.language-html .attr-value { color: #fca5a5; }
+.language-html .comment { color: #64748b; }
+
+/* Styles for CSS display */
+.language-css .selector { color: #60a5fa; }
+.language-css .property { color: #fb923c; }
+.language-css .value { color: #fca5a5; }
+.language-css .comment { color: #64748b; }
+
+/* Placeholder styling */
+::placeholder {
+    color: var(--text-light);
+    opacity: 0.7;
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-online {
+    background-color: var(--success-color);
+    box-shadow: 0 0 5px var(--success-color);
+}
+
+.status-offline {
+    background-color: var(--error-color);
+    box-shadow: 0 0 5px var(--error-color);
+}
+
+.status-loading {
+    background-color: var(--warning-color);
+    animation: pulse 1.5s infinite;
+    box-shadow: 0 0 5px var(--warning-color);
+}
+
+/* Improve select dropdown rendering */
+select option {
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    padding: 8px;
+}
+
+/* Additional improvements for dark theme readability */
+input::placeholder, textarea::placeholder {
+    color: var(--text-light);
+    opacity: 0.5;
+}
+
+/* Make sure code is readable in both light and dark mode */
+.message-content pre code {
+    color: #e2e8f0;
+}
+
+/* Improve spacing in markdown content */
+.markdown-body ol,
+.markdown-body ul {
+    padding-left: 2rem;
+}
+
+.markdown-body li + li {
+    margin-top: 0.25rem;
+}
+
+.markdown-body hr {
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    margin: 2rem 0;
+}
+
+/* Improve link visibility in dark mode */
+.markdown-body a {
+    color: #60a5fa;
+    text-decoration: underline;
+}
+
+.markdown-body a:hover {
+    color: #93c5fd;
+}
+
+/* Better visibility for inline code in dark mode */
+.markdown-body code:not([class*="language-"]) {
+    background-color: rgba(15, 23, 42, 0.7);
+    color: #a3e635;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}

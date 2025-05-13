@@ -1,0 +1,47 @@
+# File: base.html
+# Directory: /deepseek-coder-setup/web-ui/templates/
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DeepSeek-Coder{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-left">
+                <h1 class="app-title">DeepSeek-Coder</h1>
+            </div>
+            <div class="header-right">
+                {% if current_user.is_authenticated %}
+                <div class="user-menu">
+                    <span class="username">{{ user.username }}</span>
+                    <div class="dropdown-menu">
+                        <a href="{{ url_for('user_settings') }}">Settings</a>
+                        {% if user.is_admin %}
+                        <a href="{{ url_for('register') }}">Manage Users</a>
+                        {% endif %}
+                        <a href="{{ url_for('archived_chats') }}">Archived Chats</a>
+                        <a href="{{ url_for('logout') }}">Logout</a>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </header>
+        
+        <main class="app-content">
+            {% block content %}{% endblock %}
+        </main>
+        
+        <footer class="app-footer">
+            <p>DeepSeek-Coder Web UI | &copy; {{ now.year }}</p>
+        </footer>
+    </div>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

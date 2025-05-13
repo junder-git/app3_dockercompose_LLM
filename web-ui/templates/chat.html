@@ -1,0 +1,21 @@
+# File: chat.html (continued)
+# Directory: /deepseek-coder-setup/web-ui/templates/
+
+                return `<p>${match}</p>`;
+            });
+            
+            return text;
+        }
+        
+        // Helper to escape HTML
+        function escapeHTML(html) {
+            const element = document.createElement('div');
+            element.textContent = html;
+            return element.innerHTML;
+        }
+        
+        // Initial scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+</script>
+{% endblock %}

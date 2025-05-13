@@ -1,0 +1,104 @@
+# File: index.html
+# Directory: /deepseek-coder-setup/web-ui/templates/
+
+{% extends "base.html" %}
+
+{% block title %}Chat History - DeepSeek-Coder{% endblock %}
+
+{% block content %}
+<div class="index-container">
+    <div class="chat-header">
+        <h2>Your Chats</h2>
+    </div>
+    
+    <div class="new-chat-section">
+        <form action="{{ url_for('new_chat') }}" method="POST" class="new-chat-form">
+            <div class="model-selection">
+                <label for="model">Select Model:</label>
+                <select name="model" id="model">
+                    {% for model in models %}
+                    <option value="{{ model.id }}" {% if model.id == selected_model %}selected{% endif %}>
+                        {{ model.name }} - {{ model.description }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="new-chat-button">New Chat</button>
+        </form>
+    </div>
+    
+    <div class="chat-list">
+        {% if chats %}
+            {% for chat in chats %}
+            <div class="chat-item">
+                <a href="{{ url_for('chat', chat_id=chat.id) }}" class="chat-link">
+                    <div class="chat-details">
+                        <div class="chat-title">{{ chat.title }}</div>
+                        <div class="chat-meta">
+                            <span class="chat-date">{{ chat.updated_at }}</span>
+                        </div>
+                    </div>
+                </a>
+                <div class="chat-actions">
+                    <button class="chat-archive-btn" data-chat-id="{{ chat.id }}" title="Archive">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-chats">
+                <p>You don't have any chats yet. Start a new conversation!</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Archive chat functionality
+        const archiveButtons = document.querySelectorAll('.chat-archive-btn');
+        
+        archiveButtons.forEach(button => {
+            button.addEventListener('click', async function(event) {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                if (!confirm('Are you sure you want to archive this chat?')) {
+                    return;
+                }
+                
+                const chatId = this.getAttribute('data-chat-id');
+                
+                try {
+                    const response = await fetch(`/chat/${chatId}/archive`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Remove chat from list
+                        this.closest('.chat-item').remove();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred while archiving the chat.');
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

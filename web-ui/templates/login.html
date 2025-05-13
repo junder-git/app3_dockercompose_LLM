@@ -1,0 +1,64 @@
+# File: login.html
+# Directory: /deepseek-coder-setup/web-ui/templates/
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - DeepSeek-Coder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="login-page">
+    <div class="login-container">
+        <div class="login-header">
+            <h1>DeepSeek-Coder</h1>
+            <p>Sign in to continue</p>
+        </div>
+        
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
+        {% endif %}
+        
+        <form class="login-form" method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="login-button">Sign In</button>
+        </form>
+    </div>
+    
+    <script>
+        // Check for previous login attempts
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.querySelector('.login-form');
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            
+            // Reset form fields
+            usernameInput.value = '';
+            passwordInput.value = '';
+            
+            // Focus on username field
+            usernameInput.focus();
+            
+            // Simple client-side validation
+            loginForm.addEventListener('submit', function(event) {
+                if (!usernameInput.value.trim() || !passwordInput.value) {
+                    event.preventDefault();
+                    alert('Username and password are required');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

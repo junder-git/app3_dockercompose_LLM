@@ -1,0 +1,239 @@
+# File: settings.html
+# Directory: /deepseek-coder-setup/web-ui/templates/
+
+{% extends "base.html" %}
+
+{% block title %}User Settings - DeepSeek-Coder{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="settings-header">
+        <h2>User Settings</h2>
+        <a href="{{ url_for('index') }}" class="back-button">Back to Chats</a>
+    </div>
+    
+    {% if error %}
+    <div class="error-message">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    {% if success %}
+    <div class="success-message">
+        {{ success }}
+    </div>
+    {% endif %}
+    
+    <div class="settings-section">
+        <h3>Profile Information</h3>
+        <form method="POST" action="{{ url_for('user_settings') }}" class="settings-form">
+            <input type="hidden" name="action" value="update_profile">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" value="{{ user.username }}" disabled>
+                <p class="field-note">Username cannot be changed</p>
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" value="{{ user.email or '' }}">
+            </div>
+            <div class="form-group">
+                <label for="full_name">Full Name</label>
+                <input type="text" id="full_name" name="full_name" value="{{ user.full_name or '' }}">
+            </div>
+            <button type="submit" class="save-button">Update Profile</button>
+        </form>
+    </div>
+    
+    <div class="settings-section">
+        <h3>Change Password</h3>
+        <form method="POST" action="{{ url_for('user_settings') }}" class="settings-form">
+            <input type="hidden" name="action" value="change_password">
+            <div class="form-group">
+                <label for="current_password">Current Password</label>
+                <input type="password" id="current_password" name="current_password" required>
+            </div>
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" name="new_password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm_password">Confirm New Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" required>
+            </div>
+            <button type="submit" class="save-button">Change Password</button>
+        </form>
+    </div>
+    
+    <div class="settings-section">
+        <h3>Active Sessions</h3>
+        <div id="sessions-list" class="sessions-list">
+            <p>Loading sessions...</p>
+        </div>
+        <button id="revoke-all-sessions" class="danger-button">Revoke All Other Sessions</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const sessionsList = document.getElementById('sessions-list');
+        const revokeAllButton = document.getElementById('revoke-all-sessions');
+        
+        // Load sessions
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displaySessions(data.sessions);
+                } else {
+                    sessionsList.innerHTML = '<p class="error">Failed to load sessions</p>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                sessionsList.innerHTML = '<p class="error">Failed to load sessions</p>';
+            }
+        }
+        
+        // Display sessions
+        function displaySessions(sessions) {
+            if (sessions.length === 0) {
+                sessionsList.innerHTML = '<p>No active sessions found</p>';
+                return;
+            }
+            
+            let html = '<div class="session-items">';
+            
+            sessions.forEach(session => {
+                html += `
+                    <div class="session-item ${session.is_current ? 'current-session' : ''}">
+                        <div class="session-info">
+                            <div class="session-device">${formatUserAgent(session.user_agent)}</div>
+                            <div class="session-meta">
+                                <span class="session-ip">${session.ip_address}</span>
+                                <span class="session-time">${session.created_at}</span>
+                            </div>
+                            ${session.is_current ? '<span class="current-label">Current Session</span>' : ''}
+                        </div>
+                        ${!session.is_current ? `
+                            <button class="revoke-session-btn" data-session-id="${session.id}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M18 6L6 18"></path>
+                                    <path d="M6 6l12 12"></path>
+                                </svg>
+                                Revoke
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            sessionsList.innerHTML = html;
+            
+            // Add event listeners for revoke buttons
+            document.querySelectorAll('.revoke-session-btn').forEach(button => {
+                button.addEventListener('click', revokeSession);
+            });
+        }
+        
+        // Revoke a session
+        async function revokeSession() {
+            const sessionId = this.getAttribute('data-session-id');
+            
+            if (confirm('Are you sure you want to revoke this session?')) {
+                try {
+                    const response = await fetch('/api/sessions/revoke', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            session_id: sessionId
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Reload sessions
+                        loadSessions();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred while revoking the session.');
+                }
+            }
+        }
+        
+        // Revoke all sessions
+        revokeAllButton.addEventListener('click', async function() {
+            if (confirm('Are you sure you want to revoke all other sessions? You will remain logged in on this device only.')) {
+                try {
+                    const response = await fetch('/api/revoke-all-sessions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Reload sessions
+                        loadSessions();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred while revoking sessions.');
+                }
+            }
+        });
+        
+        // Format user agent string
+        function formatUserAgent(userAgent) {
+            if (!userAgent) return 'Unknown Device';
+            
+            // Try to identify browser
+            let browser = 'Unknown Browser';
+            if (userAgent.includes('Chrome')) {
+                browser = 'Chrome';
+            } else if (userAgent.includes('Firefox')) {
+                browser = 'Firefox';
+            } else if (userAgent.includes('Safari')) {
+                browser = 'Safari';
+            } else if (userAgent.includes('Edge')) {
+                browser = 'Edge';
+            } else if (userAgent.includes('MSIE') || userAgent.includes('Trident')) {
+                browser = 'Internet Explorer';
+            }
+            
+            // Try to identify OS
+            let os = 'Unknown OS';
+            if (userAgent.includes('Windows')) {
+                os = 'Windows';
+            } else if (userAgent.includes('Mac OS')) {
+                os = 'macOS';
+            } else if (userAgent.includes('Linux')) {
+                os = 'Linux';
+            } else if (userAgent.includes('Android')) {
+                os = 'Android';
+            } else if (userAgent.includes('iOS') || userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+                os = 'iOS';
+            }
+            
+            return `${browser} on ${os}`;
+        }
+        
+        // Load sessions on page load
+        loadSessions();
+    });
+</script>
+{% endblock %}
