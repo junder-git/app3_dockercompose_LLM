@@ -1,3 +1,5 @@
+``` curl -L https://raw.githubusercontent.com/yourusername/deepseek-repo/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` 
+
 # DeepSeek-Coder Docker Setup
 
 A comprehensive Docker-based solution for running DeepSeek-Coder with NVIDIA GPU support, including a web UI, PostgreSQL-based authentication and persistence, and security features.
