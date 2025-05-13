@@ -58,7 +58,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_HOST: postgres
-      MODEL_NAME: ${MODEL_NAME:-deepseek-coder:6.7b-instruct-q5_K_M}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-coder:33b-instruct-q5_K_M}
       OLLAMA_HOST: ollama
       SESSION_SECRET: ${SESSION_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
