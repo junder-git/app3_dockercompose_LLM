@@ -1,0 +1,50 @@
+# File: rate_limited.html
+# Directory: /deepseek-coder-setup/nginx/
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rate Limit Exceeded</title>
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            margin: 40px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #334155;
+            border-radius: 5px;
+            background-color: #1e293b;
+        }
+        h1 {
+            color: #ef4444;
+        }
+        .timer {
+            color: #ef4444;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rate Limit Exceeded</h1>
+        <p>You have made too many requests. Please wait before trying again.</p>
+        <p>Page will refresh in <span class="timer">10</span> seconds...</p>
+        <script>
+            let seconds = 10;
+            const timerElement = document.querySelector(".timer");
+            const intervalId = setInterval(() => {
+                seconds--;
+                timerElement.textContent = seconds;
+                if (seconds <= 0) clearInterval(intervalId);
+            }, 1000);
+        </script>
+    </div>
+</body>
+</html>

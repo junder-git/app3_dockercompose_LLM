@@ -1,8 +1,3 @@
-# app3_LLM
-runs on arch linux 32Gb ram and nvidia 3060ti in docker with posgres backend
-# File: README.md
-# Directory: /deepseek-coder-setup/
-
 # DeepSeek-Coder Docker Setup
 
 A comprehensive Docker-based solution for running DeepSeek-Coder with NVIDIA GPU support, including a web UI, PostgreSQL-based authentication and persistence, and security features.
@@ -14,9 +9,9 @@ This system uses multiple Docker containers to provide a modular and maintainabl
 1. **PostgreSQL Container**: Handles authentication, chat history, and artifact storage
 2. **Ollama Container**: Runs the DeepSeek-Coder model with GPU acceleration
 3. **Quart Web UI Container**: Provides the user interface with chat persistence
-4. **NGINX Container**: Manages authentication, rate limiting, and GZIP compression
+4. **NGINX Container**: Manages authentication, rate limiting, GZIP compression, and IP whitelisting
 
-## Features
+## Key Features
 
 - **GPU Acceleration**: Leverages NVIDIA GPUs through Docker's GPU passthrough
 - **PostgreSQL Authentication**: User accounts and session management
@@ -26,9 +21,11 @@ This system uses multiple Docker containers to provide a modular and maintainabl
 - **Rate Limiting**: Protection against excessive requests
 - **Failed Login Protection**: Account locking after failed attempts
 - **GZIP Compression**: Optimized bandwidth usage
+- **IP Whitelisting**: NGINX-level control of allowed IP addresses
 - **Secure Sessions**: Session management with database persistence
 - **User Management**: Admin interface for managing users
 - **Archive/Restore**: Chat archiving and restoration
+- **Dark Theme**: Sleek, dark interface optimized for code display
 - **Responsive Design**: Works on desktop and mobile devices
 
 ## Prerequisites
@@ -80,29 +77,82 @@ You can switch between different model sizes through the UI:
 - **DeepSeek-Coder 6.7B**: Balanced model, good performance (default)
 - **DeepSeek-Coder 33B**: Largest model, best quality, requires more GPU memory
 
-## File Structure
+## IP Whitelisting
 
+The system includes IP whitelisting at the NGINX level. By default, all IPs are allowed, but you can easily restrict access:
+
+1. Edit the NGINX configuration in `nginx/nginx.conf`
+2. Change `default 1` to `default 0` in the `geo $whitelist` block
+3. Uncomment and modify the IP ranges you want to allow
+4. Restart the NGINX container: `docker-compose restart nginx`
+
+You can use both CIDR notation (`192.168.1.0/24`) and range notation (`192.168.1.10-192.168.1.255`) for IP specifications.
+
+## Security Considerations
+
+1. **Change Default Passwords**: Always change the default admin password after installation
+2. **Environment Variables**: Keep the `.env` file secure and don't commit it to version control
+3. **IP Restrictions**: Consider enabling IP whitelisting in production environments
+4. **HTTPS**: For production use, configure HTTPS with proper certificates
+
+## User Management
+
+The system provides an admin interface for user management:
+
+1. Login as an admin user
+2. Navigate to the user management page
+3. Create new users with optional admin privileges
+4. Manage existing users (delete, etc.)
+
+Admin users can create new accounts, while regular users can only use the system.
+
+## Persistence
+
+All data is stored in PostgreSQL, including:
+
+- User accounts and authentication
+- Chat history with timestamps
+- Code artifacts generated during conversations
+- Session information
+
+This ensures your conversations and generated code are preserved across container restarts.
+
+## Customizing the Theme
+
+The system uses a dark theme optimized for code display. If you want to customize it:
+
+1. Edit the CSS file in `web-ui/static/css/styles.css`
+2. Restart the web-ui container: `docker-compose restart web-ui`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **GPU not detected**: Make sure the NVIDIA Container Toolkit is properly installed and your GPU drivers are up-to-date
+
+2. **Out of memory**: Reduce the model size if your GPU doesn't have enough VRAM
+
+3. **PostgreSQL connection error**: Check your PostgreSQL environment variables and ensure the container is running
+
+4. **Web UI not loading**: Check NGINX logs for any errors related to the web UI container
+
+### Viewing Logs
+
+To view logs from a specific container:
+
+```bash
+docker logs deepseek-postgres    # PostgreSQL logs
+docker logs deepseek-ollama      # Ollama logs
+docker logs deepseek-web-ui      # Web UI logs
+docker logs deepseek-nginx       # NGINX logs
 ```
-deepseek-coder-setup/
-├── docker-compose.yml    # Main configuration file
-├── .env                  # Environment variables
-├── nginx/                # NGINX configuration
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── gzip.conf
-├── web-ui/               # Web UI application
-│   ├── Dockerfile
-│   ├── app.py
-│   ├── requirements.txt
-│   ├── static/
-│   │   └── css/
-│   │       └── styles.css
-│   └── templates/
-│       ├── base.html
-│       ├── login.html
-│       └── chat.html
-└── db/                   # Database initialization
-    ├── Dockerfile
-    ├── init.sql
-    └── create_tables.sql
-```
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- [DeepSeek-Coder](https://github.com/deepseek-ai/DeepSeek-Coder) for the model
+- [Ollama](https://ollama.ai/) for the model server
+- [Quart](https://pgjones.gitlab.io/quart/) for the async web framework
