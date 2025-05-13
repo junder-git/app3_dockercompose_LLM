@@ -1,6 +1,15 @@
-``` curl -L https://raw.githubusercontent.com/yourusername/deepseek-repo/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` 
+# LLM HARDWARE INIT / PRE-REQUISITES 
 
-# DeepSeek-Coder Docker Setup
+``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` -- server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.
+
+After the installation completes and reboot:
+
+Login with the credentials:
+
+Username: docker
+Password: docker
+
+# The LLM DeepSeek-Coder Docker App Setup
 
 A comprehensive Docker-based solution for running DeepSeek-Coder with NVIDIA GPU support, including a web UI, PostgreSQL-based authentication and persistence, and security features.
 
