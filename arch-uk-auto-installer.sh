@@ -326,6 +326,7 @@ EOF
         arch_chroot "bootctl install"
         
         # Create loader entry
+        mkdir -p /mnt/boot/loader/entries
         cat > /mnt/boot/loader/entries/arch.conf << EOF
 title   Arch Linux
 linux   /vmlinuz-linux
