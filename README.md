@@ -1,4 +1,8 @@
 # LLM HARDWARE INIT / PRE-REQUISITES 
+  
+NOTE: You must run `pacman-key --init` before first using pacman; the local
+keyring can then be populated with the keys of all official Arch Linux
+packagers with `pacman-key --populate archlinux`.  
 
 ``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` -- server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.
 
