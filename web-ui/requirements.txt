@@ -2,7 +2,7 @@
 quart==0.18.3
 quart-auth
 quart-session==1.0.7
-werkzeug==2.2.3
+werkzeug==2.0.3
 jinja2>=3.0.0
 markupsafe>=2.0.0
 itsdangerous>=2.0.0
