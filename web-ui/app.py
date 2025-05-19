@@ -74,11 +74,15 @@ class UserID(AuthUser):
     """Custom class for storing user information in the session"""
     def __init__(self, auth_id):
         super().__init__(auth_id)
-        self.auth_id = auth_id
+        self._auth_id = auth_id  # Store as private attribute
+
+    @property
+    def auth_id(self):
+        return self._auth_id
 
     @property
     def user_id(self):
-        return self.auth_id
+        return self._auth_id
 
 @app.before_serving
 async def setup_db():
