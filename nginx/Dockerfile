@@ -5,12 +5,12 @@ FROM nginx:alpine
 
 WORKDIR /usr/share/nginx/html
 
-# Create templates directory (official NGINX Docker template support)
-RUN mkdir -p /etc/nginx/templates
+# Remove default configuration
+RUN rm /etc/nginx/conf.d/default.conf
+RUN rm /etc/nginx/nginx.conf
 
-# Copy template files for environment variable substitution
-COPY templates/nginx.conf.template /etc/nginx/templates/
-COPY templates/gzip.conf.template /etc/nginx/templates/
+# Copy our complete configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy static HTML files
 COPY unauthorized.html /usr/share/nginx/html/
@@ -25,13 +25,6 @@ COPY static/js/main.js /usr/share/nginx/html/static/js/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/
-
-# Environment variables with defaults (for reference only, actual values come from docker-compose)
-ENV MAX_BODY_SIZE=10M
-ENV RATE_LIMIT_REQS=10
-ENV RATE_LIMIT_WINDOW=60s
-ENV FAILED_LOGIN_LIMIT=5
-ENV WEB_UI_HOST=web-ui
 
 EXPOSE 80
 
