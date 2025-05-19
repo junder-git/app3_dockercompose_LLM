@@ -1,11 +1,14 @@
-# LLM HARDWARE INIT / PRE-REQUISITES 
-
-``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` -- server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.
-
+# LLM HARDWARE INIT / PRE-REQUISITES  
+`pacman-key --init`  
+`pacman-key --populate archlinux`    
+`pacman-key --refresh`  
+All i need is the nvidia nvidia-utils nvidia-settings nvidia-dkms nvidia-container-toolkit since cuda will be handled but the ollama docker setup 🤞   
+``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ```  server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.  
+  
 After the installation completes and reboot:
-
+  
 Login with the credentials:
-
+  
 Username: docker
 Password: docker
 
