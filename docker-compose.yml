@@ -1,4 +1,4 @@
-# File: docker-compose.yml (Updated)
+# File: docker-compose.yml (Updated with exposed port)
 # Directory: /deepseek-coder-setup/
 
 version: '3.8'
@@ -63,6 +63,8 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    expose:
+      - "8000"
     networks:
       - deepseek_network
     restart: unless-stopped
@@ -85,6 +87,8 @@ services:
       - NGINX_ENVSUBST_TEMPLATE_DIR=/etc/nginx/templates
       - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
       - NGINX_ENVSUBST_TEMPLATE_SUFFIX=.template
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates
     networks:
       - deepseek_network
     restart: unless-stopped
