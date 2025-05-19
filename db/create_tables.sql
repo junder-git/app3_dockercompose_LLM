@@ -1,4 +1,3 @@
-
 -- Create tables for authentication, user sessions, chat history, and artifacts
 
 -- Users table for authentication

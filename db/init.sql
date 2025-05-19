@@ -1,4 +1,3 @@
-
 -- Initialize database users and roles
 
 -- Create admin role if not exists
