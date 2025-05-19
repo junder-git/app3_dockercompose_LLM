@@ -34,6 +34,12 @@ from quart_session import Session
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
+# Monkey patch AuthUser to add user_id property
+def user_id_property(self):
+    return self.auth_id
+
+AuthUser.user_id = property(user_id_property)
+
 # Environment variables
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "postgres")
@@ -164,7 +170,8 @@ async def login():
                     )
                     
                     # Create a session for the user
-                    login_user(UserID(user["id"]))
+                    user_id_obj = UserID(user["id"])
+                    login_user(user_id_obj)
                     
                     # Record the session in the database
                     session_id = str(uuid.uuid4())

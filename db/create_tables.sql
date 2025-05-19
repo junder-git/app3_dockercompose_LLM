@@ -1,3 +1,5 @@
+-- Modified create_tables.sql to rename timestamp to created_at
+
 -- Create tables for authentication, user sessions, chat history, and artifacts
 
 -- Users table for authentication
@@ -63,7 +65,7 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
     content TEXT NOT NULL,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP  -- Changed from 'timestamp' to 'created_at'
 );
 
 -- Artifacts table (storing code/files generated during chat)
@@ -154,3 +156,4 @@ $$ LANGUAGE plpgsql;
 -- Set permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+
