@@ -8,6 +8,38 @@ A Quart-based application that provides a web interface for interacting with Dee
 running on Ollama, with PostgreSQL-based authentication and chat persistence.
 """
 
+# Add these lines at the very beginning of app.py, before any other imports
+
+# Apply Werkzeug security patch for Python 3.11
+import sys
+if sys.version_info >= (3, 11):
+    import hmac
+    import hashlib
+    from functools import wraps
+    import werkzeug.security
+    
+    # Store the original function
+    original_hash_internal = werkzeug.security._hash_internal
+    
+    # Patch _hash_internal to add digestmod when needed
+    @wraps(original_hash_internal)
+    def patched_hash_internal(method, salt, password):
+        """
+        A patched version of werkzeug.security._hash_internal that adds the digestmod
+        parameter for Python 3.11 compatibility.
+        """
+        if method is None:
+            # Use sha1 as the default, same as Werkzeug's original implementation
+            method = hashlib.sha1
+            
+        # Call the original function with the fixed method
+        return original_hash_internal(method, salt, password)
+    
+    # Apply the patch
+    werkzeug.security._hash_internal = patched_hash_internal
+    
+    print("✅ Applied Werkzeug security patch for Python 3.11 compatibility")
+
 import os
 import json
 import uuid
