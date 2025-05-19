@@ -7,7 +7,7 @@ FROM nginx:alpine
 RUN mkdir -p /etc/nginx/templates
 
 # Copy template files for environment variable substitution
-COPY templates/default.conf.template /etc/nginx/templates/
+COPY templates/nginx.conf.template /etc/nginx/templates/
 COPY templates/gzip.conf.template /etc/nginx/templates/
 
 # Copy static HTML files
