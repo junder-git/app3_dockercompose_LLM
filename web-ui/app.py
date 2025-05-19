@@ -30,7 +30,7 @@ from quart import (
     session, websocket, Response
 )
 from quart_auth import (
-    AuthManager, AuthUser, current_user, login_required,
+    QuartAuth, AuthUser, current_user, login_required,
     login_user, logout_user, Unauthorized
 )
 from quart_session import Session
@@ -65,9 +65,10 @@ app.config["QUART_AUTH_COOKIE_SECURE"] = False  # Set to True in production with
 app.config["QUART_AUTH_COOKIE_DOMAIN"] = None
 app.config["QUART_AUTH_COOKIE_NAME"] = "deepseek_auth"
 app.config["QUART_AUTH_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_TYPE"] = "null"  # Added to prevent warning
 
 # Initialize Auth
-auth_manager = AuthManager(app)
+auth_manager = QuartAuth(app)
 Session(app)
 
 # Global database connection pool
@@ -123,10 +124,8 @@ async def close_db():
     if db_pool:
         await db_pool.close()
 
-@auth_manager.user_loader
-async def load_user(auth_id):
-    """Load user from the database"""
-    return UserID(auth_id)
+# No need for user_loader with newer quart-auth versions
+# It handles authentication internally
 
 @app.errorhandler(Unauthorized)
 async def unauthorized(error):
@@ -863,135 +862,3 @@ async def revoke_session():
     # Can't revoke current session through this endpoint
     if session_id == session.get("session_id"):
         return jsonify({"success": False, "error": "Cannot revoke current session"}), 400
-    
-    async with db_pool.acquire() as conn:
-        # Verify session belongs to user
-        session_data = await conn.fetchrow(
-            """
-            SELECT id FROM sessions
-            WHERE session_id = $1 AND user_id = $2
-            """,
-            session_id, user_id
-        )
-        
-        if not session_data:
-            return jsonify({"success": False, "error": "Session not found"}), 404
-        
-        # Delete session
-        await conn.execute(
-            "DELETE FROM sessions WHERE session_id = $1",
-            session_id
-        )
-    
-    return jsonify({"success": True})
-
-@app.route("/api/revoke-all-sessions", methods=["POST"])
-@login_required
-async def revoke_all_sessions():
-    """Revoke all sessions except current one"""
-    user_id = current_user.user_id
-    current_session_id = session.get("session_id")
-    
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            """
-            DELETE FROM sessions
-            WHERE user_id = $1 AND session_id != $2
-            """,
-            user_id, current_session_id
-        )
-    
-    return jsonify({"success": True})
-
-@app.route("/archived")
-@login_required
-async def archived_chats():
-    """View archived chats"""
-    user_id = current_user.user_id
-    
-    async with db_pool.acquire() as conn:
-        # Get user info
-        user = await conn.fetchrow(
-            "SELECT username, full_name, is_admin FROM users WHERE id = $1",
-            user_id
-        )
-        
-        # Get archived chats
-        chats = await conn.fetch(
-            """
-            SELECT id, title, created_at, updated_at 
-            FROM chats 
-            WHERE user_id = $1 AND is_archived = TRUE
-            ORDER BY updated_at DESC
-            """,
-            user_id
-        )
-        
-        # Format dates
-        formatted_chats = []
-        for chat in chats:
-            formatted_chats.append({
-                "id": chat["id"],
-                "title": chat["title"],
-                "created_at": chat["created_at"].strftime("%Y-%m-%d %H:%M"),
-                "updated_at": chat["updated_at"].strftime("%Y-%m-%d %H:%M")
-            })
-    
-    return await render_template(
-        "archived.html", 
-        user=user, 
-        chats=formatted_chats
-    )
-
-@app.route("/chat/<int:chat_id>/restore", methods=["POST"])
-@login_required
-async def restore_chat(chat_id):
-    """Restore an archived chat"""
-    user_id = current_user.user_id
-    
-    async with db_pool.acquire() as conn:
-        # Check if chat belongs to user
-        chat = await conn.fetchrow(
-            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
-            chat_id, user_id
-        )
-        
-        if not chat:
-            return jsonify({"success": False, "error": "Chat not found"}), 404
-        
-        # Restore chat
-        await conn.execute(
-            "UPDATE chats SET is_archived = FALSE WHERE id = $1",
-            chat_id
-        )
-    
-    return jsonify({"success": True})
-
-@app.route("/chat/<int:chat_id>/delete", methods=["POST"])
-@login_required
-async def delete_chat(chat_id):
-    """Permanently delete a chat"""
-    user_id = current_user.user_id
-    
-    async with db_pool.acquire() as conn:
-        # Check if chat belongs to user
-        chat = await conn.fetchrow(
-            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
-            chat_id, user_id
-        )
-        
-        if not chat:
-            return jsonify({"success": False, "error": "Chat not found"}), 404
-        
-        # Delete chat (cascade will handle messages and artifacts)
-        await conn.execute(
-            "DELETE FROM chats WHERE id = $1",
-            chat_id
-        )
-    
-    return jsonify({"success": True})
-
-if __name__ == "__main__":
-    config = Config()
-    config.bind = ["0.0.0.0:8000"]
-    asyncio.run(serve(app, config))

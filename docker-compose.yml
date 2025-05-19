@@ -1,4 +1,4 @@
-# File: docker-compose.yml
+# File: docker-compose.yml (Updated)
 # Directory: /deepseek-coder-setup/
 
 version: '3.8'
@@ -77,11 +77,14 @@ services:
     ports:
       - "${PORT:-8080}:80"
     environment:
-      WEB_UI_HOST: web-ui
-      MAX_BODY_SIZE: ${MAX_BODY_SIZE:-10M}
-      RATE_LIMIT_REQS: ${RATE_LIMIT_REQS:-10}
-      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60s}
-      FAILED_LOGIN_LIMIT: ${FAILED_LOGIN_LIMIT:-5}
+      - WEB_UI_HOST=web-ui
+      - MAX_BODY_SIZE=${MAX_BODY_SIZE:-10M}
+      - RATE_LIMIT_REQS=${RATE_LIMIT_REQS:-10}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60s}
+      - FAILED_LOGIN_LIMIT=${FAILED_LOGIN_LIMIT:-5}
+      - NGINX_ENVSUBST_TEMPLATE_DIR=/etc/nginx/templates
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - NGINX_ENVSUBST_TEMPLATE_SUFFIX=.template
     networks:
       - deepseek_network
     restart: unless-stopped

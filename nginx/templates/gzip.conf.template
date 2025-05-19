@@ -1,5 +1,5 @@
-# File: gzip.conf
-# Directory: /deepseek-coder-setup/nginx/
+# File: gzip.conf.template
+# Directory: /deepseek-coder-setup/nginx/templates/
 
 # GZIP Configuration for NGINX
 
