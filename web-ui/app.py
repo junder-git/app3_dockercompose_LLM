@@ -726,7 +726,8 @@ async def register():
         "register.html",
         error=error,
         success=success,
-        users=formatted_users
+        users=formatted_users,
+        user=user
     )
 
 @app.route("/api/delete-user/<int:user_id>", methods=["POST"])
