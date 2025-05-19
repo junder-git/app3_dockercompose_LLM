@@ -304,6 +304,8 @@ async def list_models():
         print(f"Error fetching models: {e}")
         return jsonify({"success": True, "models": AVAILABLE_MODELS})
 
+@app.websocket("/ws/chat/<int:chat_id>")
+@login_required
 async def ws_chat(chat_id):
     """WebSocket endpoint for chat"""
     user_id = current_user.user_id
@@ -355,35 +357,8 @@ async def ws_chat(chat_id):
             
             # Process with Ollama
             try:
-                # Fetch previous messages in this chat to maintain context
-                async with db_pool.acquire() as conn:
-                    previous_messages = await conn.fetch(
-                        """
-                        SELECT role, content
-                        FROM messages
-                        WHERE chat_id = $1
-                        ORDER BY created_at
-                        """,
-                        chat_id
-                    )
-                
-                # Build the conversation context
-                system_prompt = "You are DeepSeek-Coder, an AI assistant specialized in helping with programming tasks."
-                prompt = system_prompt + "\n\n"
-                
-                # Add conversation history - limit to last 10 exchanges to avoid token limits
-                # Skip the most recent message as we'll add it separately
-                history_messages = previous_messages[:-1]
-                # Take the last 10 exchanges (up to 20 messages)
-                if len(history_messages) > 20:
-                    history_messages = history_messages[-20:]
-                
-                for msg in history_messages:
-                    role = "User" if msg["role"] == "user" else "Assistant"
-                    prompt += f"{role}: {msg['content']}\n\n"
-                
-                # Add the current user message
-                prompt += f"User: {content}\n\nAssistant:"
+                # Prepare the prompt
+                prompt = f"You are DeepSeek-Coder, an AI assistant specialized in helping with programming tasks.\n\nUser: {content}\n\nAssistant:"
                 
                 # Stream response from Ollama
                 async with httpx.AsyncClient(timeout=120.0) as client:
