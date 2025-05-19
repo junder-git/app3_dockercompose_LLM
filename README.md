@@ -11,7 +11,7 @@ pacman-key --populate archlinux
 
 https://superuser.com/questions/1784504/how-do-i-get-cuda-11-7-on-arch-linux  ==> installing via aur with yay  
   
-``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` -- server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.
+``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ``` -- server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management. However all i need is the nvidia drivers since cuda will be handled but the ollama docker setup 🤞
 
 After the installation completes and reboot:
 
