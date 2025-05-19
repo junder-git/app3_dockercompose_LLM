@@ -26,13 +26,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-deepseek}
       POSTGRES_HOST: postgres
       OLLAMA_HOST: ollama
-      MODEL_NAME: ${MODEL_NAME:-deepseek-coder:6.7b-instruct-q5_K_M}
+      OLLAMA_PORT: 11434
+      # Hardcode the model name to exactly what we want
+      MODEL_NAME: deepseek-coder:6.7b-instruct-q5_K_M
       SESSION_SECRET: ${SESSION_SECRET:-changeme_in_production}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
@@ -46,22 +50,18 @@ services:
       - web-ui
     ports:
       - "${PORT:-80}:80"
-    environment:
-      MAX_BODY_SIZE: ${MAX_BODY_SIZE:-10M}
-      RATE_LIMIT_REQS: ${RATE_LIMIT_REQS:-10}
-      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-60s}
-      FAILED_LOGIN_LIMIT: ${FAILED_LOGIN_LIMIT:-5}
-      WEB_UI_HOST: web-ui
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static
     restart: unless-stopped
 
-  # Ollama Model Server
+  # Ollama Model Server - with model pre-pulled in the Dockerfile
   ollama:
-    image: ollama/ollama:latest
+    build: ./ollama
     container_name: deepseek-ollama
     volumes:
       - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
     restart: unless-stopped
     deploy:
       resources:
