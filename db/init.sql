@@ -21,9 +21,6 @@ BEGIN
 END
 $$;
 
--- Create extension for secure password storage
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- Set timezone to UTC
 SET timezone = 'UTC';
 

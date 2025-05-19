@@ -31,7 +31,6 @@ from quart_auth import (
     login_user, logout_user, Unauthorized
 )
 from quart_session import Session
-from werkzeug.security import generate_password_hash, check_password_hash
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
@@ -104,11 +103,11 @@ async def setup_db():
             # Create admin user
             await conn.execute(
                 """
-                INSERT INTO users (username, password_hash, email, is_admin, full_name) 
+                INSERT INTO users (username, password, email, is_admin, full_name) 
                 VALUES ($1, $2, $3, $4, $5)
                 """,
                 ADMIN_USERNAME,
-                generate_password_hash(ADMIN_PASSWORD),
+                ADMIN_PASSWORD,
                 f"{ADMIN_USERNAME}@example.com",
                 True,
                 "System Administrator"
@@ -145,7 +144,7 @@ async def login():
             # Check credentials against database
             async with db_pool.acquire() as conn:
                 user = await conn.fetchrow(
-                    "SELECT id, username, password_hash, is_locked, locked_until FROM users WHERE username = $1",
+                    "SELECT id, username, password, is_locked, locked_until FROM users WHERE username = $1",
                     username
                 )
                 
@@ -153,7 +152,7 @@ async def login():
                     # Account is locked
                     remaining_time = user["locked_until"] - datetime.now()
                     error = f"Account is locked. Try again in {remaining_time.seconds // 60} minutes."
-                elif user and check_password_hash(user["password_hash"], password):
+                elif user and user["password"] == password:
                     # Reset login attempts on successful login
                     await conn.execute(
                         "UPDATE users SET login_attempts = 0, last_login = CURRENT_TIMESTAMP WHERE id = $1",
@@ -651,11 +650,11 @@ async def register():
                     # Create new user
                     await conn.execute(
                         """
-                        INSERT INTO users (username, password_hash, email, full_name, is_admin)
+                        INSERT INTO users (username, password, email, full_name, is_admin)
                         VALUES ($1, $2, $3, $4, $5)
                         """,
                         username,
-                        generate_password_hash(password),
+                        password,
                         email,
                         full_name,
                         is_admin
@@ -776,20 +775,20 @@ async def user_settings():
                 error = "New passwords do not match"
             else:
                 async with db_pool.acquire() as conn:
-                    password_hash = await conn.fetchval(
-                        "SELECT password_hash FROM users WHERE id = $1",
+                    password = await conn.fetchval(
+                        "SELECT password FROM users WHERE id = $1",
                         user_id
                     )
                     
-                    if check_password_hash(password_hash, current_password):
+                    if password == current_password:
                         # Update password
                         await conn.execute(
                             """
                             UPDATE users
-                            SET password_hash = $1
+                            SET password = $1
                             WHERE id = $2
                             """,
-                            generate_password_hash(new_password),
+                            new_password,
                             user_id
                         )
                         success = "Password changed successfully"
@@ -850,3 +849,297 @@ async def revoke_session():
     # Can't revoke current session through this endpoint
     if session_id == session.get("session_id"):
         return jsonify({"success": False, "error": "Cannot revoke current session"}), 400
+        
+    # Revoke the session
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM sessions WHERE session_id = $1 AND user_id = $2",
+            session_id, user_id
+        )
+    
+    return jsonify({"success": True})
+
+@app.route("/api/revoke-all-sessions", methods=["POST"])
+@login_required
+async def revoke_all_sessions():
+    """Revoke all sessions except current one"""
+    user_id = current_user.user_id
+    current_session_id = session.get("session_id")
+    
+    if not current_session_id:
+        return jsonify({"success": False, "error": "Current session not found"}), 400
+    
+    # Revoke all other sessions
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            DELETE FROM sessions 
+            WHERE user_id = $1 AND session_id != $2
+            """,
+            user_id, current_session_id
+        )
+    
+    return jsonify({"success": True})
+
+@app.route("/chat/<int:chat_id>")
+@login_required
+async def chat(chat_id):
+    """Chat page - show a specific chat"""
+    user_id = current_user.user_id
+    
+    # Check if chat exists and belongs to user
+    async with db_pool.acquire() as conn:
+        chat = await conn.fetchrow(
+            """
+            SELECT id, title, created_at, updated_at
+            FROM chats
+            WHERE id = $1 AND user_id = $2
+            """,
+            chat_id, user_id
+        )
+        
+        if not chat:
+            return redirect(url_for("index"))
+        
+        # Get user info
+        user = await conn.fetchrow(
+            "SELECT username, full_name, is_admin FROM users WHERE id = $1",
+            user_id
+        )
+        
+        # Get chat messages
+        messages = await conn.fetch(
+            """
+            SELECT id, role, content, created_at
+            FROM messages
+            WHERE chat_id = $1
+            ORDER BY created_at
+            """,
+            chat_id
+        )
+        
+        # Format messages
+        formatted_messages = []
+        for message in messages:
+            formatted_messages.append({
+                "id": message["id"],
+                "role": message["role"],
+                "content": message["content"],
+                "timestamp": message["created_at"].strftime("%H:%M")
+            })
+        
+        # Get artifacts
+        artifacts = await conn.fetch(
+            """
+            SELECT id, title, language, created_at
+            FROM artifacts
+            WHERE chat_id = $1
+            ORDER BY created_at
+            """,
+            chat_id
+        )
+        
+        # Format artifacts
+        formatted_artifacts = []
+        for artifact in artifacts:
+            formatted_artifacts.append({
+                "id": artifact["id"],
+                "title": artifact["title"],
+                "language": artifact["language"],
+                "created_at": artifact["created_at"].strftime("%Y-%m-%d %H:%M")
+            })
+    
+    # Format chat data
+    formatted_chat = {
+        "id": chat["id"],
+        "title": chat["title"],
+        "created_at": chat["created_at"].strftime("%Y-%m-%d %H:%M")
+    }
+    
+    return await render_template(
+        "chat.html",
+        user=user,
+        chat=formatted_chat,
+        messages=formatted_messages,
+        artifacts=formatted_artifacts,
+        model=session.get("selected_model", MODEL_NAME)
+    )
+
+@app.route("/new-chat", methods=["POST"])
+@login_required
+async def new_chat():
+    """Create a new chat"""
+    user_id = current_user.user_id
+    
+    # Get selected model
+    form = await request.form
+    model = form.get("model", MODEL_NAME)
+    
+    # Store selected model in session
+    session["selected_model"] = model
+    
+    # Create a new chat
+    async with db_pool.acquire() as conn:
+        chat_id = await conn.fetchval(
+            """
+            INSERT INTO chats (user_id, title)
+            VALUES ($1, $2)
+            RETURNING id
+            """,
+            user_id, "New Chat"
+        )
+    
+    return redirect(url_for("chat", chat_id=chat_id))
+
+@app.route("/chat/<int:chat_id>/update-title", methods=["POST"])
+@login_required
+async def update_chat_title(chat_id):
+    """Update chat title"""
+    user_id = current_user.user_id
+    data = await request.json
+    new_title = data.get("title", "").strip()
+    
+    if not new_title:
+        return jsonify({"success": False, "error": "Title cannot be empty"}), 400
+    
+    # Update title in database
+    async with db_pool.acquire() as conn:
+        # Check if chat belongs to user
+        chat = await conn.fetchrow(
+            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
+            chat_id, user_id
+        )
+        
+        if not chat:
+            return jsonify({"success": False, "error": "Chat not found"}), 404
+        
+        # Update the title
+        await conn.execute(
+            "UPDATE chats SET title = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+            new_title, chat_id
+        )
+    
+    return jsonify({"success": True})
+
+@app.route("/chat/<int:chat_id>/archive", methods=["POST"])
+@login_required
+async def archive_chat(chat_id):
+    """Archive a chat"""
+    user_id = current_user.user_id
+    
+    # Mark chat as archived
+    async with db_pool.acquire() as conn:
+        # Check if chat belongs to user
+        chat = await conn.fetchrow(
+            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
+            chat_id, user_id
+        )
+        
+        if not chat:
+            return jsonify({"success": False, "error": "Chat not found"}), 404
+        
+        # Archive the chat
+        await conn.execute(
+            "UPDATE chats SET is_archived = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            chat_id
+        )
+    
+    return jsonify({"success": True})
+
+@app.route("/archived-chats")
+@login_required
+async def archived_chats():
+    """Show archived chats"""
+    user_id = current_user.user_id
+    
+    async with db_pool.acquire() as conn:
+        # Get user info
+        user = await conn.fetchrow(
+            "SELECT username, full_name, is_admin FROM users WHERE id = $1",
+            user_id
+        )
+        
+        # Get archived chats
+        chats = await conn.fetch(
+            """
+            SELECT id, title, created_at, updated_at 
+            FROM chats 
+            WHERE user_id = $1 AND is_archived 
+            ORDER BY updated_at DESC
+            """,
+            user_id
+        )
+        
+        # Format dates
+        formatted_chats = []
+        for chat in chats:
+            formatted_chats.append({
+                "id": chat["id"],
+                "title": chat["title"],
+                "created_at": chat["created_at"].strftime("%Y-%m-%d %H:%M"),
+                "updated_at": chat["updated_at"].strftime("%Y-%m-%d %H:%M")
+            })
+    
+    return await render_template(
+        "archived.html",
+        user=user,
+        chats=formatted_chats
+    )
+
+@app.route("/chat/<int:chat_id>/restore", methods=["POST"])
+@login_required
+async def restore_chat(chat_id):
+    """Restore an archived chat"""
+    user_id = current_user.user_id
+    
+    # Mark chat as not archived
+    async with db_pool.acquire() as conn:
+        # Check if chat belongs to user
+        chat = await conn.fetchrow(
+            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
+            chat_id, user_id
+        )
+        
+        if not chat:
+            return jsonify({"success": False, "error": "Chat not found"}), 404
+        
+        # Restore the chat
+        await conn.execute(
+            "UPDATE chats SET is_archived = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+            chat_id
+        )
+    
+    return jsonify({"success": True})
+
+@app.route("/chat/<int:chat_id>/delete", methods=["POST"])
+@login_required
+async def delete_chat(chat_id):
+    """Permanently delete a chat"""
+    user_id = current_user.user_id
+    
+    # Delete chat and all associated data
+    async with db_pool.acquire() as conn:
+        # Check if chat belongs to user
+        chat = await conn.fetchrow(
+            "SELECT id FROM chats WHERE id = $1 AND user_id = $2",
+            chat_id, user_id
+        )
+        
+        if not chat:
+            return jsonify({"success": False, "error": "Chat not found"}), 404
+        
+        # Delete all related data first (cascading delete would be better in actual DB schema)
+        await conn.execute("DELETE FROM artifacts WHERE chat_id = $1", chat_id)
+        await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
+        
+        # Delete the chat
+        await conn.execute("DELETE FROM chats WHERE id = $1", chat_id)
+    
+    return jsonify({"success": True})
+
+if __name__ == "__main__":
+    config = Config()
+    config.bind = ["0.0.0.0:8000"]
+    config.workers = 1
+    
+    asyncio.run(serve(app, config))

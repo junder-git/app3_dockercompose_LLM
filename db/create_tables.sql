@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,  -- Changed from password_hash to password (plaintext)
     email VARCHAR(100) UNIQUE,
     full_name VARCHAR(100),
     is_admin BOOLEAN DEFAULT FALSE,
@@ -15,11 +15,11 @@ CREATE TABLE IF NOT EXISTS users (
     locked_until TIMESTAMP WITH TIME ZONE
 );
 
--- Create default admin user
-INSERT INTO users (username, password_hash, email, is_admin, full_name)
+-- Create default admin user with plaintext password
+INSERT INTO users (username, password, email, is_admin, full_name)
 VALUES 
 ('admin', 
- crypt('admin', gen_salt('bf')), 
+ 'admin',  -- Plain text password instead of hashed
  'admin@example.com', 
  TRUE, 
  'System Administrator') 
