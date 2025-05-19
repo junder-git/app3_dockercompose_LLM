@@ -59,7 +59,9 @@ services:
 
   # Ollama Model Server with GPU acceleration
   ollama:
-    image: ollama/ollama:latest
+    build:
+      context: ./ollama
+      dockerfile: Dockerfile
     container_name: deepseek-ollama
     volumes:
       - ollama_data:/root/.ollama

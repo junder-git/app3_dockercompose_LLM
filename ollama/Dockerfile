@@ -1,22 +1,37 @@
-# File: Dockerfile.ollama
-# Directory: /deepseek-coder-setup/
+# File: Dockerfile
+# Directory: /deepseek-coder-setup/ollama/
 
 FROM ollama/ollama:latest
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user to run Ollama
-RUN groupadd -r ollama && useradd -r -g ollama ollama
+# Create a startup script that checks if model exists and pulls if needed
+RUN echo '#!/bin/sh \n\
+# Start Ollama in the background \n\
+ollama serve & \n\
+OLLAMA_PID=$! \n\
+\n\
+# Wait for Ollama to start \n\
+echo "Waiting for Ollama to start..." \n\
+sleep 10 \n\
+\n\
+# Check if model is already pulled \n\
+if ! ollama list | grep -q "deepseek-coder:6.7b-instruct-q5_K_M"; then \n\
+    echo "DeepSeek model not found, pulling now..." \n\
+    ollama pull deepseek-coder:6.7b-instruct-q5_K_M \n\
+    echo "Model pulled successfully!" \n\
+else \n\
+    echo "DeepSeek model already available" \n\
+fi \n\
+\n\
+# Kill the background Ollama process \n\
+kill $OLLAMA_PID \n\
+\n\
+# Start Ollama in the foreground \n\
+echo "Starting Ollama server..." \n\
+exec ollama serve \n\
+' > /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
 
-# Create directory for Ollama data and set permissions
-RUN mkdir -p /root/.ollama && chown -R ollama:ollama /root/.ollama
-
-# Start Ollama server, pull the DeepSeek model, then stop the server
-RUN ollama serve & \
-    sleep 10 && \
-    ollama pull deepseek-coder:6.7b-instruct-q5_K_M && \
-    pkill ollama
-
-# Default command to run when container starts
-CMD ["ollama", "serve"]
+# Set the startup script as the entrypoint
+ENTRYPOINT ["/usr/local/bin/start.sh"]
