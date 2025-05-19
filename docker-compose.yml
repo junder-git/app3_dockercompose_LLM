@@ -75,7 +75,7 @@ services:
     depends_on:
       - web-ui
     ports:
-      - "${PORT:-8080}:80"
+      - "${PORT:-80}:80"
     environment:
       - WEB_UI_HOST=web-ui
       - MAX_BODY_SIZE=${MAX_BODY_SIZE:-10M}
