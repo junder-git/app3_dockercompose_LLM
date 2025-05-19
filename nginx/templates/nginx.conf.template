@@ -1,10 +1,11 @@
-# File: default.conf.template
+# File: nginx.conf.template
 # Directory: /deepseek-coder-setup/nginx/templates/
 
 # NGINX Configuration for DeepSeek-Coder Web UI
 # With GZIP compression, rate limiting, and security features
 
-user nginx;
+# Note: The 'user' directive is removed as it's already defined in the main nginx.conf
+
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
 pid /var/run/nginx.pid;

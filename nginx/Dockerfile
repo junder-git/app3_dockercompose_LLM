@@ -3,6 +3,8 @@
 
 FROM nginx:alpine
 
+WORKDIR /usr/share/nginx/html
+
 # Create templates directory (official NGINX Docker template support)
 RUN mkdir -p /etc/nginx/templates
 
@@ -14,8 +16,12 @@ COPY templates/gzip.conf.template /etc/nginx/templates/
 COPY unauthorized.html /usr/share/nginx/html/
 COPY rate_limited.html /usr/share/nginx/html/
 
-# Create directory for static files
-RUN mkdir -p /usr/share/nginx/html/static
+# Create directory structure for static files
+RUN mkdir -p /usr/share/nginx/html/static/css /usr/share/nginx/html/static/js
+
+# Copy static CSS and JS files
+COPY static/css/styles.css /usr/share/nginx/html/static/css/
+COPY static/js/main.js /usr/share/nginx/html/static/js/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/
