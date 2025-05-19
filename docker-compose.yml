@@ -18,6 +18,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - deepseek-network
 
   # Web UI Application
   web-ui:
@@ -26,8 +28,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_started
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -35,12 +35,13 @@ services:
       POSTGRES_HOST: postgres
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      # Hardcode the model name to exactly what we want
       MODEL_NAME: deepseek-coder:6.7b-instruct-q5_K_M
       SESSION_SECRET: ${SESSION_SECRET:-changeme_in_production}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
     restart: unless-stopped
+    networks:
+      - deepseek-network
 
   # Nginx Reverse Proxy
   nginx:
@@ -53,16 +54,18 @@ services:
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static
     restart: unless-stopped
+    networks:
+      - deepseek-network
 
-  # Ollama Model Server - with model pre-pulled in the Dockerfile
+  # Ollama Model Server with GPU acceleration
   ollama:
-    build: ./ollama
+    image: ollama/ollama:latest
     container_name: deepseek-ollama
     volumes:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
-    restart: unless-stopped
+    # Enable GPU support
     deploy:
       resources:
         reservations:
@@ -70,6 +73,13 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - deepseek-network
+
+networks:
+  deepseek-network:
+    driver: bridge
 
 volumes:
   postgres_data:
