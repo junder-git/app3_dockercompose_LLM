@@ -1,76 +1,130 @@
-# File: settings.html
-# Directory: /deepseek-coder-setup/web-ui/templates/
-
 {% extends "base.html" %}
 
-{% block title %}User Settings - DeepSeek-Coder{% endblock %}
+{% block title %}User Management - DeepSeek-Coder{% endblock %}
 
 {% block content %}
-<div class="settings-container">
-    <div class="settings-header">
-        <h2>User Settings</h2>
-        <a href="{{ url_for('index') }}" class="back-button">Back to Chats</a>
+<div class="register-container">
+    <div class="register-header">
+        <h2>User Management</h2>
+        <a href="{{ url_for('index') }}" class="back-button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Back to Chats
+        </a>
     </div>
     
     {% if error %}
     <div class="error-message">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
         {{ error }}
     </div>
     {% endif %}
     
     {% if success %}
     <div class="success-message">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+        </svg>
         {{ success }}
     </div>
     {% endif %}
     
-    <div class="settings-section">
-        <h3>Profile Information</h3>
-        <form method="POST" action="{{ url_for('user_settings') }}" class="settings-form">
-            <input type="hidden" name="action" value="update_profile">
+    <div class="register-section">
+        <h3>Create New User</h3>
+        <form method="POST" action="{{ url_for('register') }}" class="register-form">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" value="{{ user.username }}" disabled>
-                <p class="field-note">Username cannot be changed</p>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" required>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" value="{{ user.email or '' }}">
+                <input type="email" id="email" name="email">
             </div>
             <div class="form-group">
                 <label for="full_name">Full Name</label>
-                <input type="text" id="full_name" name="full_name" value="{{ user.full_name or '' }}">
+                <input type="text" id="full_name" name="full_name">
             </div>
-            <button type="submit" class="save-button">Update Profile</button>
+            <div class="form-group checkbox">
+                <input type="checkbox" id="is_admin" name="is_admin">
+                <label for="is_admin">Administrator Access</label>
+            </div>
+            <button type="submit" class="create-button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+                Create User
+            </button>
         </form>
     </div>
     
-    <div class="settings-section">
-        <h3>Change Password</h3>
-        <form method="POST" action="{{ url_for('user_settings') }}" class="settings-form">
-            <input type="hidden" name="action" value="change_password">
-            <div class="form-group">
-                <label for="current_password">Current Password</label>
-                <input type="password" id="current_password" name="current_password" required>
-            </div>
-            <div class="form-group">
-                <label for="new_password">New Password</label>
-                <input type="password" id="new_password" name="new_password" required>
-            </div>
-            <div class="form-group">
-                <label for="confirm_password">Confirm New Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" required>
-            </div>
-            <button type="submit" class="save-button">Change Password</button>
-        </form>
-    </div>
-    
-    <div class="settings-section">
-        <h3>Active Sessions</h3>
-        <div id="sessions-list" class="sessions-list">
-            <p>Loading sessions...</p>
+    <div class="users-section">
+        <h3>Existing Users</h3>
+        <div class="users-list">
+            {% if users %}
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Full Name</th>
+                            <th>Email</th>
+                            <th>Admin</th>
+                            <th>Created</th>
+                            <th>Last Login</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.full_name or "-" }}</td>
+                            <td>{{ user.email or "-" }}</td>
+                            <td>
+                                {% if user.is_admin %}
+                                <span class="badge badge-admin">Yes</span>
+                                {% else %}
+                                <span class="badge badge-user">No</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.created_at }}</td>
+                            <td>{{ user.last_login }}</td>
+                            <td>
+                                <button class="delete-user-btn" data-user-id="{{ user.id }}" {% if current_user.user_id == user.id %}disabled{% endif %}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        <line x1="10" y1="11" x2="10" y2="17"></line>
+                                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                                    </svg>
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p>No users found.</p>
+            {% endif %}
         </div>
-        <button id="revoke-all-sessions" class="danger-button">Revoke All Other Sessions</button>
     </div>
 </div>
 {% endblock %}
@@ -78,104 +132,49 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const sessionsList = document.getElementById('sessions-list');
-        const revokeAllButton = document.getElementById('revoke-all-sessions');
+        const registerForm = document.querySelector('.register-form');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirm_password');
+        const deleteButtons = document.querySelectorAll('.delete-user-btn');
         
-        // Load sessions
-        async function loadSessions() {
-            try {
-                const response = await fetch('/api/sessions');
-                const data = await response.json();
+        // Form validation
+        registerForm.addEventListener('submit', function(event) {
+            if (passwordInput.value !== confirmPasswordInput.value) {
+                event.preventDefault();
+                alert('Passwords do not match');
+                return false;
+            }
+            
+            if (usernameInput.value.trim() === '') {
+                event.preventDefault();
+                alert('Username cannot be empty');
+                return false;
+            }
+            
+            if (passwordInput.value.trim() === '') {
+                event.preventDefault();
+                alert('Password cannot be empty');
+                return false;
+            }
+        });
+        
+        // Delete user functionality
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', async function() {
+                const userId = this.getAttribute('data-user-id');
                 
-                if (data.success) {
-                    displaySessions(data.sessions);
-                } else {
-                    sessionsList.innerHTML = '<p class="error">Failed to load sessions</p>';
+                if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+                    return;
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                sessionsList.innerHTML = '<p class="error">Failed to load sessions</p>';
-            }
-        }
-        
-        // Display sessions
-        function displaySessions(sessions) {
-            if (sessions.length === 0) {
-                sessionsList.innerHTML = '<p>No active sessions found</p>';
-                return;
-            }
-            
-            let html = '<div class="session-items">';
-            
-            sessions.forEach(session => {
-                html += `
-                    <div class="session-item ${session.is_current ? 'current-session' : ''}">
-                        <div class="session-info">
-                            <div class="session-device">${formatUserAgent(session.user_agent)}</div>
-                            <div class="session-meta">
-                                <span class="session-ip">${session.ip_address}</span>
-                                <span class="session-time">${session.created_at}</span>
-                            </div>
-                            ${session.is_current ? '<span class="current-label">Current Session</span>' : ''}
-                        </div>
-                        ${!session.is_current ? `
-                            <button class="revoke-session-btn" data-session-id="${session.id}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M18 6L6 18"></path>
-                                    <path d="M6 6l12 12"></path>
-                                </svg>
-                                Revoke
-                            </button>
-                        ` : ''}
-                    </div>
-                `;
-            });
-            
-            html += '</div>';
-            sessionsList.innerHTML = html;
-            
-            // Add event listeners for revoke buttons
-            document.querySelectorAll('.revoke-session-btn').forEach(button => {
-                button.addEventListener('click', revokeSession);
-            });
-        }
-        
-        // Revoke a session
-        async function revokeSession() {
-            const sessionId = this.getAttribute('data-session-id');
-            
-            if (confirm('Are you sure you want to revoke this session?')) {
+                
                 try {
-                    const response = await fetch('/api/sessions/revoke', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            session_id: sessionId
-                        })
-                    });
+                    // Show loading state
+                    const originalHTML = this.innerHTML;
+                    this.innerHTML = '<div class="spinner"></div>';
+                    this.disabled = true;
                     
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Reload sessions
-                        loadSessions();
-                    } else {
-                        alert('Error: ' + data.error);
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    alert('An error occurred while revoking the session.');
-                }
-            }
-        }
-        
-        // Revoke all sessions
-        revokeAllButton.addEventListener('click', async function() {
-            if (confirm('Are you sure you want to revoke all other sessions? You will remain logged in on this device only.')) {
-                try {
-                    const response = await fetch('/api/revoke-all-sessions', {
+                    const response = await fetch(`/api/delete-user/${userId}`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -185,55 +184,27 @@
                     const data = await response.json();
                     
                     if (data.success) {
-                        // Reload sessions
-                        loadSessions();
+                        // Remove user from table with animation
+                        const row = this.closest('tr');
+                        row.style.opacity = '0';
+                        row.style.transform = 'translateX(20px)';
+                        
+                        setTimeout(() => {
+                            row.remove();
+                        }, 300);
                     } else {
+                        this.innerHTML = originalHTML;
+                        this.disabled = false;
                         alert('Error: ' + data.error);
                     }
                 } catch (error) {
+                    this.innerHTML = originalHTML;
+                    this.disabled = false;
                     console.error('Error:', error);
-                    alert('An error occurred while revoking sessions.');
+                    alert('An error occurred while deleting the user.');
                 }
-            }
+            });
         });
-        
-        // Format user agent string
-        function formatUserAgent(userAgent) {
-            if (!userAgent) return 'Unknown Device';
-            
-            // Try to identify browser
-            let browser = 'Unknown Browser';
-            if (userAgent.includes('Chrome')) {
-                browser = 'Chrome';
-            } else if (userAgent.includes('Firefox')) {
-                browser = 'Firefox';
-            } else if (userAgent.includes('Safari')) {
-                browser = 'Safari';
-            } else if (userAgent.includes('Edge')) {
-                browser = 'Edge';
-            } else if (userAgent.includes('MSIE') || userAgent.includes('Trident')) {
-                browser = 'Internet Explorer';
-            }
-            
-            // Try to identify OS
-            let os = 'Unknown OS';
-            if (userAgent.includes('Windows')) {
-                os = 'Windows';
-            } else if (userAgent.includes('Mac OS')) {
-                os = 'macOS';
-            } else if (userAgent.includes('Linux')) {
-                os = 'Linux';
-            } else if (userAgent.includes('Android')) {
-                os = 'Android';
-            } else if (userAgent.includes('iOS') || userAgent.includes('iPhone') || userAgent.includes('iPad')) {
-                os = 'iOS';
-            }
-            
-            return `${browser} on ${os}`;
-        }
-        
-        // Load sessions on page load
-        loadSessions();
     });
 </script>
 {% endblock %}
