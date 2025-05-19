@@ -21,6 +21,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (document.querySelector('.artifact-download-btn')) {
         initArtifactDownload();
     }
+    
+    // Initialize artifacts dropdown if present
+    if (document.querySelector('.artifacts-dropdown-container')) {
+        initArtifactsDropdown();
+    }
 });
 
 // Initialize dropdown menus
@@ -159,6 +164,33 @@ function initSyntaxHighlighting() {
     });
 }
 
+// Initialize artifacts dropdown functionality
+function initArtifactsDropdown() {
+    const toggle = document.getElementById('artifacts-toggle');
+    const content = document.getElementById('artifacts-content');
+    const icon = document.querySelector('.artifacts-toggle-icon svg');
+    
+    if (toggle && content) {
+        // Set initial state (collapsed)
+        content.style.display = 'none';
+        
+        // Toggle functionality
+        toggle.addEventListener('click', function() {
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                icon.classList.remove('chevron-down');
+                icon.classList.add('chevron-up');
+                icon.innerHTML = '<polyline points="18 15 12 9 6 15"></polyline>';
+            } else {
+                content.style.display = 'none';
+                icon.classList.remove('chevron-up');
+                icon.classList.add('chevron-down');
+                icon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+            }
+        });
+    }
+}
+
 // Initialize chat functionality
 function initChat() {
     const chatInput = document.querySelector('.chat-input');
@@ -200,113 +232,187 @@ function initChat() {
     let assistantResponse = '';
     
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'token') {
-            // Append token to assistant message
-            if (currentAssistantMessageId !== data.id) {
-                currentAssistantMessageId = data.id;
-                assistantResponse = '';
-            }
-            
-            assistantResponse += data.token;
-            
-            // Update the message content
-            const messageElement = document.querySelector(`.message-bubble[data-message-id="${data.id}"]`);
-            if (messageElement) {
-                const contentElement = messageElement.querySelector('.message-content');
-                contentElement.innerHTML = formatMarkdown(assistantResponse);
-            } else {
-                // Create a new message element
-                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const newMessage = createMessageElement('assistant', data.id, assistantResponse, timestamp);
-                chatMessages.appendChild(newMessage);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-        } else if (data.type === 'complete') {
-            // Message is complete
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            sendButton.classList.remove('loading');
-            
-            // Final update to message content
-            assistantResponse = data.content;
-            const messageElement = document.querySelector(`.message-bubble[data-message-id="${data.id}"]`);
-            if (messageElement) {
-                const contentElement = messageElement.querySelector('.message-content');
-                contentElement.innerHTML = formatMarkdown(assistantResponse);
-            }
-            
-            // Initialize syntax highlighting on new code blocks
-            setTimeout(() => {
-                initSyntaxHighlighting();
-            }, 100);
-            
-            // Reset state
-            currentAssistantMessageId = null;
+    const data = JSON.parse(event.data);
+    
+    if (data.type === 'token') {
+        // Append token to assistant message
+        if (currentAssistantMessageId !== data.id) {
+            currentAssistantMessageId = data.id;
             assistantResponse = '';
-            
-            // Scroll to bottom
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        } else if (data.type === 'artifact') {
-            // New artifact created
-            const artifactsList = document.querySelector('.artifacts-list');
-            if (artifactsList) {
-                const newArtifact = document.createElement('div');
-                newArtifact.classList.add('artifact-item');
-                newArtifact.setAttribute('data-language', data.language || '');
-                
-                // Apply language-specific styling
-                if (data.language) {
-                    const langClass = getLanguageClass(data.language);
-                    if (langClass) {
-                        newArtifact.classList.add(langClass);
-                    }
-                }
-                
-                newArtifact.innerHTML = `
-                    <div class="artifact-title">${escapeHTML(data.title)}</div>
-                    <div class="artifact-meta">
-                        <span class="artifact-date">${data.created_at}</span>
-                        ${data.language ? `<span class="artifact-language">${data.language}</span>` : ''}
-                    </div>
-                    <div class="artifact-actions">
-                        <button class="artifact-download-btn" data-artifact-id="${data.id}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Download
-                        </button>
-                    </div>
-                `;
-                
-                artifactsList.appendChild(newArtifact);
-                
-                // Initialize download button
-                const downloadBtn = newArtifact.querySelector('.artifact-download-btn');
-                downloadBtn.addEventListener('click', function() {
-                    const artifactId = this.getAttribute('data-artifact-id');
-                    window.location.href = `/api/download-artifact/${artifactId}`;
-                });
-            }
-        } else if (data.type === 'error') {
-            // Error occurred
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            sendButton.classList.remove('loading');
-            
-            // Show error message
-            const errorMessage = document.createElement('div');
-            errorMessage.classList.add('error-message');
-            errorMessage.textContent = data.error || 'An error occurred';
-            chatMessages.appendChild(errorMessage);
-            
-            // Scroll to bottom
+        }
+        
+        assistantResponse += data.token;
+        
+        // Update the message content
+        const messageElement = document.querySelector(`.message-bubble[data-message-id="${data.id}"]`);
+        if (messageElement) {
+            const contentElement = messageElement.querySelector('.message-content');
+            contentElement.innerHTML = formatMarkdown(assistantResponse);
+        } else {
+            // Create a new message element
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const newMessage = createMessageElement('assistant', data.id, assistantResponse, timestamp);
+            chatMessages.appendChild(newMessage);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-    };
+    } else if (data.type === 'complete') {
+        // Message is complete
+        chatInput.disabled = false;
+        sendButton.disabled = false;
+        sendButton.classList.remove('loading');
+        
+        // Final update to message content
+        assistantResponse = data.content;
+        const messageElement = document.querySelector(`.message-bubble[data-message-id="${data.id}"]`);
+        if (messageElement) {
+            const contentElement = messageElement.querySelector('.message-content');
+            contentElement.innerHTML = formatMarkdown(assistantResponse);
+            
+            // Initialize Prism highlighting with a slight delay to ensure DOM is updated
+            setTimeout(() => {
+                initPrismHighlighting();
+            }, 50);
+        }
+        
+        // Reset state
+        currentAssistantMessageId = null;
+        assistantResponse = '';
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    } else if (data.type === 'artifact') {
+        // New artifact created
+        let artifactsList = document.querySelector('.artifacts-list');
+        
+        // If this is the first artifact, create the dropdown container
+        if (!document.querySelector('.artifacts-dropdown-container') && !artifactsList) {
+            createArtifactsDropdown();
+            artifactsList = document.querySelector('.artifacts-list');
+        }
+        
+        if (artifactsList) {
+            const newArtifact = document.createElement('div');
+            newArtifact.classList.add('artifact-item');
+            newArtifact.setAttribute('data-language', data.language || '');
+            
+            // Apply language-specific styling
+            if (data.language) {
+                const langClass = getLanguageClass(data.language);
+                if (langClass) {
+                    newArtifact.classList.add(langClass);
+                }
+            }
+            
+            newArtifact.innerHTML = `
+                <div class="artifact-title">${escapeHTML(data.title)}</div>
+                <div class="artifact-meta">
+                    <span class="artifact-date">${data.created_at}</span>
+                    ${data.language ? `<span class="artifact-language">${data.language}</span>` : ''}
+                </div>
+                <div class="artifact-actions">
+                    <button class="artifact-download-btn" data-artifact-id="${data.id}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download
+                    </button>
+                </div>
+            `;
+            
+            artifactsList.appendChild(newArtifact);
+            
+            // Update the artifact count in the header
+            updateArtifactCount();
+            
+            // Initialize download button
+            const downloadBtn = newArtifact.querySelector('.artifact-download-btn');
+            downloadBtn.addEventListener('click', function() {
+                const artifactId = this.getAttribute('data-artifact-id');
+                window.location.href = `/api/download-artifact/${artifactId}`;
+            });
+            
+            // Show the dropdown briefly when a new artifact is added
+            showArtifactsDropdown();
+        }
+    } else if (data.type === 'error') {
+        // Error occurred
+        chatInput.disabled = false;
+        sendButton.disabled = false;
+        sendButton.classList.remove('loading');
+        
+        // Show error message
+        const errorMessage = document.createElement('div');
+        errorMessage.classList.add('error-message');
+        errorMessage.textContent = data.error || 'An error occurred';
+        chatMessages.appendChild(errorMessage);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+};
+    
+    // Create artifacts dropdown if it doesn't exist
+    function createArtifactsDropdown() {
+        const chatContainer = document.querySelector('.chat-container');
+        
+        const dropdownContainer = document.createElement('div');
+        dropdownContainer.classList.add('artifacts-dropdown-container');
+        
+        dropdownContainer.innerHTML = `
+            <div class="artifacts-dropdown-header" id="artifacts-toggle">
+                <h3>Code Artifacts (1)</h3>
+                <div class="artifacts-toggle-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-down">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+            </div>
+            <div class="artifacts-content" id="artifacts-content">
+                <div class="artifacts-list"></div>
+            </div>
+        `;
+        
+        chatContainer.appendChild(dropdownContainer);
+        
+        // Initialize the dropdown toggle
+        initArtifactsDropdown();
+    }
+    
+    // Update the artifact count in the header
+    function updateArtifactCount() {
+        const artifactsList = document.querySelector('.artifacts-list');
+        const header = document.querySelector('.artifacts-dropdown-header h3');
+        
+        if (artifactsList && header) {
+            const count = artifactsList.querySelectorAll('.artifact-item').length;
+            header.textContent = `Code Artifacts (${count})`;
+        }
+    }
+    
+    // Show the artifacts dropdown briefly when a new artifact is added
+    function showArtifactsDropdown() {
+        const content = document.getElementById('artifacts-content');
+        const icon = document.querySelector('.artifacts-toggle-icon svg');
+        
+        if (content && icon) {
+            content.style.display = 'block';
+            icon.classList.remove('chevron-down');
+            icon.classList.add('chevron-up');
+            icon.innerHTML = '<polyline points="18 15 12 9 6 15"></polyline>';
+            
+            // Auto-hide after 5 seconds if the user doesn't interact
+            setTimeout(() => {
+                if (!document.querySelector('.artifacts-content:hover')) {
+                    content.style.display = 'none';
+                    icon.classList.remove('chevron-up');
+                    icon.classList.add('chevron-down');
+                    icon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+                }
+            }, 5000);
+        }
+    }
     
     // Send message function
     function sendMessage(content) {
@@ -378,30 +484,60 @@ function initChat() {
         return messageElement;
     }
     
-    // Helper function to format markdown
-    function formatMarkdown(text) {
-        // Replace newlines with <br>
-        text = text.replace(/\n/g, '<br>');
+// Helper function to format markdown
+function formatMarkdown(text) {
+    // First decode any HTML entities that might have been applied
+    const decodedText = text
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+    
+    // Format code blocks with proper Prism.js classes
+    let formattedText = decodedText.replace(/```([\w]*)([\s\S]*?)```/g, (match, language, code) => {
+        // Clean up the language identifier
+        language = language.trim().toLowerCase();
         
-        // Format code blocks
-        text = text.replace(/```([\w]*)([\s\S]*?)```/g, (match, language, code) => {
-            language = language.trim();
-            code = code.trim();
-            
-            return `<pre><code class="language-${language || 'plaintext'}">${escapeHTML(code)}</code></pre>`;
-        });
+        // Map common language aliases to Prism language classes
+        const languageMap = {
+            'js': 'javascript',
+            'ts': 'typescript',
+            'py': 'python',
+            'sh': 'bash',
+            'shell': 'bash',
+            'cmd': 'bash',
+            'yml': 'yaml',
+            'cs': 'csharp',
+            'html': 'markup', // Prism uses 'markup' for HTML
+            'plaintext': 'text',
+            'txt': 'text'
+        };
         
-        // Format inline code
-        text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+        // Use mapped language or the original if not found in the map
+        const prismLanguage = languageMap[language] || language || 'text';
         
-        // Format bold text
-        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        // Preserve newlines and properly escape code
+        code = code.trim();
         
-        // Format italic text
-        text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-        
-        return text;
-    }
+        // Generate HTML structure compatible with Prism
+        return `<pre class="line-numbers"><code class="language-${prismLanguage}">${escapeHTML(code)}</code></pre>`;
+    });
+    
+    // Format inline code
+    formattedText = formattedText.replace(/`([^`]+)`/g, '<code class="language-text">$1</code>');
+    
+    // Format bold text
+    formattedText = formattedText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Format italic text
+    formattedText = formattedText.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // Replace newlines with <br> (only outside of code blocks)
+    formattedText = formattedText.replace(/\n/g, '<br>');
+    
+    return formattedText;
+}
 }
 
 // Initialize chat title editor
@@ -503,4 +639,30 @@ function escapeHTML(html) {
     const element = document.createElement('div');
     element.textContent = html;
     return element.innerHTML;
+}
+
+// Function to initialize Prism.js for code blocks
+function initPrismHighlighting() {
+    // Find code blocks that haven't been processed by Prism yet
+    document.querySelectorAll('pre:not(.line-numbers-processed)').forEach((block) => {
+        // Make sure the pre has the line-numbers class
+        if (!block.classList.contains('line-numbers')) {
+            block.classList.add('line-numbers');
+        }
+        
+        // Find the code element inside
+        const codeElement = block.querySelector('code');
+        if (codeElement) {
+            // Clean up any possible formatting issues
+            const content = codeElement.innerHTML;
+            
+            // Fix common issues with WebSocket-delivered code
+            codeElement.innerHTML = content
+                .replace(/&lt;br&gt;/g, '\n')  // Replace <br> tags with actual newlines
+                .replace(/<br\s*\/?>/g, '\n'); // Replace <br> tags with actual newlines
+            
+            // Force Prism to highlight this element
+            Prism.highlightElement(codeElement);
+        }
+    });
 }

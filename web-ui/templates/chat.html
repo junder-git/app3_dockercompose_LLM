@@ -60,32 +60,39 @@
     </div>
     
     {% if artifacts %}
-    <div class="artifacts-container">
-        <div class="artifacts-header">
-            <h3>Code Artifacts</h3>
-        </div>
-        <div class="artifacts-list">
-            {% for artifact in artifacts %}
-            <div class="artifact-item" data-language="{{ artifact.language }}">
-                <div class="artifact-title">{{ artifact.title }}</div>
-                <div class="artifact-meta">
-                    <span class="artifact-date">{{ artifact.created_at }}</span>
-                    {% if artifact.language %}
-                    <span class="artifact-language">{{ artifact.language }}</span>
-                    {% endif %}
-                </div>
-                <div class="artifact-actions">
-                    <button class="artifact-download-btn" data-artifact-id="{{ artifact.id }}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        Download
-                    </button>
-                </div>
+    <div class="artifacts-dropdown-container">
+        <div class="artifacts-dropdown-header" id="artifacts-toggle">
+            <h3>Code Artifacts ({{ artifacts|length }})</h3>
+            <div class="artifacts-toggle-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-down">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
             </div>
-            {% endfor %}
+        </div>
+        <div class="artifacts-content" id="artifacts-content">
+            <div class="artifacts-list">
+                {% for artifact in artifacts %}
+                <div class="artifact-item" data-language="{{ artifact.language }}">
+                    <div class="artifact-title">{{ artifact.title }}</div>
+                    <div class="artifact-meta">
+                        <span class="artifact-date">{{ artifact.created_at }}</span>
+                        {% if artifact.language %}
+                        <span class="artifact-language">{{ artifact.language }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="artifact-actions">
+                        <button class="artifact-download-btn" data-artifact-id="{{ artifact.id }}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
     {% endif %}
@@ -105,6 +112,9 @@
         
         // Initialize syntax highlighting
         initSyntaxHighlighting();
+        
+        // Initialize artifacts dropdown
+        initArtifactsDropdown();
         
         // Format markdown function
         function formatMarkdown(text) {
@@ -142,6 +152,33 @@
             const element = document.createElement('div');
             element.textContent = html;
             return element.innerHTML;
+        }
+        
+        // Initialize artifacts dropdown functionality
+        function initArtifactsDropdown() {
+            const toggle = document.getElementById('artifacts-toggle');
+            const content = document.getElementById('artifacts-content');
+            const icon = document.querySelector('.artifacts-toggle-icon svg');
+            
+            if (toggle && content) {
+                // Set initial state (collapsed)
+                content.style.display = 'none';
+                
+                // Toggle functionality
+                toggle.addEventListener('click', function() {
+                    if (content.style.display === 'none') {
+                        content.style.display = 'block';
+                        icon.classList.remove('chevron-down');
+                        icon.classList.add('chevron-up');
+                        icon.innerHTML = '<polyline points="18 15 12 9 6 15"></polyline>';
+                    } else {
+                        content.style.display = 'none';
+                        icon.classList.remove('chevron-up');
+                        icon.classList.add('chevron-down');
+                        icon.innerHTML = '<polyline points="6 9 12 15 18 9"></polyline>';
+                    }
+                });
+            }
         }
         
         // Initial scroll to bottom

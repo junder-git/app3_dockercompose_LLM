@@ -960,3 +960,300 @@ pre code {
   background-color: rgba(156, 163, 175, 0.15);
   color: #9ca3af;
 }
+
+/* Artifacts Dropdown Styles */
+.artifacts-dropdown-container {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.artifacts-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.artifacts-dropdown-header:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.artifacts-dropdown-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+}
+
+.artifacts-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  transition: var(--transition);
+}
+
+.artifacts-dropdown-header:hover .artifacts-toggle-icon {
+  background-color: var(--hover-bg);
+}
+
+.artifacts-content {
+  padding: 0.5rem 0 1.5rem 0;
+  display: none; /* Hidden by default */
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Update existing artifacts container styles */
+.artifacts-container {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Style for badge count */
+.artifacts-dropdown-header h3::after {
+  content: attr(data-count);
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-light);
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+}
+
+/* Enhanced mobile responsiveness for artifacts dropdown */
+@media (max-width: 768px) {
+  .artifacts-dropdown-container .artifacts-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .artifacts-dropdown-header {
+    padding: 1rem 0.5rem;
+  }
+}
+
+/* Animation for chevron icon */
+.artifacts-toggle-icon svg {
+  transition: transform 0.2s ease;
+}
+
+.artifacts-toggle-icon svg.chevron-up {
+  transform: rotate(180deg);
+}
+
+/* Auto-expanding textarea styles */
+textarea.auto-expand {
+  overflow-y: hidden;
+  transition: height 0.1s ease;
+}
+
+/* Chat title editing styles */
+.chat-title-input {
+  background-color: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--primary-color);
+  border-radius: var(--border-radius);
+  padding: 0.25rem 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  width: 100%;
+}
+
+.chat-title-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-title-edit {
+  background-color: transparent;
+  color: var(--text-muted);
+  padding: 0.25rem;
+  border-radius: 4px;
+}
+
+.chat-title-edit:hover {
+  color: var(--primary-color);
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Model info badge */
+.model-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-light);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius);
+  font-size: 0.75rem;
+}
+
+.model-info {
+  margin-left: auto;
+}
+
+/* Loading state for buttons */
+button.loading {
+  position: relative;
+  color: transparent;
+}
+
+button.loading .spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Copy button for code blocks */
+.copy-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-light);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+  z-index: 2;
+}
+
+.copy-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
+}
+
+.copy-button:active {
+  transform: scale(0.95);
+}
+
+/* Make sure code blocks with language indicator have enough space */
+pre .code-language + code {
+  margin-top: 0.5rem;
+}
+
+/* Override existing artifacts container styles for dropdown version */
+.artifacts-dropdown-container .artifacts-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+/* Make sure the dropdown version has proper styling */
+.artifacts-dropdown-container .artifact-item {
+  background-color: var(--card-bg);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  padding: 1rem;
+  transition: var(--transition);
+}
+
+.artifacts-dropdown-container .artifact-item:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--primary-color);
+}
+
+/* Count badge for artifacts */
+.artifacts-dropdown-header h3 .artifact-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-light);
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: normal;
+}
+
+/* Prism.js integration styles */
+pre.line-numbers {
+    position: relative;
+    padding-left: 3.8em;
+    counter-reset: linenumber;
+    background-color: #1a1a1a;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
+    max-height: 600px;
+    overflow: auto;
+}
+
+pre.line-numbers > code {
+    position: relative;
+    white-space: pre;
+    word-spacing: normal;
+    word-break: normal;
+    word-wrap: normal;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #e0e0e0;
+}
+
+.line-numbers .line-numbers-rows {
+    position: absolute;
+    pointer-events: none;
+    top: 0;
+    font-size: 100%;
+    left: -3.8em;
+    width: 3em; /* works for line-numbers below 1000 lines */
+    letter-spacing: -1px;
+    border-right: 1px solid #333;
+    user-select: none;
+    background-color: rgba(0, 0, 0, 0.2);
+    color: #616161;
+}
+
+/* Customize toolbar */
+div.code-toolbar > .toolbar {
+    top: 0.25rem;
+    right: 0.25rem;
+    opacity: 0.7;
+}
+
+div.code-toolbar > .toolbar:hover {
+    opacity: 1;
+}
+
+div.code-toolbar > .toolbar > .toolbar-item > button {
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+    background: var(--card-bg);
+    color: var(--text-light);
+    border: 1px solid var(--border-color);
+    transition: var(--transition);
+}
+
+div.code-toolbar > .toolbar > .toolbar-item > button:hover {
+    background: var(--hover-bg);
+    color: var(--text-color);
+}
+
+/* Fix rendering issues in WebSocket-delivered code */
+.message-content pre {
+    white-space: pre;
+}
+
+.message-content code {
+    white-space: pre-wrap;
+}
