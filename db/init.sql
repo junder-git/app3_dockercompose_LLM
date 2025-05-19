@@ -1,5 +1,3 @@
-# File: init.sql
-# Directory: /deepseek-coder-setup/db/
 
 -- Initialize database users and roles
 

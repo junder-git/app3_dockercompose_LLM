@@ -1,5 +1,3 @@
-# File: create_tables.sql
-# Directory: /deepseek-coder-setup/db/
 
 -- Create tables for authentication, user sessions, chat history, and artifacts
 
