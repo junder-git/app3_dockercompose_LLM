@@ -39,6 +39,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-changeme_in_production}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     restart: unless-stopped
     networks:
       - deepseek-network

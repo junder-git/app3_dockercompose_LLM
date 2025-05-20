@@ -17,9 +17,9 @@ echo "Waiting for Ollama to start..." \n\
 sleep 10 \n\
 \n\
 # Check if model is already pulled \n\
-if ! ollama list | grep -q "deepseek-coder:6.7b-instruct-q5_K_M"; then \n\
+if ! ollama list | grep -q "deepseek-coder:33b-instruct-q5_K_M"; then \n\
     echo "DeepSeek model not found, pulling now..." \n\
-    ollama pull deepseek-coder:6.7b-instruct-q5_K_M \n\
+    ollama pull deepseek-coder:33b-instruct-q5_K_M \n\
     echo "Model pulled successfully!" \n\
 else \n\
     echo "DeepSeek model already available" \n\
