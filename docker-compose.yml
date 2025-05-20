@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-deepseek}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db:/docker-entrypoint-initdb.dd
+      - ./db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
