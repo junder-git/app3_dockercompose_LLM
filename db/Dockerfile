@@ -12,3 +12,4 @@ RUN chmod 755 /docker-entrypoint-initdb.d/*.sql
 
 # Default PostgreSQL port
 EXPOSE 5432
+
