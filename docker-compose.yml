@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-deepseek}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d
+      - ./db:/docker-entrypoint-initdb.dd
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -35,7 +35,7 @@ services:
       POSTGRES_HOST: postgres
       OLLAMA_HOST: ollama
       OLLAMA_PORT: 11434
-      MODEL_NAME: deepseek-coder:6.7b-instruct-q5_K_M
+      MODEL_NAME: deepseek-coder:33b-instruct-q5_K_M
       SESSION_SECRET: ${SESSION_SECRET:-changeme_in_production}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
