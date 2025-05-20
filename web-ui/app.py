@@ -39,6 +39,7 @@ import json
 from urllib.parse import urlparse, unquote
 from github_connector import GithubConnector, format_code_for_llm, summarize_repository_for_llm
 
+
 # Monkey patch AuthUser to add user_id property
 def user_id_property(self):
     return self.auth_id
