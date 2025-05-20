@@ -11,14 +11,6 @@ itsdangerous>=2.0.0
 asyncpg>=0.27.0
 httpx>=0.24.0
 
-# Redis client
-redis>=4.5.1
-aioredis>=2.0.1
-
-# GraphQL
-strawberry-graphql[asgi,debug-server]>=0.171.1
-graphql-core>=3.2.3
-
 # Utilities
 python-dotenv>=1.0.0
 hypercorn>=0.14.4
@@ -28,6 +20,6 @@ markdown>=3.4.0
 pygments>=2.14.0
 aiofiles>=23.0.0
 
-# Github integration
+# Github intergration
 pygithub>=2.1.1
 gitpython>=3.1.30

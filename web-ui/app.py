@@ -39,13 +39,6 @@ import json
 from urllib.parse import urlparse, unquote
 from github_connector import GithubConnector, format_code_for_llm, summarize_repository_for_llm
 
-import strawberry
-from strawberry.asgi import GraphQL
-
-# Import the schema and resolvers
-from schema import schema
-from resolvers import init_redis_pool, close_redis_pool
-
 
 # Monkey patch AuthUser to add user_id property
 def user_id_property(self):
@@ -74,17 +67,6 @@ AVAILABLE_MODELS = [
     {"id": "deepseek-coder:6.7b-instruct-q5_K_M", "name": "DeepSeek-Coder 6.7B", "description": "Balanced model, good performance"},
     {"id": "deepseek-coder:33b-instruct-q5_K_M", "name": "DeepSeek-Coder 33B", "description": "Largest model, best quality"}
 ]
-
-# GraphQL configuration
-GRAPHQL_PATH = os.environ.get("GRAPHQL_PATH", "/graphql")
-GRAPHQL_PLAYGROUND = os.environ.get("GRAPHQL_PLAYGROUND", "true").lower() == "true"
-
-# Create GraphQL application
-graphql_app = GraphQL(
-    schema,
-    graphiql=GRAPHQL_PLAYGROUND,
-    allow_queries_via_get=True
-)
 
 # Application setup
 app = Quart(__name__)
@@ -118,12 +100,10 @@ class UserID(AuthUser):
     def user_id(self):
         return self._auth_id
 
-# Add Redis and GraphQL setup to @app.before_serving
 @app.before_serving
-async def setup_services():
-    """Initialize services before serving"""
+async def setup_db():
+    """Initialize database connection pool before serving"""
     global db_pool
-    # Existing PostgreSQL setup
     db_pool = await asyncpg.create_pool(
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
@@ -131,9 +111,6 @@ async def setup_services():
         host=POSTGRES_HOST,
         port=POSTGRES_PORT
     )
-    
-    # Initialize Redis
-    app.redis = await init_redis_pool(app)
     
     # Check if default admin exists, create if not
     async with db_pool.acquire() as conn:
@@ -157,52 +134,11 @@ async def setup_services():
             )
             print(f"Created default admin user: {ADMIN_USERNAME}")
 
-# Add Redis cleanup to @app.after_serving
 @app.after_serving
-async def cleanup_services():
-    """Clean up services after serving"""
+async def close_db():
+    """Close database connection pool after serving"""
     if db_pool:
         await db_pool.close()
-    
-    # Close Redis connections
-    await close_redis_pool()
-
-# Add context processor for GraphQL
-async def get_graphql_context():
-    """Context processor for GraphQL"""
-    # Add current user info to context
-    context = {
-        "request": {
-            "app": app,
-            "is_authenticated": await current_user.is_authenticated,
-            "user_id": current_user.user_id if await current_user.is_authenticated else None,
-            "session_id": session.get("session_id") if "session_id" in session else None
-        }
-    }
-    return context
-
-# Add GraphQL route
-@app.route(GRAPHQL_PATH, methods=["GET", "POST"])
-async def handle_graphql():
-    """Handle GraphQL requests"""
-    # Use strawberry's GraphQL handler
-    context = await get_graphql_context()
-    response = await graphql_app.handle_async(
-        request,
-        context=context
-    )
-    return Response(
-        response.body,
-        status=response.status_code,
-        headers=dict(response.headers)
-    )
-
-# Add GraphQL playground template route
-@app.route("/graphql-playground")
-@login_required
-async def graphql_playground():
-    """Serve GraphQL playground"""
-    return await render_template("graphql_playground.html", graphql_path=GRAPHQL_PATH)
 
 @app.errorhandler(Unauthorized)
 async def unauthorized(error):

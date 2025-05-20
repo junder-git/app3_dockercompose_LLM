@@ -1,96 +1,64 @@
-# DeepSeek-Coder with Redis and GraphQL
+# LLM HARDWARE INIT / PRE-REQUISITES  
+`pacman-key --init`  
+`pacman-key --populate archlinux`    
+`pacman-key --refresh`  
+All i need is the nvidia nvidia-utils nvidia-settings nvidia-dkms nvidia-container-toolkit since cuda will be handled but the ollama docker setup 🤞   
+``` curl -L https://raw.githubusercontent.com/junder-git/app3_LLM/refs/heads/main/arch-uk-auto-installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh ```  server setup from arch usb to the actual server hardware. Consider vmware vcenter or something further down the line for lvm management.  
+  
+After the installation completes and reboot:
+  
+Login with the credentials:
+  
+Username: docker
+Password: docker
 
-This repository now includes enhanced architecture with Redis for caching and GraphQL for API access.
+# The LLM DeepSeek-Coder Docker App Setup
 
-## Updated Architecture
+A comprehensive Docker-based solution for running DeepSeek-Coder with NVIDIA GPU support, including a web UI, PostgreSQL-based authentication and persistence, and security features.
 
-The system now uses six Docker containers working together:
+## Architecture
+
+This system uses multiple Docker containers to provide a modular and maintainable architecture:
 
 1. **PostgreSQL Container**: Handles authentication, chat history, and artifact storage
-2. **Redis Container**: Provides caching and session management capabilities
-3. **Ollama Container**: Runs the DeepSeek-Coder model with GPU acceleration
-4. **Quart Web UI Container**: Provides the user interface with GraphQL API
-5. **NGINX Container**: Manages authentication, rate limiting, GZIP compression, and IP whitelisting
-6. **Strawberry GraphQL**: Integrated with Quart to provide a flexible API layer
+2. **Ollama Container**: Runs the DeepSeek-Coder model with GPU acceleration
+3. **Quart Web UI Container**: Provides the user interface with chat persistence
+4. **NGINX Container**: Manages authentication, rate limiting, GZIP compression, and IP whitelisting
 
-This architecture follows modern design patterns with proper separation of concerns:
+## Key Features
 
-- **Data Storage**: PostgreSQL handles persistent storage
-- **Caching Layer**: Redis provides fast access to frequently requested data
-- **API Layer**: GraphQL offers flexible and efficient data access
-- **Application Layer**: Quart Web UI handles business logic
-- **Presentation Layer**: Web-based interface for user interaction
-- **AI Processing**: Ollama for LLM inference
+- **GPU Acceleration**: Leverages NVIDIA GPUs through Docker's GPU passthrough
+- **PostgreSQL Authentication**: User accounts and session management
+- **Chat Persistence**: All conversations are saved in PostgreSQL
+- **Multiple Models**: Support for selecting different DeepSeek-Coder models
+- **Artifact Storage**: Generated code snippets are saved in the database
+- **Rate Limiting**: Protection against excessive requests
+- **Failed Login Protection**: Account locking after failed attempts
+- **GZIP Compression**: Optimized bandwidth usage
+- **IP Whitelisting**: NGINX-level control of allowed IP addresses
+- **Secure Sessions**: Session management with database persistence
+- **User Management**: Admin interface for managing users
+- **Archive/Restore**: Chat archiving and restoration
+- **Dark Theme**: Sleek, dark interface optimized for code display
+- **Responsive Design**: Works on desktop and mobile devices
 
-## New Capabilities
+## Prerequisites
 
-### Redis Caching
+- Docker and Docker Compose
+- NVIDIA GPU with appropriate drivers
+- NVIDIA Container Toolkit (nvidia-docker)
+- At least 8GB of RAM (16GB recommended)
+- At least 10GB of free disk space
 
-The Redis integration provides:
+## Installation
 
-- **Query Result Caching**: Frequently accessed data is cached to reduce database load
-- **Session Management**: User sessions can be managed efficiently
-- **Performance Optimization**: Reduced response times for common operations
-
-### GraphQL API
-
-The GraphQL integration provides:
-
-- **Flexible Data Retrieval**: Clients can request exactly the data they need
-- **Strongly Typed Schema**: Self-documenting API with schema validation
-- **Batched Requests**: Multiple operations in a single request
-- **Developer Playground**: Interactive API explorer for documentation and testing
-
-## Directory Structure
-
-```
-deepseek-coder-setup/
-├── .env                    # Environment variables for all services
-├── README.md               # Project documentation
-├── docker-compose.yml      # Multi-container Docker configuration
-├── db/                     # PostgreSQL database files
-│   ├── Dockerfile
-│   ├── init.sql
-│   └── create_tables.sql
-├── redis/                  # Redis cache files
-│   ├── Dockerfile
-│   └── redis.conf
-├── nginx/                  # NGINX web server files
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── ...
-├── ollama/                 # Ollama (DeepSeek-Coder model) files
-│   └── Dockerfile
-└── web-ui/                 # Web UI with GraphQL API
-    ├── Dockerfile
-    ├── app.py              # Main application code
-    ├── schema.py           # GraphQL schema definitions
-    ├── resolvers.py        # GraphQL resolver functions
-    ├── github_connector.py
-    ├── requirements.txt
-    ├── static/
-    │   ├── css/
-    │   └── js/
-    │       ├── main.js
-    │       └── graphql-client.js   # Client-side GraphQL library
-    └── templates/
-        ├── base.html
-        ├── login.html
-        ├── graphql_playground.html # GraphQL interactive explorer
-        └── ...
-```
-
-## Getting Started
-
-1. Make sure you have Docker, Docker Compose, and NVIDIA Container Toolkit installed.
-
-2. Clone the repository:
+1. Clone this repository:
    ```bash
    git clone https://github.com/yourusername/deepseek-coder-docker.git
    cd deepseek-coder-docker
    ```
 
-3. Configure environment variables in `.env` file:
+2. Configure environment variables in `.env` file:
    ```bash
    # Copy the example environment file
    cp .env.example .env
@@ -99,14 +67,14 @@ deepseek-coder-setup/
    nano .env
    ```
 
-4. Start the containers:
+3. Start the containers:
    ```bash
    docker-compose up -d
    ```
 
-5. Wait for all services to initialize. The first startup may take longer as it downloads all required components.
+4. Wait for all services to initialize. The first startup may take some time as it needs to download the DeepSeek-Coder model.
 
-6. Access the web UI:
+5. Access the web UI:
    ```
    http://localhost:8080
    ```
@@ -115,91 +83,90 @@ deepseek-coder-setup/
    - Username: admin
    - Password: admin
 
-7. Access the GraphQL Playground (admin users only):
-   - Log in as an admin user
-   - Click on your username in the top-right corner
-   - Select "GraphQL API" from the dropdown menu
+## Changing the DeepSeek-Coder Model
 
-## Using the GraphQL API
+You can switch between different model sizes through the UI:
 
-The GraphQL API provides access to all the functionality of DeepSeek-Coder, including:
+- **DeepSeek-Coder 1.3B**: Fastest response, smaller GPU memory requirement
+- **DeepSeek-Coder 6.7B**: Balanced model, good performance (default)
+- **DeepSeek-Coder 33B**: Largest model, best quality, requires more GPU memory
 
-- User information
-- Chat history
-- Messages
-- Code artifacts
+## IP Whitelisting
 
-Example queries:
+The system includes IP whitelisting at the NGINX level. By default, all IPs are allowed, but you can easily restrict access:
 
-```graphql
-# Get all chats
-query {
-  chats {
-    id
-    title
-    createdAt
-  }
-}
+1. Edit the NGINX configuration in `nginx/nginx.conf`
+2. Change `default 1` to `default 0` in the `geo $whitelist` block
+3. Uncomment and modify the IP ranges you want to allow
+4. Restart the NGINX container: `docker-compose restart nginx`
 
-# Get a specific chat with messages and artifacts
-query {
-  chat(id: 1) {
-    id
-    title
-    messages {
-      id
-      role
-      content
-    }
-    artifacts {
-      id
-      title
-      language
-    }
-  }
-}
+You can use both CIDR notation (`192.168.1.0/24`) and range notation (`192.168.1.10-192.168.1.255`) for IP specifications.
 
-# Create a new chat
-mutation {
-  createChat(input: {title: "New GraphQL Chat"}) {
-    id
-    title
-  }
-}
-```
+## Security Considerations
 
-## Using Redis Cache
+1. **Change Default Passwords**: Always change the default admin password after installation
+2. **Environment Variables**: Keep the `.env` file secure and don't commit it to version control
+3. **IP Restrictions**: Consider enabling IP whitelisting in production environments
+4. **HTTPS**: For production use, configure HTTPS with proper certificates
 
-Redis caching is configured automatically for GraphQL queries to improve performance. You can monitor Redis usage with:
+## User Management
+
+The system provides an admin interface for user management:
+
+1. Login as an admin user
+2. Navigate to the user management page
+3. Create new users with optional admin privileges
+4. Manage existing users (delete, etc.)
+
+Admin users can create new accounts, while regular users can only use the system.
+
+## Persistence
+
+All data is stored in PostgreSQL, including:
+
+- User accounts and authentication
+- Chat history with timestamps
+- Code artifacts generated during conversations
+- Session information
+
+This ensures your conversations and generated code are preserved across container restarts.
+
+## Customizing the Theme
+
+The system uses a dark theme optimized for code display. If you want to customize it:
+
+1. Edit the CSS file in `web-ui/static/css/styles.css`
+2. Restart the web-ui container: `docker-compose restart web-ui`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **GPU not detected**: Make sure the NVIDIA Container Toolkit is properly installed and your GPU drivers are up-to-date
+
+2. **Out of memory**: Reduce the model size if your GPU doesn't have enough VRAM
+
+3. **PostgreSQL connection error**: Check your PostgreSQL environment variables and ensure the container is running
+
+4. **Web UI not loading**: Check NGINX logs for any errors related to the web UI container
+
+### Viewing Logs
+
+To view logs from a specific container:
 
 ```bash
-docker exec -it deepseek-redis redis-cli -a "your_redis_password"
+docker logs deepseek-postgres    # PostgreSQL logs
+docker logs deepseek-ollama      # Ollama logs
+docker logs deepseek-web-ui      # Web UI logs
+docker logs deepseek-nginx       # NGINX logs
 ```
 
-Common Redis commands:
-```
-INFO                    # Get Redis server information
-MONITOR                 # Watch Redis activity in real-time
-KEYS graphql:*          # View all GraphQL cache keys
-GET graphql:get_chats   # Get cached chat data
-FLUSHDB                 # Clear all cached data
-```
+## License
 
-## Performance Considerations
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-- Redis cache TTL (time-to-live) is configured according to data volatility:
-  - 60 seconds for chat lists
-  - 30 seconds for chat details
-  - 5 minutes for user information
+## Acknowledgments
 
-- GraphQL depth and complexity limits are in place to prevent abuse
-
-- The GraphQL playground is only available to admin users
-
-## Future Enhancements
-
-- **Subscription Support**: Real-time updates via WebSockets
-- **DataLoader Implementation**: Batch and cache database requests
-- **Redis Rate Limiting**: More sophisticated request throttling
-- **Redis Pub/Sub**: Event-driven communication between services
-- **GraphQL Federation**: Split GraphQL schema across services
+- [DeepSeek-Coder](https://github.com/deepseek-ai/DeepSeek-Coder) for the model
+- [Ollama](https://ollama.ai/) for the model server
+- [Quart](https://pgjones.gitlab.io/quart/) for the async web framework
