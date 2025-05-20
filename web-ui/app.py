@@ -60,6 +60,7 @@ SESSION_SECRET = os.environ.get("SESSION_SECRET", "changeme_in_production")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
+
 # Available DeepSeek models
 AVAILABLE_MODELS = [
     {"id": "deepseek-coder:1.3b-instruct-q4_0", "name": "DeepSeek-Coder 1.3B", "description": "Smallest model, fastest response"},
@@ -75,6 +76,8 @@ app.config["QUART_AUTH_COOKIE_DOMAIN"] = None
 app.config["QUART_AUTH_COOKIE_NAME"] = "deepseek_auth"
 app.config["QUART_AUTH_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_TYPE"] = "null"  # Added to prevent warning
+app.config["RESPONSE_TIMEOUT"] = 600  # 10 minutes in seconds
+app.config["BODY_TIMEOUT"] = 600  # 10 minutes in seconds
 
 # Initialize Auth
 auth_manager = QuartAuth(app)
@@ -394,8 +397,8 @@ async def ws_chat(chat_id):
                 # Add the current user message
                 prompt += f"User: {content}\n\nAssistant:"
                 
-                # Stream response from Ollama
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                # Increase the timeout for Ollama API calls
+                async with httpx.AsyncClient(timeout=600.0) as client:  # Increased from 120.0
                     response = await client.post(
                         f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/generate",
                         json={
