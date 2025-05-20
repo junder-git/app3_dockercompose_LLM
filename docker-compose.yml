@@ -67,14 +67,20 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
-    # Enable GPU support
+    # Memory and CPU allocation
     deploy:
       resources:
+        limits:
+          memory: 24G  # Allocate 24GB of memory (adjust based on your system)
         reservations:
+          memory: 16G  # Guarantee at least 16GB
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    environment:
+      - OLLAMA_NUM_GPU_LAYERS=50  # Optional: Set number of GPU layers if needed
+      - OLLAMA_RAM_SIZE=16GB      # Optional: Set RAM usage limit
     restart: unless-stopped
     networks:
       - deepseek-network
