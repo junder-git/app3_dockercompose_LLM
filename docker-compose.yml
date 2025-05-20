@@ -20,12 +20,31 @@ services:
     networks:
       - deepseek-network
 
-  # Web UI Application
+  # Redis for caching and session management
+  redis:
+    build: ./redis
+    container_name: deepseek-redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password_change_me}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_password_change_me}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - deepseek-network
+
+  # Web UI Application with GraphQL
   web-ui:
     build: ./web-ui
     container_name: deepseek-web-ui
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -39,6 +58,12 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_password_change_me}
+      REDIS_DB: ${REDIS_DB:-0}
+      GRAPHQL_PATH: ${GRAPHQL_PATH:-/graphql}
+      GRAPHQL_PLAYGROUND: ${GRAPHQL_PLAYGROUND:-true}
     restart: unless-stopped
     networks:
       - deepseek-network
@@ -91,4 +116,5 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:
   ollama_data:

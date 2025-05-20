@@ -73,8 +73,158 @@
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Archive chat functionality
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Use GraphQL client to load chats if available
+        if (window.graphqlClient) {
+            try {
+                // Get chats using GraphQL
+                const chats = await window.graphqlClient.getChats();
+                
+                // Update UI if needed
+                console.log("Chats loaded via GraphQL:", chats);
+                
+                // Example of updating chat items with GraphQL data
+                // This assumes the existing HTML structure remains the same
+                const chatList = document.querySelector('.chat-list');
+                
+                // Only update if we have a chat list and there are no existing chats
+                // This prevents duplicate rendering since the server already renders chats
+                if (chatList && chatList.querySelector('.no-chats')) {
+                    // Clear the "no chats" message
+                    chatList.innerHTML = '';
+                    
+                    // Add each chat
+                    chats.forEach(chat => {
+                        const chatItem = document.createElement('div');
+                        chatItem.classList.add('chat-item');
+                        
+                        // Format date
+                        const date = new Date(chat.updatedAt);
+                        const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        
+                        chatItem.innerHTML = `
+                            <a href="/chat/${chat.id}" class="chat-link">
+                                <div class="chat-details">
+                                    <div class="chat-title">${chat.title}</div>
+                                    <div class="chat-meta">
+                                        <span class="chat-date">${formattedDate}</span>
+                                    </div>
+                                </div>
+                            </a>
+                            <div class="chat-actions">
+                                <button class="chat-archive-btn" data-chat-id="${chat.id}" title="Archive">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        `;
+                        
+                        chatList.appendChild(chatItem);
+                        
+                        // Add event listeners for archive button
+                        const archiveButton = chatItem.querySelector('.chat-archive-btn');
+                        archiveButton.addEventListener('click', async function(event) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            
+                            if (!confirm('Are you sure you want to archive this chat?')) {
+                                return;
+                            }
+                            
+                            const chatId = this.getAttribute('data-chat-id');
+                            
+                            try {
+                                // Show loading state
+                                this.innerHTML = '<div class="spinner"></div>';
+                                this.disabled = true;
+                                
+                                // Use GraphQL to archive chat
+                                await window.graphqlClient.archiveChat(parseInt(chatId));
+                                
+                                // Remove chat from list with animation
+                                const chatItem = this.closest('.chat-item');
+                                chatItem.style.opacity = '0';
+                                chatItem.style.transform = 'translateX(20px)';
+                                
+                                setTimeout(() => {
+                                    chatItem.remove();
+                                    
+                                    // If no chats left, show the no-chats message
+                                    if (chatList.children.length === 0) {
+                                        chatList.innerHTML = `
+                                            <div class="no-chats">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                                </svg>
+                                                <p>You don't have any chats yet. Start a new conversation!</p>
+                                            </div>
+                                        `;
+                                    }
+                                }, 300);
+                            } catch (error) {
+                                this.innerHTML = `
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                `;
+                                this.disabled = false;
+                                console.error('Error:', error);
+                                alert('An error occurred while archiving the chat.');
+                            }
+                        });
+                    });
+                }
+                
+                // Add GraphQL-powered chat creation
+                const newChatForm = document.querySelector('.new-chat-form');
+                if (newChatForm) {
+                    // Override form submission
+                    newChatForm.addEventListener('submit', async function(event) {
+                        // We'll let the normal form submission handle this for now
+                        // But this shows how you could implement it with GraphQL
+                        
+                        // Uncomment this to use GraphQL instead of the form submission
+                        /*
+                        event.preventDefault();
+                        
+                        try {
+                            const modelSelect = this.querySelector('#model');
+                            const modelId = modelSelect.value;
+                            
+                            // Create chat with a default title
+                            const newChat = await window.graphqlClient.createChat("New Chat");
+                            
+                            // Store selected model in sessionStorage (since we don't have a server-side session)
+                            sessionStorage.setItem('selected_model', modelId);
+                            
+                            // Redirect to the chat page
+                            window.location.href = `/chat/${newChat.id}`;
+                        } catch (error) {
+                            console.error('Error creating chat:', error);
+                            alert('An error occurred while creating a new chat.');
+                        }
+                        */
+                    });
+                }
+            } catch (error) {
+                console.error("Error loading chats via GraphQL:", error);
+                // Fall back to the server-rendered content
+            }
+        }
+        
+        // Original code for archive buttons
         const archiveButtons = document.querySelectorAll('.chat-archive-btn');
         
         archiveButtons.forEach(button => {
@@ -93,36 +243,51 @@
                     this.innerHTML = '<div class="spinner"></div>';
                     this.disabled = true;
                     
-                    const response = await fetch(`/chat/${chatId}/archive`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Remove chat from list with animation
-                        const chatItem = this.closest('.chat-item');
-                        chatItem.style.opacity = '0';
-                        chatItem.style.transform = 'translateX(20px)';
-                        
-                        setTimeout(() => {
-                            chatItem.remove();
-                        }, 300);
+                    // Try to use GraphQL client if available
+                    if (window.graphqlClient) {
+                        await window.graphqlClient.archiveChat(parseInt(chatId));
                     } else {
-                        this.innerHTML = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                <line x1="16" y1="2" x2="16" y2="6"></line>
-                                <line x1="8" y1="2" x2="8" y2="6"></line>
-                                <line x1="3" y1="10" x2="21" y2="10"></line>
-                            </svg>
-                        `;
-                        this.disabled = false;
-                        alert('Error: ' + data.error);
+                        // Fall back to REST API
+                        const response = await fetch(`/chat/${chatId}/archive`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (!data.success) {
+                            throw new Error(data.error || 'Unknown error');
+                        }
                     }
+                    
+                    // Remove chat from list with animation
+                    const chatItem = this.closest('.chat-item');
+                    chatItem.style.opacity = '0';
+                    chatItem.style.transform = 'translateX(20px)';
+                    
+                    setTimeout(() => {
+                        chatItem.remove();
+                        
+                        // If no chats left, show the no-chats message
+                        const chatList = document.querySelector('.chat-list');
+                        if (chatList && chatList.children.length === 0) {
+                            chatList.innerHTML = `
+                                <div class="no-chats">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="8" y1="18" x2="21" y2="18"></line>
+                                        <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                        <line x1="8" y1="12" x2="21" y2="12"></line>
+                                        <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                        <line x1="8" y1="6" x2="21" y2="6"></line>
+                                        <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    </svg>
+                                    <p>You don't have any chats yet. Start a new conversation!</p>
+                                </div>
+                            `;
+                        }
+                    }, 300);
                 } catch (error) {
                     this.innerHTML = `
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

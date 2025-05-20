@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}GraphQL Playground - DeepSeek-Coder{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.8.2/graphiql.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphiql/1.8.2/graphiql.min.js"></script>
+
+<style>
+  .graphiql-container {
+    height: calc(100vh - 140px);
+    width: 100%;
+    box-shadow: var(--shadow);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+  
+  /* Override GraphiQL styles to match our dark theme */
+  .graphiql-container .topBar {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .graphiql-container .docExplorerShow {
+    background-color: var(--card-bg);
+    border-left: 1px solid var(--border-color);
+    color: var(--text-color);
+  }
+  
+  .graphiql-container .doc-explorer-title-bar,
+  .graphiql-container .history-title-bar {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .graphiql-container .doc-explorer-contents,
+  .graphiql-container .history-contents {
+    background-color: var(--bg-color);
+    border-top: 1px solid var(--border-color);
+  }
+  
+  .graphiql-container .execute-button {
+    background-color: var(--primary-color);
+    border-radius: var(--border-radius);
+    box-shadow: none;
+  }
+  
+  .graphiql-container .execute-button:hover {
+    background-color: var(--primary-hover);
+  }
+  
+  .graphiql-container .execute-button svg {
+    fill: white;
+  }
+  
+  .graphiql-container .toolbar-button {
+    border: 1px solid var(--border-color);
+    background-color: var(--card-bg);
+    color: var(--text-color);
+    border-radius: var(--border-radius);
+  }
+  
+  .graphiql-container .toolbar-button:hover {
+    background-color: var(--hover-bg);
+  }
+  
+  .graphiql-container .variable-editor-title,
+  .graphiql-container .result-window-title {
+    background-color: var(--card-bg);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  /* Code editor theming */
+  .graphiql-container .CodeMirror {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+  }
+  
+  .graphiql-container .CodeMirror-gutters {
+    background-color: var(--card-bg);
+    border-right: 1px solid var(--border-color);
+  }
+  
+  .graphiql-container .CodeMirror-linenumber {
+    color: var(--text-muted);
+  }
+  
+  /* Documentation explorer */
+  .graphiql-container .doc-category-title {
+    color: var(--primary-color);
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .graphiql-container .doc-type-description,
+  .graphiql-container .doc-category-item {
+    color: var(--text-color);
+  }
+  
+  .graphiql-container .doc-value-description {
+    color: var(--text-light);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="register-header">
+  <h2>GraphQL API Playground</h2>
+  <a href="{{ url_for('index') }}" class="back-button">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="19" y1="12" x2="5" y2="12"></line>
+      <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+    Back to Chats
+  </a>
+</div>
+
+<div class="graphiql-container" id="graphiql">Loading...</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Define GraphQL fetcher function
+    function graphQLFetcher(graphQLParams) {
+      return fetch('{{ graphql_path }}', {
+        method: 'post',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(graphQLParams),
+        credentials: 'include',
+      }).then(function(response) {
+        return response.json();
+      });
+    }
+
+    // Render GraphiQL
+    ReactDOM.render(
+      React.createElement(GraphiQL, {
+        fetcher: graphQLFetcher,
+        defaultQuery: `# Welcome to DeepSeek-Coder GraphQL API
+# Get current user info
+query Me {
+  me {
+    id
+    username
+    email
+    isAdmin
+  }
+}
+
+# Get all chats
+query Chats {
+  chats {
+    id
+    title
+    createdAt
+    updatedAt
+  }
+}
+
+# Get a specific chat with messages and artifacts
+query Chat($id: Int!) {
+  chat(id: $id) {
+    id
+    title
+    createdAt
+    messages {
+      id
+      role
+      content
+      createdAt
+    }
+    artifacts {
+      id
+      title
+      language
+      createdAt
+    }
+  }
+}
+
+# Create a new chat
+mutation CreateChat($input: ChatInput!) {
+  createChat(input: $input) {
+    id
+    title
+    createdAt
+  }
+}
+
+# Variables example:
+# {
+#   "id": 1,
+#   "input": {
+#     "title": "New Chat"
+#   }
+# }
+`
+      }),
+      document.getElementById('graphiql')
+    );
+  });
+</script>
+{% endblock %}
