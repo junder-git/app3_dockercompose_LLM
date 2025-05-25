@@ -19,14 +19,14 @@ app = Quart(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 app.config['QUART_AUTH_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+app.config['SESSION_REDIS'] = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 
 # Initialize extensions
 QuartAuth(app)
 Session(app)
 
 # Redis configuration
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 CHAT_CACHE_TTL = 3600  # 1 hour cache for AI responses
 USER_DATA_TTL = 0  # No expiry for user data
 CHAT_HISTORY_TTL = 0  # No expiry for chat history
