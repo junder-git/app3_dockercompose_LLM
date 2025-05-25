@@ -228,7 +228,7 @@ async def startup():
     await init_admin()
 
 # Auth callbacks
-@app.auth_manager.user_loader
+@login_required
 async def load_user(user_id):
     return await get_user_by_id(user_id)
 
