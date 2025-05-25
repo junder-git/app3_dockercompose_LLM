@@ -1,5 +1,6 @@
-OKOK MASIVE REWORKING... read me incoming
-
-https://redis.io/blog/level-up-rag-apps-with-redis-vector-library/
-
+OKOK MASIVE REWORKING... read me incoming  
+  
+## https://redis.io/docs/latest/develop/ai/  ==>
+### .      https://redis.io/blog/level-up-rag-apps-with-redis-vector-library/  
+  
 reading up as im caching 
