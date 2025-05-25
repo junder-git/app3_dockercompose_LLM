@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7.0.11
+    image: redis/redis-stack-server
     container_name: ai-redis
     command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
