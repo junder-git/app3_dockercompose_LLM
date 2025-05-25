@@ -84,9 +84,8 @@ services:
     restart: unless-stopped
   #Database in JSON format with data persist docker volume and conf
   redis:
-    image: redis/redis-stack-server
+    build: ./redis
     container_name: ai-redis
-    command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
       - redis_data:/data
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
