@@ -19,6 +19,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Load environment variables
 load_dotenv()
 
+
 # Initialize Quart app
 app = Quart(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -26,11 +27,17 @@ app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ.get('SECURE_COOKIES', 'false
 app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-app.config['SESSION_COOKIE_NAME'] = 'session'  # optional override
 
-# Patch to support quart-session with Quart 0.19+
-app.session_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+# Correct: Redis client, not string
+app.config['SESSION_REDIS'] = redis.Redis.from_url(
+    os.environ.get('REDIS_URL', 'redis://redis:6379/0'),
+    decode_responses=True
+)
+
+# Compatibility for quart-session + Quart 0.19+
+app.config['SESSION_COOKIE_NAME'] = 'session'
+app.session_cookie_name = app.config['SESSION_COOKIE_NAME']
+
 
 
 # CSRF Protection
