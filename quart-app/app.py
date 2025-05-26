@@ -307,10 +307,10 @@ async def init_admin():
 async def startup():
     await init_admin()
 
-# Auth callbacks
-@auth.user_loader
-async def load_user(user_id):
-    return await get_user_by_id(user_id)
+# Auth callbacks - NOT NEEDED ANYMORE IN QUART
+#@auth.user_loader
+#async def load_user(user_id):
+    #return await get_user_by_id(user_id)
 
 # Decorators
 def admin_required(f):
