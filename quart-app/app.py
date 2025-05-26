@@ -19,6 +19,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Load environment variables
 load_dotenv()
 
+# Redis configuration
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+CHAT_CACHE_TTL = 3600  # 1 hour cache for AI responses
+USER_DATA_TTL = 0  # No expiry for user data
+CHAT_HISTORY_TTL = 0  # No expiry for chat history
+RATE_LIMIT_WINDOW = 60  # 1 minute
+RATE_LIMIT_MAX = 10  # 10 messages per minute
+
+# Admin credentials from environment
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # Initialize Quart app
 app = Quart(__name__)
@@ -47,18 +58,6 @@ app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
 # Initialize extensions
 auth = QuartAuth(app)
 Session(app)
-
-# Redis configuration
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-CHAT_CACHE_TTL = 3600  # 1 hour cache for AI responses
-USER_DATA_TTL = 0  # No expiry for user data
-CHAT_HISTORY_TTL = 0  # No expiry for chat history
-RATE_LIMIT_WINDOW = 60  # 1 minute
-RATE_LIMIT_MAX = 10  # 10 messages per minute
-
-# Admin credentials from environment
-ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # Redis connection pool
 class RedisPool:
