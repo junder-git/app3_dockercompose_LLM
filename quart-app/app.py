@@ -27,6 +27,8 @@ app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_REDIS'] = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+app.config['SESSION_COOKIE_NAME'] = 'session'
+
 
 # CSRF Protection
 app.config['WTF_CSRF_ENABLED'] = True
