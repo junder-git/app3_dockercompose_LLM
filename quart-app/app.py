@@ -4,22 +4,33 @@ import asyncio
 import aiohttp
 import html
 import hashlib
+import secrets
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Optional, Dict, Any, List
+from dotenv import load_dotenv
 
-from quart import Quart, render_template, request, jsonify, websocket, redirect, url_for, session
+from quart import Quart, render_template, request, jsonify, websocket, redirect, url_for, session, make_response
 from quart_auth import AuthUser, QuartAuth, login_user, logout_user, login_required, current_user
 from quart_session import Session
 import redis.asyncio as redis
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# Load environment variables
+load_dotenv()
+
 # Initialize Quart app
 app = Quart(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-app.config['QUART_AUTH_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ.get('SECURE_COOKIES', 'false').lower() == 'true'
+app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
+app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_REDIS'] = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+
+# CSRF Protection
+app.config['WTF_CSRF_ENABLED'] = True
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
 
 # Initialize extensions
 QuartAuth(app)
@@ -32,6 +43,10 @@ USER_DATA_TTL = 0  # No expiry for user data
 CHAT_HISTORY_TTL = 0  # No expiry for chat history
 RATE_LIMIT_WINDOW = 60  # 1 minute
 RATE_LIMIT_MAX = 10  # 10 messages per minute
+
+# Admin credentials from environment
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # Redis connection pool
 class RedisPool:
@@ -75,11 +90,11 @@ class User(AuthUser):
     
     def to_dict(self):
         return {
-            'id': self.id,
-            'username': self.username,
-            'password_hash': self.password_hash,
-            'is_admin': self.is_admin,
-            'created_at': self.created_at
+            'id': str(self.id),
+            'username': str(self.username),
+            'password_hash': str(self.password_hash),
+            'is_admin': str(self.is_admin).lower(),  # Convert boolean to string
+            'created_at': str(self.created_at)
         }
     
     @classmethod
@@ -88,9 +103,76 @@ class User(AuthUser):
             user_id=data.get('id'),
             username=data.get('username'),
             password_hash=data.get('password_hash'),
-            is_admin=data.get('is_admin', False),
+            is_admin=data.get('is_admin', 'false').lower() == 'true',  # Convert string back to boolean
             created_at=data.get('created_at')
         )
+
+# CSRF Token Management
+async def generate_csrf_token():
+    """Generate a new CSRF token"""
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(16)
+    return session['csrf_token']
+
+async def validate_csrf_token(token):
+    """Validate CSRF token"""
+    return token and 'csrf_token' in session and secrets.compare_digest(session['csrf_token'], token)
+
+# XSS Protection Helper
+def sanitize_html(text):
+    """Sanitize HTML to prevent XSS attacks"""
+    if text is None:
+        return None
+    # HTML escape special characters
+    return html.escape(str(text))
+
+def sanitize_dict(data):
+    """Recursively sanitize all string values in a dictionary"""
+    if isinstance(data, dict):
+        return {k: sanitize_dict(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_dict(item) for item in data]
+    elif isinstance(data, str):
+        return sanitize_html(data)
+    else:
+        return data
+
+# Security Headers Middleware
+@app.before_request
+async def add_security_headers():
+    """Add security headers to all responses"""
+    @app.after_request
+    async def set_security_headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        
+        # Add CSRF token to all HTML responses
+        if response.content_type and 'text/html' in response.content_type:
+            response.headers['X-CSRF-Token'] = await generate_csrf_token()
+        
+        return response
+
+# CSRF Protection for POST requests
+@app.before_request
+async def csrf_protect():
+    """Validate CSRF token for state-changing requests"""
+    if request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
+        # Skip CSRF for WebSocket and API endpoints that use different auth
+        if request.path.startswith('/ws') or request.path.startswith('/api/'):
+            return
+        
+        token = (await request.form).get('csrf_token') or request.headers.get('X-CSRF-Token')
+        if not await validate_csrf_token(token):
+            return jsonify({'error': 'Invalid CSRF token'}), 403
+
+# Template globals
+@app.context_processor
+async def inject_csrf_token():
+    """Inject CSRF token into all templates"""
+    return {'csrf_token': await generate_csrf_token()}
 
 # Redis helper functions
 async def get_redis():
@@ -145,15 +227,13 @@ async def save_message(user_id: str, role: str, content: str, session_id: str):
     """Save chat message to Redis"""
     r = await get_redis()
     
-    # Sanitize content
-    sanitized_content = html.escape(content)
-    
+    # Content is already sanitized when received
     message_id = f"{user_id}:{datetime.utcnow().timestamp()}"
     message_data = {
         'id': message_id,
         'user_id': user_id,
         'role': role,
-        'content': sanitized_content,
+        'content': content,  # Already sanitized
         'timestamp': datetime.utcnow().isoformat(),
         'session_id': session_id
     }
@@ -212,23 +292,23 @@ async def cache_response(prompt_hash: str, response: str):
 # Initialize admin user
 async def init_admin():
     """Create default admin user if not exists"""
-    admin = await get_user_by_username('admin')
+    admin = await get_user_by_username(ADMIN_USERNAME)
     if not admin:
         admin_user = User(
             user_id='1',
-            username='admin',
-            password_hash=generate_password_hash('admin123'),
+            username=ADMIN_USERNAME,
+            password_hash=generate_password_hash(ADMIN_PASSWORD),
             is_admin=True
         )
         await save_user(admin_user)
-        app.logger.info("Created default admin user")
+        app.logger.info(f"Created default admin user: {ADMIN_USERNAME}")
 
 @app.before_serving
 async def startup():
     await init_admin()
 
 # Auth callbacks
-@login_required
+@app.auth_manager.user_loader
 async def load_user(user_id):
     return await get_user_by_id(user_id)
 
@@ -253,8 +333,8 @@ async def index():
 async def login():
     if request.method == 'POST':
         data = await request.form
-        username = data.get('username')
-        password = data.get('password')
+        username = sanitize_html(data.get('username'))
+        password = data.get('password')  # Don't sanitize passwords
         
         user = await get_user_by_username(username)
         
@@ -270,8 +350,8 @@ async def login():
 async def register():
     if request.method == 'POST':
         data = await request.form
-        username = data.get('username')
-        password = data.get('password')
+        username = sanitize_html(data.get('username'))
+        password = data.get('password')  # Don't sanitize passwords
         
         # Validate inputs
         if len(username) < 3:
@@ -317,13 +397,13 @@ async def chat():
 async def chat_history():
     messages = await get_user_messages(current_user.id)
     
-    # Format messages for response
+    # Messages are already sanitized when saved
     formatted_messages = []
     for msg in messages:
         formatted_messages.append({
             'id': msg.get('id'),
             'role': msg.get('role'),
-            'content': html.unescape(msg.get('content', '')),  # Unescape for display
+            'content': msg.get('content', ''),  # Already sanitized
             'timestamp': msg.get('timestamp')
         })
     
@@ -355,13 +435,13 @@ async def admin_users():
 async def admin_user_chat(user_id):
     messages = await get_user_messages(user_id)
     
-    # Format messages for response
+    # Messages are already sanitized
     formatted_messages = []
     for msg in messages:
         formatted_messages.append({
             'id': msg.get('id'),
             'role': msg.get('role'),
-            'content': html.unescape(msg.get('content', '')),  # Unescape for display
+            'content': msg.get('content', ''),  # Already sanitized
             'timestamp': msg.get('timestamp')
         })
     
@@ -385,7 +465,11 @@ async def ws():
                     })
                     continue
                 
-                user_message = data['message']
+                # Sanitize user input
+                user_message = sanitize_html(data.get('message', ''))
+                if not user_message:
+                    continue
+                
                 session_id = session.get('session_id', f"{current_user.id}_{datetime.utcnow().timestamp()}")
                 
                 # Save user message to Redis asynchronously
@@ -417,16 +501,19 @@ async def ws():
                     full_response = await get_ai_response(user_message, websocket)
                     
                     if full_response:
+                        # Sanitize AI response before caching/saving
+                        sanitized_response = sanitize_html(full_response)
+                        
                         # Cache the response asynchronously
-                        asyncio.create_task(cache_response(prompt_hash, full_response))
+                        asyncio.create_task(cache_response(prompt_hash, sanitized_response))
                         # Save to Redis asynchronously
-                        asyncio.create_task(save_message(current_user.id, 'assistant', full_response, session_id))
+                        asyncio.create_task(save_message(current_user.id, 'assistant', sanitized_response, session_id))
                         
                         # Send completion signal
                         await websocket.send_json({
                             'type': 'complete',
                             'role': 'assistant',
-                            'content': full_response
+                            'content': sanitized_response
                         })
                 
     except asyncio.CancelledError:
