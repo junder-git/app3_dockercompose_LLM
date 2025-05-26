@@ -33,7 +33,7 @@ app.config['WTF_CSRF_ENABLED'] = True
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
 
 # Initialize extensions
-QuartAuth(app)
+auth = QuartAuth(app)
 Session(app)
 
 # Redis configuration
@@ -308,7 +308,7 @@ async def startup():
     await init_admin()
 
 # Auth callbacks
-@app.auth_manager.user_loader
+@auth.user_loader
 async def load_user(user_id):
     return await get_user_by_id(user_id)
 
