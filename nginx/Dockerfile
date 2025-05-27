@@ -16,12 +16,11 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY unauthorized.html /usr/share/nginx/html/
 COPY rate_limited.html /usr/share/nginx/html/
 
-# Create directory structure for static files
-RUN mkdir -p /usr/share/nginx/html/static/css /usr/share/nginx/html/static/js
+# Create directory structure for static files - # - /css /usr/share/nginx/html/static/js
+RUN mkdir -p /usr/share/nginx/html/static/  
 
-# Copy static CSS and JS files
-COPY static/css/styles.css /usr/share/nginx/html/static/css/
-COPY static/js/main.js /usr/share/nginx/html/static/js/
+# Copy static CSS and JS files from the correct paths
+COPY static/ /usr/share/nginx/html/static/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/
