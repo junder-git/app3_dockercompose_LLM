@@ -59,286 +59,6 @@ auth = QuartAuth(app)
 async def make_session_permanent():
     """Make sessions permanent (persist across browser sessions)"""
     session.permanent = True
-
-# Database management functions (add to your app.py)
-async def get_database_stats():
-    """Get comprehensive database statistics"""
-    r = await get_redis()
-    stats = {}
-    
-    try:
-        # Get all keys
-        all_keys = await r.keys("*")
-        stats['total_keys'] = len(all_keys)
-        
-        # Group keys by type
-        key_types = {}
-        for key in all_keys:
-            key_type = key.split(':')[0] if ':' in key else key
-            key_types[key_type] = key_types.get(key_type, 0) + 1
-        
-        stats['key_types'] = key_types
-        
-        # Get user statistics
-        user_ids = await r.smembers("users")
-        users_data = []
-        
-        for user_id in user_ids:
-            user_data = await r.hgetall(f"user:{user_id}")
-            if user_data:
-                # Get session count for this user
-                session_count = len(await r.zrange(f"user_sessions:{user_id}", 0, -1))
-                
-                # Get total message count
-                total_messages = 0
-                session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
-                for session_id in session_ids:
-                    message_count = await r.zcard(f"session_messages:{session_id}")
-                    total_messages += message_count
-                
-                users_data.append({
-                    'id': user_id,
-                    'username': user_data.get('username'),
-                    'is_admin': user_data.get('is_admin') == 'true',
-                    'created_at': user_data.get('created_at'),
-                    'session_count': session_count,
-                    'message_count': total_messages
-                })
-        
-        stats['users'] = users_data
-        stats['user_count'] = len(users_data)
-        
-        # Get next user ID
-        stats['next_user_id'] = await r.get("user_id_counter") or "Not set"
-        
-        # Memory usage (if available)
-        try:
-            info = await r.info('memory')
-            stats['memory_usage'] = {
-                'used_memory': info.get('used_memory_human'),
-                'used_memory_peak': info.get('used_memory_peak_human'),
-                'used_memory_dataset': info.get('used_memory_dataset')
-            }
-        except:
-            stats['memory_usage'] = None
-        
-        return stats
-        
-    except Exception as e:
-        app.logger.error(f"Error getting database stats: {e}")
-        return {'error': str(e)}
-
-async def cleanup_database(cleanup_type: str, admin_user_id: str):
-    """Perform database cleanup operations"""
-    r = await get_redis()
-    result = {'success': False, 'message': '', 'stats': {}}
-    
-    try:
-        # Log the cleanup attempt
-        app.logger.warning(f"Database cleanup initiated by admin user {admin_user_id}, type: {cleanup_type}")
-        
-        if cleanup_type == "complete_reset":
-            # Get stats before cleanup
-            before_stats = await get_database_stats()
-            
-            # Complete database flush
-            await r.flushdb()
-            result['message'] = "Complete database reset performed"
-            
-            # Recreate admin user
-            await recreate_admin_user()
-            
-        elif cleanup_type == "fix_users":
-            # Delete user-related keys only
-            user_keys = await r.keys("user:*")
-            username_keys = await r.keys("username:*")
-            
-            deleted_count = 0
-            if user_keys:
-                await r.delete(*user_keys)
-                deleted_count += len(user_keys)
-            if username_keys:
-                await r.delete(*username_keys)
-                deleted_count += len(username_keys)
-            
-            await r.delete("users")
-            await r.delete("user_id_counter")
-            deleted_count += 2
-            
-            # Recreate admin user
-            await recreate_admin_user()
-            
-            result['message'] = f"User data cleanup completed. {deleted_count} keys deleted."
-            
-        elif cleanup_type == "recreate_admin":
-            # Just recreate admin user
-            existing_admin_id = await r.get(f"username:{ADMIN_USERNAME}")
-            if existing_admin_id and existing_admin_id != 'admin':
-                # Remove old admin
-                await r.delete(f"user:{existing_admin_id}")
-                await r.srem("users", existing_admin_id)
-            
-            await recreate_admin_user()
-            result['message'] = "Admin user recreated successfully"
-            
-        elif cleanup_type == "clear_cache":
-            # Clear only AI response cache
-            cache_keys = await r.keys("ai_response:*")
-            rate_limit_keys = await r.keys("rate_limit:*")
-            
-            deleted_count = 0
-            if cache_keys:
-                await r.delete(*cache_keys)
-                deleted_count += len(cache_keys)
-            if rate_limit_keys:
-                await r.delete(*rate_limit_keys)
-                deleted_count += len(rate_limit_keys)
-            
-            result['message'] = f"Cache cleared. {deleted_count} cache keys deleted."
-            
-        elif cleanup_type == "fix_sessions":
-            # Fix orphaned sessions and messages
-            all_session_keys = await r.keys("session:*")
-            all_message_keys = await r.keys("session_messages:*")
-            
-            # Get valid user IDs
-            valid_users = await r.smembers("users")
-            
-            deleted_sessions = 0
-            for session_key in all_session_keys:
-                session_data = await r.hgetall(session_key)
-                if session_data:
-                    user_id = session_data.get('user_id')
-                    if user_id not in valid_users:
-                        # Delete orphaned session
-                        session_id = session_key.split(':')[1]
-                        await r.delete(session_key)
-                        await r.delete(f"session_messages:{session_id}")
-                        
-                        # Delete associated messages
-                        message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
-                        for msg_id in message_ids:
-                            await r.delete(f"message:{msg_id}")
-                        
-                        deleted_sessions += 1
-            
-            result['message'] = f"Session cleanup completed. {deleted_sessions} orphaned sessions removed."
-        
-        else:
-            result['message'] = "Invalid cleanup type"
-            return result
-        
-        # Get updated stats
-        result['stats'] = await get_database_stats()
-        result['success'] = True
-        result['timestamp'] = datetime.utcnow().isoformat()
-        
-        # Log successful cleanup
-        app.logger.info(f"Database cleanup completed successfully: {cleanup_type}")
-        
-    except Exception as e:
-        result['message'] = f"Cleanup failed: {str(e)}"
-        app.logger.error(f"Database cleanup failed: {e}")
-    
-    return result
-
-async def recreate_admin_user():
-    """Helper function to recreate admin user with proper settings"""
-    r = await get_redis()
-    
-    admin_data = {
-        'id': 'admin',
-        'username': ADMIN_USERNAME,
-        'password_hash': generate_password_hash(ADMIN_PASSWORD),
-        'is_admin': 'true',
-        'created_at': datetime.utcnow().isoformat()
-    }
-    
-    # Save admin user
-    await r.hset("user:admin", mapping=admin_data)
-    await r.set(f"username:{ADMIN_USERNAME}", "admin")
-    await r.sadd("users", "admin")
-    
-    # Set user ID counter for regular users
-    await r.set("user_id_counter", "1000")
-
-# API endpoints for admin database management (add these to your routes)
-
-@app.route('/api/admin/database/stats')
-@admin_required
-async def get_admin_database_stats():
-    """Get database statistics for admin panel"""
-    stats = await get_database_stats()
-    return jsonify(stats)
-
-@app.route('/api/admin/database/cleanup', methods=['POST'])
-@admin_required
-async def admin_database_cleanup():
-    """Perform database cleanup operations"""
-    data = await request.get_json()
-    cleanup_type = data.get('type')
-    
-    if not cleanup_type:
-        return jsonify({'error': 'Cleanup type is required'}), 400
-    
-    valid_types = ['complete_reset', 'fix_users', 'recreate_admin', 'clear_cache', 'fix_sessions']
-    if cleanup_type not in valid_types:
-        return jsonify({'error': 'Invalid cleanup type'}), 400
-    
-    # Perform cleanup
-    result = await cleanup_database(cleanup_type, current_user.auth_id)
-    
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 500
-
-@app.route('/api/admin/database/backup')
-@admin_required
-async def create_database_backup():
-    """Create a simple database backup (key dump)"""
-    try:
-        r = await get_redis()
-        
-        # Get all keys and their data
-        all_keys = await r.keys("*")
-        backup_data = {}
-        
-        for key in all_keys:
-            key_type = await r.type(key)
-            
-            if key_type == 'string':
-                backup_data[key] = {
-                    'type': 'string',
-                    'value': await r.get(key)
-                }
-            elif key_type == 'hash':
-                backup_data[key] = {
-                    'type': 'hash',
-                    'value': await r.hgetall(key)
-                }
-            elif key_type == 'set':
-                backup_data[key] = {
-                    'type': 'set',
-                    'value': list(await r.smembers(key))
-                }
-            elif key_type == 'zset':
-                backup_data[key] = {
-                    'type': 'zset',
-                    'value': await r.zrange(key, 0, -1, withscores=True)
-                }
-        
-        backup = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'total_keys': len(all_keys),
-            'data': backup_data
-        }
-        
-        return jsonify(backup)
-        
-    except Exception as e:
-        app.logger.error(f"Backup creation failed: {e}")
-        return jsonify({'error': str(e)}), 500
     
 # Redis connection pool
 class RedisPool:
@@ -1160,6 +880,286 @@ async def delete_session(session_id):
             session[current_session_key] = remaining_sessions[0].id
     
     return jsonify({'success': True})
+
+# Database management functions (add to your app.py)
+async def get_database_stats():
+    """Get comprehensive database statistics"""
+    r = await get_redis()
+    stats = {}
+    
+    try:
+        # Get all keys
+        all_keys = await r.keys("*")
+        stats['total_keys'] = len(all_keys)
+        
+        # Group keys by type
+        key_types = {}
+        for key in all_keys:
+            key_type = key.split(':')[0] if ':' in key else key
+            key_types[key_type] = key_types.get(key_type, 0) + 1
+        
+        stats['key_types'] = key_types
+        
+        # Get user statistics
+        user_ids = await r.smembers("users")
+        users_data = []
+        
+        for user_id in user_ids:
+            user_data = await r.hgetall(f"user:{user_id}")
+            if user_data:
+                # Get session count for this user
+                session_count = len(await r.zrange(f"user_sessions:{user_id}", 0, -1))
+                
+                # Get total message count
+                total_messages = 0
+                session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
+                for session_id in session_ids:
+                    message_count = await r.zcard(f"session_messages:{session_id}")
+                    total_messages += message_count
+                
+                users_data.append({
+                    'id': user_id,
+                    'username': user_data.get('username'),
+                    'is_admin': user_data.get('is_admin') == 'true',
+                    'created_at': user_data.get('created_at'),
+                    'session_count': session_count,
+                    'message_count': total_messages
+                })
+        
+        stats['users'] = users_data
+        stats['user_count'] = len(users_data)
+        
+        # Get next user ID
+        stats['next_user_id'] = await r.get("user_id_counter") or "Not set"
+        
+        # Memory usage (if available)
+        try:
+            info = await r.info('memory')
+            stats['memory_usage'] = {
+                'used_memory': info.get('used_memory_human'),
+                'used_memory_peak': info.get('used_memory_peak_human'),
+                'used_memory_dataset': info.get('used_memory_dataset')
+            }
+        except:
+            stats['memory_usage'] = None
+        
+        return stats
+        
+    except Exception as e:
+        app.logger.error(f"Error getting database stats: {e}")
+        return {'error': str(e)}
+
+async def cleanup_database(cleanup_type: str, admin_user_id: str):
+    """Perform database cleanup operations"""
+    r = await get_redis()
+    result = {'success': False, 'message': '', 'stats': {}}
+    
+    try:
+        # Log the cleanup attempt
+        app.logger.warning(f"Database cleanup initiated by admin user {admin_user_id}, type: {cleanup_type}")
+        
+        if cleanup_type == "complete_reset":
+            # Get stats before cleanup
+            before_stats = await get_database_stats()
+            
+            # Complete database flush
+            await r.flushdb()
+            result['message'] = "Complete database reset performed"
+            
+            # Recreate admin user
+            await recreate_admin_user()
+            
+        elif cleanup_type == "fix_users":
+            # Delete user-related keys only
+            user_keys = await r.keys("user:*")
+            username_keys = await r.keys("username:*")
+            
+            deleted_count = 0
+            if user_keys:
+                await r.delete(*user_keys)
+                deleted_count += len(user_keys)
+            if username_keys:
+                await r.delete(*username_keys)
+                deleted_count += len(username_keys)
+            
+            await r.delete("users")
+            await r.delete("user_id_counter")
+            deleted_count += 2
+            
+            # Recreate admin user
+            await recreate_admin_user()
+            
+            result['message'] = f"User data cleanup completed. {deleted_count} keys deleted."
+            
+        elif cleanup_type == "recreate_admin":
+            # Just recreate admin user
+            existing_admin_id = await r.get(f"username:{ADMIN_USERNAME}")
+            if existing_admin_id and existing_admin_id != 'admin':
+                # Remove old admin
+                await r.delete(f"user:{existing_admin_id}")
+                await r.srem("users", existing_admin_id)
+            
+            await recreate_admin_user()
+            result['message'] = "Admin user recreated successfully"
+            
+        elif cleanup_type == "clear_cache":
+            # Clear only AI response cache
+            cache_keys = await r.keys("ai_response:*")
+            rate_limit_keys = await r.keys("rate_limit:*")
+            
+            deleted_count = 0
+            if cache_keys:
+                await r.delete(*cache_keys)
+                deleted_count += len(cache_keys)
+            if rate_limit_keys:
+                await r.delete(*rate_limit_keys)
+                deleted_count += len(rate_limit_keys)
+            
+            result['message'] = f"Cache cleared. {deleted_count} cache keys deleted."
+            
+        elif cleanup_type == "fix_sessions":
+            # Fix orphaned sessions and messages
+            all_session_keys = await r.keys("session:*")
+            all_message_keys = await r.keys("session_messages:*")
+            
+            # Get valid user IDs
+            valid_users = await r.smembers("users")
+            
+            deleted_sessions = 0
+            for session_key in all_session_keys:
+                session_data = await r.hgetall(session_key)
+                if session_data:
+                    user_id = session_data.get('user_id')
+                    if user_id not in valid_users:
+                        # Delete orphaned session
+                        session_id = session_key.split(':')[1]
+                        await r.delete(session_key)
+                        await r.delete(f"session_messages:{session_id}")
+                        
+                        # Delete associated messages
+                        message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
+                        for msg_id in message_ids:
+                            await r.delete(f"message:{msg_id}")
+                        
+                        deleted_sessions += 1
+            
+            result['message'] = f"Session cleanup completed. {deleted_sessions} orphaned sessions removed."
+        
+        else:
+            result['message'] = "Invalid cleanup type"
+            return result
+        
+        # Get updated stats
+        result['stats'] = await get_database_stats()
+        result['success'] = True
+        result['timestamp'] = datetime.utcnow().isoformat()
+        
+        # Log successful cleanup
+        app.logger.info(f"Database cleanup completed successfully: {cleanup_type}")
+        
+    except Exception as e:
+        result['message'] = f"Cleanup failed: {str(e)}"
+        app.logger.error(f"Database cleanup failed: {e}")
+    
+    return result
+
+async def recreate_admin_user():
+    """Helper function to recreate admin user with proper settings"""
+    r = await get_redis()
+    
+    admin_data = {
+        'id': 'admin',
+        'username': ADMIN_USERNAME,
+        'password_hash': generate_password_hash(ADMIN_PASSWORD),
+        'is_admin': 'true',
+        'created_at': datetime.utcnow().isoformat()
+    }
+    
+    # Save admin user
+    await r.hset("user:admin", mapping=admin_data)
+    await r.set(f"username:{ADMIN_USERNAME}", "admin")
+    await r.sadd("users", "admin")
+    
+    # Set user ID counter for regular users
+    await r.set("user_id_counter", "1000")
+
+# API endpoints for admin database management (add these to your routes)
+
+@app.route('/api/admin/database/stats')
+@admin_required
+async def get_admin_database_stats():
+    """Get database statistics for admin panel"""
+    stats = await get_database_stats()
+    return jsonify(stats)
+
+@app.route('/api/admin/database/cleanup', methods=['POST'])
+@admin_required
+async def admin_database_cleanup():
+    """Perform database cleanup operations"""
+    data = await request.get_json()
+    cleanup_type = data.get('type')
+    
+    if not cleanup_type:
+        return jsonify({'error': 'Cleanup type is required'}), 400
+    
+    valid_types = ['complete_reset', 'fix_users', 'recreate_admin', 'clear_cache', 'fix_sessions']
+    if cleanup_type not in valid_types:
+        return jsonify({'error': 'Invalid cleanup type'}), 400
+    
+    # Perform cleanup
+    result = await cleanup_database(cleanup_type, current_user.auth_id)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
+@app.route('/api/admin/database/backup')
+@admin_required
+async def create_database_backup():
+    """Create a simple database backup (key dump)"""
+    try:
+        r = await get_redis()
+        
+        # Get all keys and their data
+        all_keys = await r.keys("*")
+        backup_data = {}
+        
+        for key in all_keys:
+            key_type = await r.type(key)
+            
+            if key_type == 'string':
+                backup_data[key] = {
+                    'type': 'string',
+                    'value': await r.get(key)
+                }
+            elif key_type == 'hash':
+                backup_data[key] = {
+                    'type': 'hash',
+                    'value': await r.hgetall(key)
+                }
+            elif key_type == 'set':
+                backup_data[key] = {
+                    'type': 'set',
+                    'value': list(await r.smembers(key))
+                }
+            elif key_type == 'zset':
+                backup_data[key] = {
+                    'type': 'zset',
+                    'value': await r.zrange(key, 0, -1, withscores=True)
+                }
+        
+        backup = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'total_keys': len(all_keys),
+            'data': backup_data
+        }
+        
+        return jsonify(backup)
+        
+    except Exception as e:
+        app.logger.error(f"Backup creation failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
