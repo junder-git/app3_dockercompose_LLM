@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 
 from quart import Quart, render_template, request, jsonify, websocket, redirect, url_for, session, make_response
 from quart_auth import AuthUser, QuartAuth, login_user, logout_user, login_required, current_user
-from quart_session import Session
 import redis.asyncio as redis
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -33,31 +32,24 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # Initialize Quart app
 app = Quart(__name__)
+
+# Configure Quart 0.20.0 built-in sessions
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Sessions last 7 days
+
+# Configure auth
 app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ.get('SECURE_COOKIES', 'false').lower() == 'true'
 app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_TYPE'] = 'redis'
-
-# Correct: Redis client, not string
-app.config['SESSION_REDIS'] = redis.Redis.from_url(
-    os.environ.get('REDIS_URL', 'redis://redis:6379/0'),
-    decode_responses=True
-)
-
-# Compatibility for quart-session + Quart 0.19+
-app.config['SESSION_COOKIE_NAME'] = 'session'
-app.session_cookie_name = app.config['SESSION_COOKIE_NAME']
-
-
-
-# CSRF Protection
-app.config['WTF_CSRF_ENABLED'] = True
-app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token doesn't expire
 
 # Initialize extensions
 auth = QuartAuth(app)
-Session(app)
+
+# Make sessions permanent by default
+@app.before_request
+async def make_session_permanent():
+    """Make sessions permanent (persist across browser sessions)"""
+    session.permanent = True
 
 # Redis connection pool
 class RedisPool:
@@ -118,7 +110,7 @@ class User(AuthUser):
             created_at=data.get('created_at')
         )
 
-# CSRF Token Management
+# CSRF Token Management using Quart's built-in sessions
 async def generate_csrf_token():
     """Generate a new CSRF token"""
     if 'csrf_token' not in session:
@@ -149,22 +141,20 @@ def sanitize_dict(data):
         return data
 
 # Security Headers Middleware
-@app.before_request
-async def add_security_headers():
+@app.after_request
+async def add_security_headers(response):
     """Add security headers to all responses"""
-    @app.after_request
-    async def set_security_headers(response):
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['X-XSS-Protection'] = '1; mode=block'
-        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-        
-        # Add CSRF token to all HTML responses
-        if response.content_type and 'text/html' in response.content_type:
-            response.headers['X-CSRF-Token'] = await generate_csrf_token()
-        
-        return response
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    
+    # Add CSRF token to all HTML responses
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['X-CSRF-Token'] = await generate_csrf_token()
+    
+    return response
 
 # CSRF Protection for POST requests
 @app.before_request
@@ -318,10 +308,11 @@ async def init_admin():
 async def startup():
     await init_admin()
 
-# Auth callbacks - NOT NEEDED ANYMORE IN QUART
-#@auth.user_loader
-#async def load_user(user_id):
-    #return await get_user_by_id(user_id)
+# User loader for quart-auth
+@auth.user_loader
+async def load_user(user_id):
+    """Load user for authentication"""
+    return await get_user_by_id(user_id)
 
 # Decorators
 def admin_required(f):
@@ -396,11 +387,17 @@ async def register():
 @login_required
 async def logout():
     logout_user()
+    # Clear session data
+    session.clear()
     return redirect(url_for('login'))
 
 @app.route('/chat')
 @login_required
 async def chat():
+    # Set session ID for chat tracking
+    if 'session_id' not in session:
+        session['session_id'] = f"{current_user.id}_{datetime.utcnow().timestamp()}"
+    
     return await render_template('chat.html', username=current_user.username)
 
 @app.route('/api/chat/history')
@@ -481,7 +478,10 @@ async def ws():
                 if not user_message:
                     continue
                 
-                session_id = session.get('session_id', f"{current_user.id}_{datetime.utcnow().timestamp()}")
+                # Note: WebSocket sessions have limitations in Quart 0.20.0
+                # Session modifications in WebSocket won't persist due to cookie constraints
+                # We'll use a fallback session ID based on user ID
+                session_id = f"{current_user.id}_{datetime.utcnow().date()}"
                 
                 # Save user message to Redis asynchronously
                 asyncio.create_task(save_message(current_user.id, 'user', user_message, session_id))
