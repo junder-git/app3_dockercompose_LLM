@@ -20,11 +20,19 @@ load_dotenv()
 
 # Redis configuration
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-CHAT_CACHE_TTL = 3600  # 1 hour cache for AI responses
+CHAT_CACHE_TTL = int(os.environ.get('CHAT_CACHE_TTL_SECONDS', '3600'))  # 1 hour cache for AI responses
 USER_DATA_TTL = 0  # No expiry for user data
 CHAT_HISTORY_TTL = 0  # No expiry for chat history
 RATE_LIMIT_WINDOW = 60  # 1 minute
-RATE_LIMIT_MAX = 10  # 10 messages per minute
+RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MESSAGES_PER_MINUTE', '10'))  # messages per minute
+
+# AI Model configuration
+OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://ollama:11434')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'deepseek-coder-v2:16b')
+MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE', '0.7'))
+MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
+MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))
+MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '300'))
 
 # Admin credentials from environment
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
@@ -35,7 +43,7 @@ app = Quart(__name__)
 
 # Configure Quart 0.20.0 built-in sessions
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Sessions last 7 days
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_LIFETIME_DAYS', '7')))
 
 # Configure auth
 app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ.get('SECURE_COOKIES', 'false').lower() == 'true'
@@ -248,8 +256,11 @@ async def save_message(user_id: str, role: str, content: str, session_id: str):
     # Add to user's message list (sorted by timestamp)
     await r.zadd(f"user_messages:{user_id}", {message_id: datetime.utcnow().timestamp()})
 
-async def get_user_messages(user_id: str, limit: int = 100) -> List[Dict]:
+async def get_user_messages(user_id: str, limit: int = None) -> List[Dict]:
     """Get user's chat messages from Redis"""
+    if limit is None:
+        limit = int(os.environ.get('CHAT_HISTORY_LIMIT', '100'))
+    
     r = await get_redis()
     
     # Get message IDs sorted by timestamp (newest first)
@@ -541,28 +552,36 @@ async def ws():
 
 async def get_ai_response(prompt: str, ws) -> str:
     """Get response from Ollama AI model with streaming"""
-    ollama_url = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
     full_response = ""
     
     # Send typing indicator
     await ws.send_json({'type': 'typing', 'status': 'start'})
     
     try:
-        timeout = aiohttp.ClientTimeout(total=300)  # 5 minute timeout
+        timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
-                f'{ollama_url}/api/generate',
+                f'{OLLAMA_URL}/api/generate',
                 json={
-                    'model': 'deepseek-r1:32b',
+                    'model': OLLAMA_MODEL,
                     'prompt': prompt,
                     'stream': True,
                     'options': {
-                        'temperature': 0.7,
-                        'top_p': 0.9,
-                        'num_predict': 2048
+                        'temperature': MODEL_TEMPERATURE,
+                        'top_p': MODEL_TOP_P,
+                        'num_predict': MODEL_MAX_TOKENS
                     }
                 }
             ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    app.logger.error(f"Ollama API error {response.status}: {error_text}")
+                    await ws.send_json({
+                        'type': 'error',
+                        'message': f'AI service error (HTTP {response.status}). Please try again.'
+                    })
+                    return ""
+
                 async for line in response.content:
                     if line:
                         try:
@@ -585,13 +604,13 @@ async def get_ai_response(prompt: str, ws) -> str:
     except asyncio.TimeoutError:
         await ws.send_json({
             'type': 'error',
-            'message': 'AI response timeout. Please try again.'
+            'message': f'AI response timeout after {MODEL_TIMEOUT}s. Please try again.'
         })
     except Exception as e:
         app.logger.error(f"Ollama API error: {e}")
         await ws.send_json({
             'type': 'error',
-            'message': 'Failed to get AI response. Please try again.'
+            'message': 'Failed to get AI response. Please check if the AI service is running.'
         })
     finally:
         # Stop typing indicator
