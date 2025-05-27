@@ -54,7 +54,7 @@ const Utils = {
 
     // Copy text to clipboard
     copyToClipboard: async function(text) {
-        /* try {
+        try {
             await navigator.clipboard.writeText(text);
             return true;
         } catch (err) {
@@ -76,8 +76,7 @@ const Utils = {
                 document.body.removeChild(textArea);
                 return false;
             }
-        } */
-       pass
+        }
     },
 
     // Render code block with syntax highlighting

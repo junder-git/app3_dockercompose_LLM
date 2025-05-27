@@ -163,12 +163,13 @@ a:hover {
     background-color: #1e1e1e;
 }
 
+/* Code Block Header Styling */
 .code-block-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: space-between; /* Adjust this property to control the spacing between buttons and text */
     align-items: center;
     background-color: #333;
-    padding: 8px 12px;
+    padding: 6px 10px; /* Slightly reduced padding for tighter alignment */
     border-bottom: 1px solid #444;
     font-size: 0.875rem;
 }
@@ -186,14 +187,15 @@ a:hover {
     gap: 8px;
 }
 
+/* Buttons within the header */
 .btn-copy, .btn-github {
     background: none;
     border: none;
     color: #94a3b8;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 2px 6px; /* Further reduced padding for smaller buttons */
     border-radius: 4px;
-    font-size: 0.875rem;
+    font-size: 0.75rem; /* Slightly reduce the font size */
     transition: all 0.2s ease;
 }
 
