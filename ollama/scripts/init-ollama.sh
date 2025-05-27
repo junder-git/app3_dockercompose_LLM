@@ -61,14 +61,14 @@ echo "Final model list:"
 ollama list
 
 # Test the API endpoint with the configured model
-echo "Testing API endpoint with model: $MODEL_NAME"
-curl -X POST http://localhost:11434/api/generate \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"model\": \"$MODEL_NAME\",
-        \"prompt\": \"Hello, please respond with 'API test successful'\",
-        \"stream\": false
-    }" | head -5 || echo "API test failed - this might be normal if model is still loading"
+#echo "Testing API endpoint with model: $MODEL_NAME"
+#curl -X POST http://localhost:11434/api/generate \
+#    -H "Content-Type: application/json" \
+#    -d "{
+#        \"model\": \"$MODEL_NAME\",
+#        \"prompt\": \"Hello, please respond with 'API test successful'\",
+#        \"stream\": false
+#    }" | head -5 || echo "API test failed - this might be normal if model is still loading"
 
 # Keep the container running
 echo "Ollama initialization complete. Model: $MODEL_NAME"
