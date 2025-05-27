@@ -14,7 +14,7 @@ def admin_required(f):
     @wraps(f)
     @login_required
     async def decorated_function(*args, **kwargs):
-        user_data = await get_current_user_data()
+        user_data = await get_current_user_data(current_user.auth_id)
         if not user_data or not user_data.is_admin:
             return redirect(url_for('chat.chat'))
         return await f(*args, **kwargs)
