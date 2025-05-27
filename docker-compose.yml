@@ -78,7 +78,7 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 8G
+          memory: 8G  #Max for one 3060ti
         reservations:
           cpus: '0.5'
           memory: 4G
