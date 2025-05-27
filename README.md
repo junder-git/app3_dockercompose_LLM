@@ -5,6 +5,6 @@ OKOK MASIVE REWORKING... read me incoming
   
 reading up as im caching 
 
-Chosen llm: https://ollama.com/library/deepseek-coder-v2
+Chosen llm (16b): https://ollama.com/library/deepseek-coder-v2
 
 https://apxml.com/posts/system-requirements-deepseek-models
