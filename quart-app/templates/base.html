@@ -31,16 +31,16 @@
                                 <i class="bi bi-chat"></i> Chat
                             </a>
                         </li>
-                        {% if current_user.is_admin %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="/admin">
-                                    <i class="bi bi-shield-lock"></i> Admin
-                                </a>
-                            </li>
-                        {% endif %}
+                        <!-- Note: Admin check needs to be done in the route since current_user doesn't have admin info -->
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin">
+                                <i class="bi bi-shield-lock"></i> Admin
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <span class="nav-link">
-                                <i class="bi bi-person-circle"></i> {{ current_user.username }}
+                                <i class="bi bi-person-circle"></i> 
+                                {% if username %}{{ username }}{% else %}User{% endif %}
                             </span>
                         </li>
                         <li class="nav-item">

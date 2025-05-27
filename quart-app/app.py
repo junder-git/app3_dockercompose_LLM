@@ -78,18 +78,14 @@ class RedisPool:
 
 redis_pool = RedisPool()
 
-# User model for auth
-class User(AuthUser):
+# User model - separate from AuthUser for Quart-Auth 0.11.0
+class User:
     def __init__(self, user_id=None, username=None, password_hash=None, is_admin=False, created_at=None):
         self.id = user_id
         self.username = username
         self.password_hash = password_hash
         self.is_admin = is_admin
         self.created_at = created_at or datetime.utcnow().isoformat()
-    
-    @property
-    def auth_id(self):
-        return str(self.id)
     
     def to_dict(self):
         return {
@@ -109,6 +105,13 @@ class User(AuthUser):
             is_admin=data.get('is_admin', 'false').lower() == 'true',  # Convert string back to boolean
             created_at=data.get('created_at')
         )
+
+# Helper function to get current user data
+async def get_current_user_data():
+    """Get current user data from Redis using current_user.auth_id"""
+    if await current_user.is_authenticated:
+        return await get_user_by_id(current_user.auth_id)
+    return None
 
 # CSRF Token Management using Quart's built-in sessions
 async def generate_csrf_token():
@@ -308,18 +311,16 @@ async def init_admin():
 async def startup():
     await init_admin()
 
-# User loader for quart-auth
-@auth.user_loader
-async def load_user(user_id):
-    """Load user for authentication"""
-    return await get_user_by_id(user_id)
+# Remove the user loader since it doesn't exist in 0.11.0
+# @auth.user_loader is not available in quart-auth 0.11.0
 
 # Decorators
 def admin_required(f):
     @wraps(f)
     @login_required
     async def decorated_function(*args, **kwargs):
-        if not current_user.is_admin:
+        user_data = await get_current_user_data()
+        if not user_data or not user_data.is_admin:
             return redirect(url_for('chat'))
         return await f(*args, **kwargs)
     return decorated_function
@@ -341,7 +342,8 @@ async def login():
         user = await get_user_by_username(username)
         
         if user and check_password_hash(user.password_hash, password):
-            login_user(user)
+            # In quart-auth 0.11.0, we just pass the user ID to AuthUser
+            login_user(AuthUser(user.id))
             return redirect(url_for('chat'))
         else:
             return await render_template('login.html', error='Invalid username or password')
@@ -394,16 +396,21 @@ async def logout():
 @app.route('/chat')
 @login_required
 async def chat():
+    # Get current user data
+    user_data = await get_current_user_data()
+    if not user_data:
+        return redirect(url_for('login'))
+    
     # Set session ID for chat tracking
     if 'session_id' not in session:
-        session['session_id'] = f"{current_user.id}_{datetime.utcnow().timestamp()}"
+        session['session_id'] = f"{current_user.auth_id}_{datetime.utcnow().timestamp()}"
     
-    return await render_template('chat.html', username=current_user.username)
+    return await render_template('chat.html', username=user_data.username)
 
 @app.route('/api/chat/history')
 @login_required
 async def chat_history():
-    messages = await get_user_messages(current_user.id)
+    messages = await get_user_messages(current_user.auth_id)
     
     # Messages are already sanitized when saved
     formatted_messages = []
@@ -466,7 +473,7 @@ async def ws():
             
             if data['type'] == 'chat':
                 # Check rate limit
-                if not await check_rate_limit(current_user.id):
+                if not await check_rate_limit(current_user.auth_id):
                     await websocket.send_json({
                         'type': 'error',
                         'message': 'Rate limit exceeded. Please wait a moment before sending another message.'
@@ -481,10 +488,10 @@ async def ws():
                 # Note: WebSocket sessions have limitations in Quart 0.20.0
                 # Session modifications in WebSocket won't persist due to cookie constraints
                 # We'll use a fallback session ID based on user ID
-                session_id = f"{current_user.id}_{datetime.utcnow().date()}"
+                session_id = f"{current_user.auth_id}_{datetime.utcnow().date()}"
                 
                 # Save user message to Redis asynchronously
-                asyncio.create_task(save_message(current_user.id, 'user', user_message, session_id))
+                asyncio.create_task(save_message(current_user.auth_id, 'user', user_message, session_id))
                 
                 # Send user message back for display
                 await websocket.send_json({
@@ -506,7 +513,7 @@ async def ws():
                         'cached': True
                     })
                     # Save to Redis asynchronously
-                    asyncio.create_task(save_message(current_user.id, 'assistant', cached_response, session_id))
+                    asyncio.create_task(save_message(current_user.auth_id, 'assistant', cached_response, session_id))
                 else:
                     # Get AI response from Ollama
                     full_response = await get_ai_response(user_message, websocket)
@@ -518,7 +525,7 @@ async def ws():
                         # Cache the response asynchronously
                         asyncio.create_task(cache_response(prompt_hash, sanitized_response))
                         # Save to Redis asynchronously
-                        asyncio.create_task(save_message(current_user.id, 'assistant', sanitized_response, session_id))
+                        asyncio.create_task(save_message(current_user.auth_id, 'assistant', sanitized_response, session_id))
                         
                         # Send completion signal
                         await websocket.send_json({
