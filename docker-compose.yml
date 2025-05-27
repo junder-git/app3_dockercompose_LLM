@@ -9,7 +9,6 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/static:/usr/share/nginx/html/static:ro  # Mount static files
       - nginx_cache:/var/cache/nginx
     depends_on:
