@@ -10,7 +10,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/static:/usr/share/nginx/html/static:ro  # Mount static files even though they are docker installed as well eheh
+      - ./nginx/static:/usr/share/nginx/html/static:ro  # Mount static files
       - nginx_cache:/var/cache/nginx
     depends_on:
       - quart-app
@@ -47,10 +47,10 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-8G}
+          memory: ${OLLAMA_MEMORY_LIMIT:-16G}
         reservations:
           cpus: '1.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-6G}
+          memory: ${OLLAMA_MEMORY_RESERVATION:-8G}
           devices:
             - driver: nvidia
               count: all
@@ -65,9 +65,21 @@ services:
       dockerfile: Dockerfile
     container_name: ai-quart-app
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - OLLAMA_URL=http://ollama:11434
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-coder-v2:16b}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
+      - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
+      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-2048}
+      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-300}
+      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-10}
+      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-3600}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-100}
+      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
     volumes:
       - ./quart-app:/app
     depends_on:
