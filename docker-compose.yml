@@ -47,10 +47,10 @@ services:
       resources:
         limits:
           cpus: '2.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-16G}
+          memory: ${OLLAMA_MEMORY_LIMIT:-8G}
         reservations:
           cpus: '1.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-8G}
+          memory: ${OLLAMA_MEMORY_RESERVATION:-6G}
           devices:
             - driver: nvidia
               count: all
