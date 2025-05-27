@@ -1,34 +1,31 @@
 # File: Dockerfile 
 # Directory: /deepseek-coder-setup/nginx/
 
-FROM nginx:1.25-alpine
+FROM nginx:alpine
+
+WORKDIR /usr/share/nginx/html
 
 # Remove default configuration
 RUN rm /etc/nginx/conf.d/default.conf
+RUN rm /etc/nginx/nginx.conf
 
-# Create templates directory (nginx 1.19+ feature)
-RUN mkdir -p /etc/nginx/templates
-
-# Copy our template configuration to the templates directory
-# nginx will automatically process *.template files and output to /etc/nginx/conf.d/
-COPY default.conf.template /etc/nginx/templates/default.conf.template
+# Copy our complete configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy static HTML files
 COPY unauthorized.html /usr/share/nginx/html/
 COPY rate_limited.html /usr/share/nginx/html/
 
-# Create directory structure for static files - MOUNTING IN THE COMPOSE INSTEAD
+# Create directory structure for static files - VOLUME MOUNTING THE SATIC FILES INSTEAD IN MY COMPOSE
 #RUN mkdir -p /usr/share/nginx/html/static/css /usr/share/nginx/html/static/js
-# Copy static files
+# Copy static CSS and JS files
 #COPY static/css/styles.css /usr/share/nginx/html/static/css/
 #COPY static/js/main.js /usr/share/nginx/html/static/js/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/
 
-WORKDIR /usr/share/nginx/html
-
 EXPOSE 80
 
-# Use default nginx command - it will automatically process templates
+# Default CMD - no need to modify
 CMD ["nginx", "-g", "daemon off;"]
