@@ -1,4 +1,4 @@
-/* static/css/styles.css */
+/* static/css/styles.css - Enhanced version with code block styling */
 
 /* Global Dark Theme Styles */
 body {
@@ -41,6 +41,14 @@ body {
     background-color: #333 !important;
     border-color: #0d6efd !important;
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Enhanced textarea for message input */
+#messageInput {
+    resize: none;
+    transition: height 0.1s ease;
+    font-family: inherit;
+    line-height: 1.5;
 }
 
 /* Buttons */
@@ -89,6 +97,35 @@ a:hover {
     color: #ea868f;
 }
 
+.error-message {
+    background-color: #dc3545;
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    animation: slideIn 0.3s ease;
+}
+
+.success-message {
+    background-color: #198754;
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Chat specific styles */
 .chat-container {
     height: calc(100vh - 200px);
@@ -105,11 +142,172 @@ a:hover {
     margin-bottom: 20px;
 }
 
+/* Message content styling */
+.message-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.message-text {
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* Code block styling */
+.code-block-container {
+    margin: 10px 0;
+    border: 1px solid #444;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #1e1e1e;
+}
+
+.code-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #333;
+    padding: 8px 12px;
+    border-bottom: 1px solid #444;
+    font-size: 0.875rem;
+}
+
+.code-language {
+    color: #94a3b8;
+    font-weight: 500;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+}
+
+.code-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-copy, .btn-github {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+}
+
+.btn-copy:hover, .btn-github:hover {
+    background-color: #444;
+    color: #e2e8f0;
+}
+
+.btn-copy.copied {
+    color: #22c55e;
+}
+
+.code-block-container pre {
+    margin: 0;
+    padding: 16px;
+    background-color: #0d1117 !important;
+    overflow-x: auto;
+}
+
+.code-block-container code {
+    font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Monaco, Consolas, 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #e6edf3 !important;
+}
+
+/* Prism.js theme overrides for dark mode */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+    color: #6a737d;
+}
+
+.token.punctuation {
+    color: #e6edf3;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+    color: #79c0ff;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+    color: #a5d6ff;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+    color: #ff7b72;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+    color: #ff7b72;
+}
+
+.token.function,
+.token.class-name {
+    color: #d2a8ff;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+    color: #ffa657;
+}
+
+/* Inline code styling */
+code:not([class*="language-"]) {
+    background-color: #333;
+    color: #e6edf3;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Monaco, Consolas, 'Ubuntu Mono', monospace;
+    font-size: 0.875em;
+}
+
+/* GitHub settings button in navbar */
+.github-settings-btn {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 1.1rem;
+    padding: 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.github-settings-btn:hover {
+    background-color: #333;
+    color: #e2e8f0;
+}
+
+/* Message styling continued */
 .message {
     margin-bottom: 15px;
     padding: 10px 15px;
     border-radius: 10px;
-    max-width: 70%;
+    max-width: 85%;
     word-wrap: break-word;
 }
 
@@ -122,132 +320,8 @@ a:hover {
 .assistant-message {
     background-color: #2b2b2b;
     border: 1px solid #444;
-    white-space: pre-wrap;
 }
 
 .assistant-message.cached {
     border-color: #28a745;
-}
-
-.typing-indicator {
-    display: none;
-    padding: 10px;
-    background-color: #2b2b2b;
-    border-radius: 10px;
-    width: fit-content;
-    margin-bottom: 10px;
-}
-
-.typing-indicator span {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: #666;
-    animation: typing 1.4s infinite;
-    margin: 0 2px;
-}
-
-.typing-indicator span:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-    animation-delay: 0.4s;
-}
-
-@keyframes typing {
-    0%, 60%, 100% {
-        transform: translateY(0);
-    }
-    30% {
-        transform: translateY(-10px);
-    }
-}
-
-.error-message {
-    background-color: #dc3545;
-    color: white;
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 10px;
-}
-
-.cached-indicator {
-    font-size: 0.8em;
-    color: #28a745;
-    margin-top: 5px;
-}
-
-/* Admin specific styles */
-.user-list {
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.chat-history {
-    max-height: 500px;
-    overflow-y: auto;
-    background-color: #1a1a1a;
-    border-radius: 10px;
-    padding: 15px;
-}
-
-.admin-message {
-    margin-bottom: 10px;
-    padding: 8px 12px;
-    border-radius: 8px;
-}
-
-.admin-user-message {
-    background-color: #0d6efd;
-    margin-left: auto;
-    max-width: 70%;
-    text-align: right;
-}
-
-.admin-assistant-message {
-    background-color: #2b2b2b;
-    border: 1px solid #444;
-    max-width: 70%;
-}
-
-.user-card {
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.user-card:hover {
-    background-color: #333;
-    transform: translateY(-2px);
-}
-
-/* Loading animation */
-.loading {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top-color: #0d6efd;
-    animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .chat-container {
-        height: calc(100vh - 150px);
-    }
-    
-    .message {
-        max-width: 85%;
-    }
-    
-    .card {
-        margin-bottom: 20px;
-    }
 }

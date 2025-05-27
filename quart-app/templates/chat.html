@@ -9,9 +9,14 @@
             <h2>
                 <i class="bi bi-chat-dots"></i> Chat with AI
             </h2>
-            <span class="text-muted">
-                <i class="bi bi-person"></i> {{ username }}
-            </span>
+            <div class="d-flex align-items-center gap-3">
+                <button type="button" class="github-settings-btn" id="githubSettingsBtn" title="GitHub Integration Settings">
+                    <i class="bi bi-github"></i>
+                </button>
+                <span class="text-muted">
+                    <i class="bi bi-person"></i> {{ username }}
+                </span>
+            </div>
         </div>
         <div class="chat-container">
             <div class="chat-messages" id="chatMessages">
@@ -23,12 +28,28 @@
                 <span></span>
             </div>
             <div class="input-group">
-                <input type="text" class="form-control" id="messageInput" 
-                       placeholder="Type your message..." autofocus>
+                <textarea class="form-control" id="messageInput" 
+                         placeholder="Type your message... (Shift+Enter for new line)" 
+                         rows="1" autofocus></textarea>
                 <button class="btn btn-primary" type="button" id="sendButton">
                     <i class="bi bi-send"></i> Send
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Help text for new features -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="alert alert-info" role="alert">
+            <h6><i class="bi bi-info-circle"></i> New Features:</h6>
+            <ul class="mb-0">
+                <li><strong>Code Highlighting:</strong> Code blocks are automatically detected and highlighted</li>
+                <li><strong>Copy Buttons:</strong> Click the copy icon on any code block to copy to clipboard</li>
+                <li><strong>GitHub Integration:</strong> Create gists directly from code blocks (configure via the GitHub icon above)</li>
+                <li><strong>Auto-resize Input:</strong> Message input grows automatically as you type</li>
+            </ul>
         </div>
     </div>
 </div>

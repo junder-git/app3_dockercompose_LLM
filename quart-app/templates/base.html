@@ -13,6 +13,9 @@
     
     <!-- Custom CSS -->
     <link href="/static/css/styles.css" rel="stylesheet">
+    
+    <!-- Prism.js CSS for syntax highlighting -->
+    <link href="/cdn/npm/prismjs@1.29.0/themes/prism-tomorrow.css" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -31,12 +34,18 @@
                                 <i class="bi bi-chat"></i> Chat
                             </a>
                         </li>
-                        <!-- Note: Admin check needs to be done in the route since current_user doesn't have admin info -->
                         <li class="nav-item">
                             <a class="nav-link" href="/admin">
                                 <i class="bi bi-shield-lock"></i> Admin
                             </a>
                         </li>
+                        {% if request.endpoint == 'chat' %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link github-settings-btn" id="navGithubSettingsBtn" title="GitHub Integration">
+                                <i class="bi bi-github"></i>
+                            </a>
+                        </li>
+                        {% endif %}
                         <li class="nav-item">
                             <span class="nav-link">
                                 <i class="bi bi-person-circle"></i> 
@@ -72,7 +81,18 @@
     <!-- Bootstrap JS Bundle from CDN (cached by Nginx) -->
     <script src="/cdn/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- Prism.js for syntax highlighting -->
+    <script src="/cdn/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+    <script src="/cdn/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    
     <!-- Custom JS -->
     <script src="/static/js/main.js"></script>
+    
+    <!-- Initialize Prism autoloader -->
+    <script>
+        if (window.Prism) {
+            Prism.plugins.autoloader.languages_path = '/cdn/npm/prismjs@1.29.0/components/';
+        }
+    </script>
 </body>
 </html>
