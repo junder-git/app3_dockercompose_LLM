@@ -25,7 +25,7 @@ services:
           memory: 256M
     restart: unless-stopped
   
- # Ollama Model Server with GPU acceleration  
+  # Ollama Model Server with GPU acceleration  
   ollama:
     build:
       context: ./ollama

@@ -1,31 +1,31 @@
-# File: Dockerfile 
-# Directory: /deepseek-coder-setup/nginx/
+# nginx/Dockerfile - Clean NGINX container with static files
 
 FROM nginx:alpine
 
+# Set working directory
 WORKDIR /usr/share/nginx/html
 
-# Remove default configuration
-RUN rm /etc/nginx/conf.d/default.conf
-RUN rm /etc/nginx/nginx.conf
+# Remove default NGINX configuration and content
+RUN rm /etc/nginx/conf.d/default.conf && \
+    rm /etc/nginx/nginx.conf && \
+    rm -rf /usr/share/nginx/html/*
 
-# Copy our complete configuration
+# Copy NGINX configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy static HTML files
+# Copy static HTML error pages
 COPY unauthorized.html /usr/share/nginx/html/
 COPY rate_limited.html /usr/share/nginx/html/
 
-# Create directory structure for static files - VOLUME MOUNTING THE SATIC FILES INSTEAD IN MY COMPOSE
-#RUN mkdir -p /usr/share/nginx/html/static/css /usr/share/nginx/html/static/js
-# Copy static CSS and JS files
-#COPY static/css/styles.css /usr/share/nginx/html/static/css/
-#COPY static/js/main.js /usr/share/nginx/html/static/js/
+# Copy static assets (CSS, JS, etc.)
+COPY static/ /usr/share/nginx/html/static/
 
 # Set proper permissions
-RUN chmod -R 755 /usr/share/nginx/html/
+RUN chmod -R 755 /usr/share/nginx/html/ && \
+    chown -R nginx:nginx /usr/share/nginx/html/
 
+# Expose port
 EXPOSE 80
 
-# Default CMD - no need to modify
+# Start NGINX
 CMD ["nginx", "-g", "daemon off;"]

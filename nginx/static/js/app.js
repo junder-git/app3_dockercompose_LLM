@@ -31,26 +31,33 @@ const RegisterPage = {
     }
 };
 
-// Page-specific initialization
-document.addEventListener('DOMContentLoaded', function() {
-    // Load Prism.js for syntax highlighting
+// Initialize Prism.js for syntax highlighting
+function initializePrism() {
+    // Load Prism.js CSS
     const prismCSS = document.createElement('link');
     prismCSS.rel = 'stylesheet';
     prismCSS.href = '/cdn/npm/prismjs@1.29.0/themes/prism-tomorrow.css';
     document.head.appendChild(prismCSS);
 
-    const prismJS = document.createElement('script');
-    prismJS.src = '/cdn/npm/prismjs@1.29.0/components/prism-core.min.js';
-    prismJS.onload = () => {
-        // Load additional language components
-        const languages = ['markup', 'css', 'javascript', 'python', 'java', 'cpp', 'csharp', 'php', 'ruby', 'go', 'rust', 'kotlin', 'swift', 'sql', 'bash', 'json', 'yaml', 'markdown'];
-        languages.forEach(lang => {
-            const script = document.createElement('script');
-            script.src = `/cdn/npm/prismjs@1.29.0/components/prism-${lang}.min.js`;
-            document.head.appendChild(script);
-        });
-    };
-    document.head.appendChild(prismJS);
+    // Configure Prism autoloader if available
+    if (window.Prism && window.Prism.plugins && window.Prism.plugins.autoloader) {
+        window.Prism.plugins.autoloader.languages_path = '/cdn/npm/prismjs@1.29.0/components/';
+    }
+    
+    // Load additional language components manually if autoloader isn't working
+    const languages = ['markup', 'css', 'javascript', 'python', 'java', 'cpp', 'csharp', 'php', 'ruby', 'go', 'rust', 'kotlin', 'swift', 'sql', 'bash', 'json', 'yaml', 'markdown'];
+    languages.forEach(lang => {
+        const script = document.createElement('script');
+        script.src = `/cdn/npm/prismjs@1.29.0/components/prism-${lang}.min.js`;
+        script.async = true;
+        document.head.appendChild(script);
+    });
+}
+
+// Page-specific initialization
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Prism.js for syntax highlighting
+    initializePrism();
 
     // Initialize GitHub integration
     if (window.GitHubIntegration) {
@@ -74,4 +81,11 @@ document.addEventListener('DOMContentLoaded', function() {
         ChatApp.currentPage = 'register';
         RegisterPage.init();
     }
+    
+    // Apply syntax highlighting to any existing code blocks
+    setTimeout(() => {
+        if (window.Prism) {
+            window.Prism.highlightAll();
+        }
+    }, 500);
 });

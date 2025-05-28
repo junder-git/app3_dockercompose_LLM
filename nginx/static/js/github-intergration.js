@@ -3,11 +3,28 @@
 const GitHubIntegration = {
     repos: [],
     currentRepo: null,
+    settings: {
+        token: null,
+        username: '',
+        hasToken: false
+    },
     
     init: function() {
         this.loadSettings();
         this.createSettingsModal();
         this.createRepoModal();
+        this.bindEvents();
+    },
+
+    bindEvents: function() {
+        // Bind GitHub settings button in navbar
+        const navBtn = document.getElementById('navGithubSettingsBtn');
+        if (navBtn) {
+            navBtn.addEventListener('click', () => {
+                const modal = new bootstrap.Modal(document.getElementById('githubSettingsModal'));
+                modal.show();
+            });
+        }
     },
 
     loadSettings: async function() {
@@ -94,7 +111,7 @@ const GitHubIntegration = {
                                 <label for="githubToken" class="form-label">Personal Access Token</label>
                                 <input type="password" class="form-control" id="githubToken" 
                                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                                       value="${window.ChatApp?.githubToken || ''}">
+                                       value="">
                                 <div class="form-text">
                                     Create a token at: <a href="https://github.com/settings/tokens" target="_blank">GitHub Settings</a>
                                     <br>Required scopes: <code>repo</code> (for private repos) or <code>public_repo</code> (for public only)
@@ -104,14 +121,14 @@ const GitHubIntegration = {
                                 <label for="githubUsername" class="form-label">Username</label>
                                 <input type="text" class="form-control" id="githubUsername" 
                                        placeholder="your-username"
-                                       value="${window.ChatApp?.githubUsername || ''}">
+                                       value="${this.settings.username || ''}">
                             </div>
                             <div class="d-grid gap-2">
                                 <button type="button" class="btn btn-primary" id="saveGithubSettings">
                                     <i class="bi bi-save"></i> Save Settings
                                 </button>
                                 <button type="button" class="btn btn-success" id="browseGithubRepos" 
-                                        ${window.ChatApp?.githubToken ? '' : 'disabled'}>
+                                        ${this.settings.hasToken ? '' : 'disabled'}>
                                     <i class="bi bi-folder2-open"></i> Browse My Repositories
                                 </button>
                             </div>
@@ -126,15 +143,20 @@ const GitHubIntegration = {
         document.body.appendChild(modalContainer.firstElementChild);
 
         // Add save functionality
-        document.getElementById('saveGithubSettings').addEventListener('click', () => {
+        document.getElementById('saveGithubSettings').addEventListener('click', async () => {
             const token = document.getElementById('githubToken').value.trim();
             const username = document.getElementById('githubUsername').value.trim();
             
             if (token && username) {
-                this.saveSettings(token, username);
-                document.getElementById('browseGithubRepos').disabled = false;
+                const success = await this.saveSettings(token, username);
+                if (success) {
+                    document.getElementById('browseGithubRepos').disabled = false;
+                    // Store token temporarily for API calls
+                    this.settings.token = token;
+                }
+            } else {
                 if (window.Utils) {
-                    window.Utils.showSuccess('GitHub settings saved!', document.querySelector('.chat-messages') || document.body);
+                    window.Utils.showError('Both token and username are required', document.querySelector('.chat-messages') || document.body);
                 }
             }
         });
@@ -209,7 +231,7 @@ const GitHubIntegration = {
     },
 
     fetchRepos: async function() {
-        if (!window.ChatApp?.githubToken) {
+        if (!this.settings.token) {
             this.showError('GitHub token not configured');
             return;
         }
@@ -227,7 +249,7 @@ const GitHubIntegration = {
         try {
             const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
                 headers: {
-                    'Authorization': `token ${window.ChatApp.githubToken}`,
+                    'Authorization': `token ${this.settings.token}`,
                     'Accept': 'application/vnd.github.v3+json'
                 }
             });
@@ -340,7 +362,7 @@ const GitHubIntegration = {
             const url = `https://api.github.com/repos/${repoFullName}/contents/${path}`;
             const response = await fetch(url, {
                 headers: {
-                    'Authorization': `token ${window.ChatApp.githubToken}`,
+                    'Authorization': `token ${this.settings.token}`,
                     'Accept': 'application/vnd.github.v3+json'
                 }
             });
@@ -538,7 +560,7 @@ const GitHubIntegration = {
     },
 
     createGist: async function(code, language) {
-        if (!window.ChatApp?.githubToken) {
+        if (!this.settings.token) {
             const modal = new bootstrap.Modal(document.getElementById('githubSettingsModal'));
             modal.show();
             return;
@@ -549,7 +571,7 @@ const GitHubIntegration = {
             const response = await fetch('https://api.github.com/gists', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `token ${window.ChatApp.githubToken}`,
+                    'Authorization': `token ${this.settings.token}`,
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -587,6 +609,17 @@ const GitHubIntegration = {
             reverseMapping[lang] = ext;
         }
         return reverseMapping[language.toLowerCase()] || 'txt';
+    },
+
+    showError: function(message) {
+        const repoList = document.getElementById('repoList');
+        if (repoList) {
+            repoList.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> ${message}
+                </div>
+            `;
+        }
     }
 };
 

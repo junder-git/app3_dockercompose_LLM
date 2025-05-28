@@ -9,7 +9,7 @@ from quart_auth import AuthUser, QuartAuth, current_user
 from werkzeug.security import generate_password_hash
 
 # Import blueprints
-from blueprints import auth_bp, chat_bp, admin_bp, api_bp
+from blueprints import auth_bp, chat_bp, admin_bp, api_bp, github_bp
 from blueprints.database import get_user_by_username, save_user
 from blueprints.models import User
 from blueprints.utils import generate_csrf_token, validate_csrf_token
@@ -37,6 +37,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(api_bp)
+app.register_blueprint(github_bp)
 
 # Make sessions permanent by default
 @app.before_request

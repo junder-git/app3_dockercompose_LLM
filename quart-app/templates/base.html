@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>{% block title %}AI Chat Application{% endblock %}</title>
     
     <!-- Bootstrap CSS from CDN (cached by Nginx) -->
@@ -39,11 +40,11 @@
                                 <i class="bi bi-shield-lock"></i> Admin
                             </a>
                         </li>
-                        {% if request.endpoint == 'chat' %}
+                        {% if request.endpoint == 'chat.chat' %}
                         <li class="nav-item">
-                            <a href="#" class="nav-link github-settings-btn" id="navGithubSettingsBtn" title="GitHub Integration">
+                            <button type="button" class="nav-link btn btn-link github-settings-btn" id="navGithubSettingsBtn" title="GitHub Integration">
                                 <i class="bi bi-github"></i>
-                            </a>
+                            </button>
                         </li>
                         {% endif %}
                         <li class="nav-item">
@@ -85,18 +86,11 @@
     <script src="/cdn/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
     <script src="/cdn/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     
-    <!-- Custom JS -->
+    <!-- Custom JS - Load in order -->
     <script src="/static/js/utils.js"></script>
-    <script src="/static/js/admin.js"></script>
-    <script src="/static/js/chat.js"></script>
     <script src="/static/js/github-intergration.js"></script>
+    <script src="/static/js/chat.js"></script>
+    <script src="/static/js/admin.js"></script>
     <script src="/static/js/app.js"></script>
-    
-    <!-- Initialize Prism autoloader -->
-    <script>
-        if (window.Prism) {
-            Prism.plugins.autoloader.languages_path = '/cdn/npm/prismjs@1.29.0/components/';
-        }
-    </script>
 </body>
 </html>
