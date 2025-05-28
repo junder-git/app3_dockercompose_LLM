@@ -1,6 +1,7 @@
 # ollama_client.py
 import os
 import json
+import asyncio
 import aiohttp
 from typing import List, Dict
 from .utils import sanitize_html
@@ -21,31 +22,39 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
     await ws.send_json({'type': 'typing', 'status': 'start'})
     
     try:
-        # Build conversation context
-        conversation = []
+        # Build context from chat history
+        context = ""
         if chat_history:
             for msg in chat_history[-10:]:  # Last 10 messages for context
-                conversation.append({
-                    "role": msg.get('role'),
-                    "content": msg.get('content', '')
-                })
+                role = msg.get('role')
+                content = msg.get('content', '')
+                if role == 'user':
+                    context += f"### Human:\n{content}\n\n"
+                elif role == 'assistant':
+                    context += f"### Assistant:\n{content}\n\n"
         
-        # Add current prompt
-        conversation.append({"role": "user", "content": prompt})
+        # Format the complete prompt - avoiding double BOS tokens
+        full_prompt = f"{context}### Human:\n{prompt}\n\n### Assistant:\n"
         
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Use chat endpoint for better conversation handling
+            # Use generate endpoint to avoid BOS token issues
             async with session.post(
-                f'{OLLAMA_URL}/api/chat',
+                f'{OLLAMA_URL}/api/generate',
                 json={
                     'model': OLLAMA_MODEL,
-                    'messages': conversation,
+                    'prompt': full_prompt,
                     'stream': True,
                     'options': {
                         'temperature': MODEL_TEMPERATURE,
                         'top_p': MODEL_TOP_P,
-                        'num_predict': MODEL_MAX_TOKENS
+                        'num_predict': MODEL_MAX_TOKENS,
+                        'stop': ['### Human:', '\n### Human:', '<|endoftext|>', '<|end|>'],
+                        'num_ctx': 4096,
+                        'repeat_penalty': 1.1,
+                        'mirostat': 2,  # Better coherence
+                        'mirostat_tau': 5.0,
+                        'mirostat_eta': 0.1
                     }
                 }
             ) as response:
@@ -62,8 +71,8 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
                     if line:
                         try:
                             chunk = json.loads(line)
-                            if 'message' in chunk and 'content' in chunk['message']:
-                                chunk_text = chunk['message']['content']
+                            if 'response' in chunk:
+                                chunk_text = chunk['response']
                                 full_response += chunk_text
                                 # Stream each chunk to client
                                 await ws.send_json({
@@ -77,7 +86,7 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
                         except json.JSONDecodeError:
                             continue
                         
-    except aiohttp.ClientTimeout:
+    except asyncio.TimeoutError:
         await ws.send_json({
             'type': 'error',
             'message': f'AI response timeout after {MODEL_TIMEOUT}s. Please try again.'
@@ -92,4 +101,9 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         # Stop typing indicator
         await ws.send_json({'type': 'typing', 'status': 'stop'})
     
-    return full_response
+    # Clean up the response (remove any trailing stop tokens)
+    for stop_token in ['### Human:', '\n### Human:', '<|endoftext|>', '<|end|>']:
+        if full_response.endswith(stop_token):
+            full_response = full_response[:-len(stop_token)]
+    
+    return full_response.strip()

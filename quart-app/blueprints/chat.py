@@ -1,5 +1,5 @@
 # blueprints/chat.py
-from quart import Blueprint, render_template, websocket, jsonify
+from quart import Blueprint, render_template, websocket, jsonify, redirect, url_for, current_app
 from quart_auth import login_required, current_user
 import json
 import asyncio
@@ -52,8 +52,8 @@ async def ws():
                 if not user_message:
                     continue
                 
-                # Save user message to current session
-                asyncio.create_task(save_message(current_user.auth_id, 'user', user_message, current_session_id))
+                # Save user message to current session (await to ensure it's saved)
+                await save_message(current_user.auth_id, 'user', user_message, current_session_id)
                 
                 # Send user message back for display
                 await websocket.send_json({
@@ -74,8 +74,8 @@ async def ws():
                         'content': cached_response,
                         'cached': True
                     })
-                    # Save to current session
-                    asyncio.create_task(save_message(current_user.auth_id, 'assistant', cached_response, current_session_id))
+                    # Save to current session (await to ensure it's saved)
+                    await save_message(current_user.auth_id, 'assistant', cached_response, current_session_id)
                 else:
                     # Get AI response from Ollama with chat history
                     chat_history = await get_session_messages(current_session_id, 10)  # Last 10 messages for context
@@ -85,10 +85,10 @@ async def ws():
                         # Sanitize AI response before caching/saving
                         sanitized_response = sanitize_html(full_response)
                         
-                        # Cache the response asynchronously
-                        asyncio.create_task(cache_response(prompt_hash, sanitized_response))
+                        # Cache the response (await both to ensure they complete)
+                        await cache_response(prompt_hash, sanitized_response)
                         # Save to current session
-                        asyncio.create_task(save_message(current_user.auth_id, 'assistant', sanitized_response, current_session_id))
+                        await save_message(current_user.auth_id, 'assistant', sanitized_response, current_session_id)
                         
                         # Send completion signal
                         await websocket.send_json({

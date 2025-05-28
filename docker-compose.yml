@@ -25,7 +25,7 @@ services:
           memory: 256M
     restart: unless-stopped
   
-  # Ollama Model Server with GPU acceleration  
+ # Ollama Model Server with GPU acceleration  
   ollama:
     build:
       context: ./ollama
@@ -38,6 +38,9 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-coder-v2:16b}
+      #- OLLAMA_VERBOSE=0  # Suppress verbose logging
+      #- OLLAMA_NOPRUNE=1  # Prevent token pruning
+      #- OLLAMA_DEBUG=false  # Disable debug mode
     ports:
       - "11434:11434"
     networks:

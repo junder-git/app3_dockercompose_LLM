@@ -1,10 +1,10 @@
 # blueprints/admin.py
-from quart import Blueprint, render_template, jsonify, request, redirect, url_for
+from quart import Blueprint, render_template, jsonify, request, redirect, url_for, current_app
 from quart_auth import login_required, current_user
 from functools import wraps
 from .database import (
     get_current_user_data, get_all_users, get_user_messages,
-    get_database_stats, cleanup_database
+    get_database_stats, cleanup_database, delete_user, delete_user_messages_only
 )
 from datetime import datetime
 
@@ -134,3 +134,29 @@ async def create_database_backup():
     except Exception as e:
         current_app.logger.error(f"Backup creation failed: {e}")
         return jsonify({'error': str(e)}), 500
+
+@admin_bp.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@admin_required
+async def delete_user_endpoint(user_id):
+    """Delete a specific user and all their data"""
+    # Check if trying to delete self
+    if user_id == current_user.auth_id:
+        return jsonify({'error': 'Cannot delete your own account'}), 400
+    
+    result = await delete_user(user_id)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+@admin_bp.route('/api/admin/users/<user_id>/messages', methods=['DELETE'])
+@admin_required
+async def delete_user_messages_endpoint(user_id):
+    """Delete only the messages for a specific user"""
+    result = await delete_user_messages_only(user_id)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
