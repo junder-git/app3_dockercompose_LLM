@@ -154,40 +154,37 @@ a:hover {
     line-height: 1.5;
 }
 
-/* Code block styling */
-.code-block-container {
-    margin: 10px 0;
-    border: 1px solid #444;
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: #1e1e1e;
-}
-
 /* Code Block Header Styling - ULTRA COMPACT */
 .code-block-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     background-color: #333;
-    padding: 2px 6px; /* Minimal padding */
+    padding: 0 6px; /* Remove vertical padding completely */
     border-bottom: 1px solid #444;
-    font-size: 0.7rem; /* Smaller font size */
-    height: 24px; /* Reduced height */
+    font-size: 0.7rem;
+    height: 22px; /* Further reduced height */
+    line-height: 22px; /* Match line height to container height */
 }
 
 .code-language {
     color: #94a3b8;
     font-weight: 500;
     text-transform: uppercase;
-    font-size: 0.65rem; /* Even smaller */
+    font-size: 0.65rem;
     letter-spacing: 0.3px;
     line-height: 1;
+    margin: 0; /* Ensure no margin */
+    padding: 0; /* Ensure no padding */
 }
 
 .code-actions {
     display: flex;
-    gap: 2px; /* Minimal gap between buttons */
+    gap: 1px; /* Minimal gap between buttons */
     align-items: center;
+    height: 100%; /* Full height of parent */
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
 }
 
 /* Buttons within the header - ULTRA COMPACT */
@@ -196,13 +193,13 @@ a:hover {
     border: none;
     color: #94a3b8;
     cursor: pointer;
-    padding: 1px 3px; /* Extremely minimal padding */
+    padding: 0; /* Remove all padding */
     margin: 0; /* Remove all margins */
     border-radius: 2px;
-    font-size: 0.65rem; /* Smaller font */
+    font-size: 0.65rem;
     line-height: 1;
-    height: 18px; /* Smaller height */
-    width: 20px; /* Fixed width for consistency */
+    height: 18px; /* Fixed height */
+    width: 18px; /* Fixed width */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -210,8 +207,9 @@ a:hover {
 }
 
 .btn-copy i, .btn-github i {
-    font-size: 0.7rem; /* Smaller icons */
+    font-size: 0.65rem; /* Smaller icons */
     line-height: 1;
+    margin: 0; /* No margin on icons */
 }
 
 .btn-copy:hover, .btn-github:hover {

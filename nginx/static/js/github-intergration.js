@@ -10,25 +10,67 @@ const GitHubIntegration = {
         this.createRepoModal();
     },
 
-    loadSettings: function() {
-        if (window.ChatApp) {
-            window.ChatApp.githubToken = localStorage.getItem('github_token') || null;
-            window.ChatApp.githubUsername = localStorage.getItem('github_username') || null;
+    loadSettings: async function() {
+        try {
+            const response = await fetch('/api/github/settings');
+            if (response.ok) {
+                const data = await response.json();
+                this.settings.username = data.username;
+                // Token is stored server-side, we just know if it exists
+                this.settings.hasToken = data.has_token;
+                
+                // Update UI based on token availability
+                this.updateGitHubButtons();
+            }
+        } catch (error) {
+            console.error('Failed to load GitHub settings:', error);
         }
     },
 
-    saveSettings: function(token, username) {
-        localStorage.setItem('github_token', token);
-        localStorage.setItem('github_username', username);
-        if (window.ChatApp) {
-            window.ChatApp.githubToken = token;
-            window.ChatApp.githubUsername = username;
+    saveSettings: async function(token, username) {
+        try {
+            const response = await fetch('/api/github/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify({ token, username })
+            });
+            
+            if (response.ok) {
+                this.settings.token = token;
+                this.settings.username = username;
+                this.settings.hasToken = true;
+                this.updateGitHubButtons();
+                
+                if (window.Utils) {
+                    window.Utils.showSuccess('GitHub settings saved!', document.querySelector('.chat-messages') || document.body);
+                }
+                return true;
+            } else {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to save settings');
+            }
+        } catch (error) {
+            if (window.Utils) {
+                window.Utils.showError(error.message, document.querySelector('.chat-messages') || document.body);
+            }
+            return false;
         }
-        
+    },
+
+    updateGitHubButtons: function() {
         // Update GitHub buttons visibility
         document.querySelectorAll('.btn-github').forEach(btn => {
-            btn.style.display = token ? 'inline-block' : 'none';
+            btn.style.display = this.settings.hasToken ? 'inline-block' : 'none';
         });
+        
+        // Update browse repos button
+        const browseBtn = document.getElementById('browseGithubRepos');
+        if (browseBtn) {
+            browseBtn.disabled = !this.settings.hasToken;
+        }
     },
 
     createSettingsModal: function() {

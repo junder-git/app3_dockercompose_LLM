@@ -338,6 +338,12 @@ const ChatPage = {
             const data = await response.json();
             
             this.elements.chatMessages.innerHTML = '';
+            
+            // Store current session info if returned
+            if (data.session) {
+                this.currentSession = data.session;
+            }
+            
             data.messages.forEach(msg => {
                 this.addMessage(msg.role, msg.content);
             });

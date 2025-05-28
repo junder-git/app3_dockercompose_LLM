@@ -16,6 +16,10 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 async def chat_history():
     # Get current session for this user
     current_session_id = await get_or_create_current_session(current_user.auth_id)
+    
+    # Get session object
+    session_obj = await get_chat_session(current_session_id)
+    
     messages = await get_session_messages(current_session_id)
     
     formatted_messages = []
@@ -27,7 +31,13 @@ async def chat_history():
             'timestamp': msg.get('timestamp')
         })
     
-    return jsonify({'messages': formatted_messages})
+    return jsonify({
+        'messages': formatted_messages,
+        'session': {
+            'id': session_obj.id,
+            'title': session_obj.title
+        } if session_obj else None
+    })
 
 @api_bp.route('/chat/sessions')
 @login_required
