@@ -1,4 +1,4 @@
-/* static/css/styles.css - Enhanced version with code block styling */
+/* static/css/styles.css - Enhanced version with proper code block styling */
 
 /* Global Dark Theme Styles */
 body {
@@ -154,88 +154,92 @@ a:hover {
     line-height: 1.5;
 }
 
-/* Code Block Header Styling - ULTRA COMPACT */
+/* Code Block Styling - PROPERLY SIZED */
+.code-block-container {
+    margin: 10px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #0d1117;
+    border: 1px solid #30363d;
+}
+
 .code-block-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: #333;
-    padding: 0 6px; /* Remove vertical padding completely */
-    border-bottom: 1px solid #444;
-    font-size: 0.7rem;
-    height: 22px; /* Further reduced height */
-    line-height: 22px; /* Match line height to container height */
+    background-color: #21262d;
+    padding: 8px 12px;
+    border-bottom: 1px solid #30363d;
+    font-size: 0.8rem;
+    min-height: 32px;
 }
 
 .code-language {
-    color: #94a3b8;
+    color: #7d8590;
     font-weight: 500;
     text-transform: uppercase;
-    font-size: 0.65rem;
-    letter-spacing: 0.3px;
-    line-height: 1;
-    margin: 0; /* Ensure no margin */
-    padding: 0; /* Ensure no padding */
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
 }
 
 .code-actions {
     display: flex;
-    gap: 1px; /* Minimal gap between buttons */
+    gap: 4px;
     align-items: center;
-    height: 100%; /* Full height of parent */
-    margin: 0; /* No margin */
-    padding: 0; /* No padding */
 }
 
-/* Buttons within the header - ULTRA COMPACT */
+/* Properly sized code action buttons */
 .btn-copy, .btn-github {
-    background: none;
-    border: none;
-    color: #94a3b8;
+    background: transparent;
+    border: 1px solid #30363d;
+    color: #7d8590;
     cursor: pointer;
-    padding: 0; /* Remove all padding */
-    margin: 0; /* Remove all margins */
-    border-radius: 2px;
-    font-size: 0.65rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
     line-height: 1;
-    height: 18px; /* Fixed height */
-    width: 18px; /* Fixed width */
+    height: 24px;
+    min-width: 24px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
 }
 
-.btn-copy i, .btn-github i {
-    font-size: 0.65rem; /* Smaller icons */
-    line-height: 1;
-    margin: 0; /* No margin on icons */
-}
-
 .btn-copy:hover, .btn-github:hover {
-    background-color: #444;
-    color: #e2e8f0;
+    background-color: #30363d;
+    color: #f0f6fc;
+    border-color: #8b949e;
 }
 
 .btn-copy.copied {
-    color: #22c55e;
+    color: #7c3aed;
+    border-color: #7c3aed;
 }
 
+.btn-copy i, .btn-github i {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+/* Code block content */
 .code-block-container pre {
     margin: 0;
     padding: 16px;
     background-color: #0d1117 !important;
     overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
 }
 
 .code-block-container code {
-    font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Monaco, Consolas, 'Ubuntu Mono', monospace;
-    font-size: 0.875rem;
-    line-height: 1.5;
-    color: #e6edf3 !important;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    color: #f0f6fc !important;
+    background: transparent !important;
+    padding: 0 !important;
 }
 
-/* Prism.js theme overrides for dark mode */
+/* Prism.js theme overrides for better dark mode */
 .token.comment,
 .token.prolog,
 .token.doctype,
@@ -244,7 +248,7 @@ a:hover {
 }
 
 .token.punctuation {
-    color: #e6edf3;
+    color: #f0f6fc;
 }
 
 .token.property,
@@ -293,12 +297,13 @@ a:hover {
 
 /* Inline code styling */
 code:not([class*="language-"]) {
-    background-color: #333;
-    color: #e6edf3;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'Fira Code', 'JetBrains Mono', 'SF Mono', Monaco, Consolas, 'Ubuntu Mono', monospace;
-    font-size: 0.875em;
+    background-color: #262c36;
+    color: #f0f6fc;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 0.85em;
+    border: 1px solid #30363d;
 }
 
 /* GitHub settings button in navbar */
@@ -320,21 +325,24 @@ code:not([class*="language-"]) {
 /* Message styling */
 .message {
     margin-bottom: 15px;
-    padding: 10px 15px;
-    border-radius: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
     max-width: 85%;
     word-wrap: break-word;
+    position: relative;
 }
 
 .user-message {
     background-color: #0d6efd;
     margin-left: auto;
     text-align: right;
+    color: white;
 }
 
 .assistant-message {
-    background-color: #2b2b2b;
-    border: 1px solid #444;
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    color: #e0e0e0;
 }
 
 .assistant-message.cached {
@@ -344,7 +352,10 @@ code:not([class*="language-"]) {
 .cached-indicator {
     font-size: 0.8em;
     color: #28a745;
-    margin-top: 5px;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 /* Admin specific styles */
@@ -383,26 +394,29 @@ code:not([class*="language-"]) {
 
 .admin-message {
     margin-bottom: 15px;
-    padding: 10px 15px;
-    border-radius: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
     max-width: 100%;
 }
 
 .admin-user-message {
     background-color: #0d6efd;
     margin-left: 20%;
+    color: white;
 }
 
 .admin-assistant-message {
-    background-color: #2b2b2b;
-    border: 1px solid #444;
+    background-color: #1e1e1e;
+    border: 1px solid #333;
     margin-right: 20%;
+    color: #e0e0e0;
 }
 
 .message-timestamp {
     display: block;
-    margin-top: 5px;
-    font-size: 0.8em;
+    margin-top: 8px;
+    font-size: 0.75em;
+    opacity: 0.7;
 }
 
 /* Database management styles */
@@ -418,6 +432,7 @@ code:not([class*="language-"]) {
 
 @keyframes spin {
     0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 /* GitHub Repository Browser Styles */
@@ -485,6 +500,7 @@ code:not([class*="language-"]) {
 
 .breadcrumb-item a {
     text-decoration: none;
+    color: #0d6efd;
 }
 
 .breadcrumb-item a:hover {
@@ -538,5 +554,24 @@ code:not([class*="language-"]) {
     30% {
         transform: translateY(-10px);
         opacity: 1;
+    }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .message {
+        max-width: 95%;
+    }
+    
+    .code-block-header {
+        padding: 6px 8px;
+        font-size: 0.7rem;
+    }
+    
+    .btn-copy, .btn-github {
+        padding: 2px 6px;
+        font-size: 0.65rem;
+        height: 20px;
+        min-width: 20px;
     }
 }

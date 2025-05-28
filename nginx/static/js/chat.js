@@ -1,4 +1,4 @@
-// static/js/chat.js - Chat Page Handler
+// static/js/chat.js - Chat Page Handler with improved streaming
 
 const ChatPage = {
     elements: {},
@@ -279,7 +279,7 @@ const ChatPage = {
                 if (!this.currentStreamMessage) {
                     this.currentStreamMessage = this.addMessage('assistant', '', false, true);
                 }
-                // For streaming, we need to handle code blocks carefully
+                // Accumulate streaming content
                 this.currentStreamMessage.streamContent = (this.currentStreamMessage.streamContent || '') + data.content;
                 this.updateStreamingMessage(this.currentStreamMessage, this.currentStreamMessage.streamContent);
                 this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
@@ -303,25 +303,121 @@ const ChatPage = {
                 window.Utils.showError(data.message, this.elements.chatMessages);
                 this.isWaitingForResponse = false;
                 this.enableInput();
+                if (this.currentStreamMessage) {
+                    this.currentStreamMessage.remove();
+                    this.currentStreamMessage = null;
+                }
                 break;
         }
     },
 
     updateStreamingMessage: function(messageElement, content) {
-        // For streaming, just show raw content until complete
+        // Process content in real-time during streaming
+        const processedContent = this.processStreamingContent(content);
         const contentDiv = messageElement.querySelector('.message-content') || messageElement;
-        contentDiv.textContent = content;
+        contentDiv.innerHTML = '';
+        contentDiv.appendChild(processedContent);
+        
+        // Apply syntax highlighting to any complete code blocks
+        this.applySyntaxHighlighting();
+    },
+
+    processStreamingContent: function(content) {
+        // Process content for streaming - handle partial code blocks
+        const container = document.createElement('div');
+        container.className = 'message-content';
+        
+        // Split by code block markers
+        const parts = content.split(/(```[\s\S]*?```|```[\s\S]*$)/);
+        
+        parts.forEach((part, index) => {
+            if (part.startsWith('```')) {
+                // This is a code block (complete or partial)
+                const codeBlockDiv = this.createCodeBlock(part);
+                container.appendChild(codeBlockDiv);
+            } else if (part) {
+                // This is regular text
+                const textDiv = document.createElement('div');
+                textDiv.className = 'message-text';
+                textDiv.textContent = part;
+                container.appendChild(textDiv);
+            }
+        });
+        
+        return container;
+    },
+
+    createCodeBlock: function(codeText) {
+        // Handle both complete and partial code blocks
+        const isComplete = codeText.endsWith('```');
+        const lines = codeText.split('\n');
+        const firstLine = lines[0].replace('```', '').trim();
+        const language = firstLine || 'text';
+        
+        // Get code content (skip first line with language)
+        const codeContent = lines.slice(1).join('\n');
+        const displayCode = isComplete ? codeContent.slice(0, -3) : codeContent; // Remove trailing ```
+        
+        const container = document.createElement('div');
+        container.className = 'code-block-container';
+        
+        container.innerHTML = `
+            <div class="code-block-header">
+                <span class="code-language">${language}</span>
+                <div class="code-actions">
+                    <button class="btn-copy" title="Copy to clipboard">
+                        <i class="bi bi-copy"></i>
+                    </button>
+                    <button class="btn-github" title="Create GitHub Gist" style="display: ${window.GitHubIntegration && window.GitHubIntegration.settings.hasToken ? 'inline-flex' : 'none'}">
+                        <i class="bi bi-github"></i>
+                    </button>
+                </div>
+            </div>
+            <pre><code class="language-${language}">${this.escapeHtml(displayCode)}</code></pre>
+        `;
+
+        // Add copy functionality
+        const copyBtn = container.querySelector('.btn-copy');
+        copyBtn.addEventListener('click', async () => {
+            const success = await window.Utils.copyToClipboard(displayCode);
+            if (success) {
+                copyBtn.innerHTML = '<i class="bi bi-check"></i>';
+                copyBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyBtn.innerHTML = '<i class="bi bi-copy"></i>';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            }
+        });
+
+        // Add GitHub gist functionality
+        const githubBtn = container.querySelector('.btn-github');
+        if (githubBtn) {
+            githubBtn.addEventListener('click', () => {
+                if (window.GitHubIntegration) {
+                    window.GitHubIntegration.createGist(displayCode, language);
+                }
+            });
+        }
+
+        return container;
+    },
+
+    escapeHtml: function(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     },
 
     finalizeStreamingMessage: function(messageElement) {
-        // Process the final content with syntax highlighting
+        // Final processing when streaming is complete
         const content = messageElement.streamContent;
         const processedContent = window.Utils.processMessageContent(content);
         const contentDiv = messageElement.querySelector('.message-content') || messageElement;
         contentDiv.innerHTML = '';
         contentDiv.appendChild(processedContent);
         
-        // Apply syntax highlighting
+        // Apply syntax highlighting to the completed message
         this.applySyntaxHighlighting();
     },
 
@@ -361,7 +457,7 @@ const ChatPage = {
         if (cached) messageDiv.classList.add('cached');
         
         if (streaming) {
-            // For streaming messages, start with simple text content
+            // For streaming messages, start with empty content
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             messageDiv.appendChild(contentDiv);

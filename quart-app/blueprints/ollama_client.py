@@ -22,39 +22,45 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
     await ws.send_json({'type': 'typing', 'status': 'start'})
     
     try:
-        # Build context from chat history
-        context = ""
+        # Build messages array for chat endpoint (avoids BOS token issues)
+        messages = []
+        
+        # Add chat history as messages
         if chat_history:
             for msg in chat_history[-10:]:  # Last 10 messages for context
                 role = msg.get('role')
                 content = msg.get('content', '')
-                if role == 'user':
-                    context += f"### Human:\n{content}\n\n"
-                elif role == 'assistant':
-                    context += f"### Assistant:\n{content}\n\n"
+                if role in ['user', 'assistant']:  # Only include valid roles
+                    messages.append({
+                        'role': role,
+                        'content': content
+                    })
         
-        # Format the complete prompt - avoiding double BOS tokens
-        full_prompt = f"{context}### Human:\n{prompt}\n\n### Assistant:\n"
+        # Add current user message
+        messages.append({
+            'role': 'user',
+            'content': prompt
+        })
         
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Use generate endpoint to avoid BOS token issues
+            # Use chat endpoint instead of generate to avoid BOS token issues
             async with session.post(
-                f'{OLLAMA_URL}/api/generate',
+                f'{OLLAMA_URL}/api/chat',
                 json={
                     'model': OLLAMA_MODEL,
-                    'prompt': full_prompt,
+                    'messages': messages,
                     'stream': True,
                     'options': {
                         'temperature': MODEL_TEMPERATURE,
                         'top_p': MODEL_TOP_P,
                         'num_predict': MODEL_MAX_TOKENS,
-                        'stop': ['### Human:', '\n### Human:', '<|endoftext|>', '<|end|>'],
                         'num_ctx': 4096,
                         'repeat_penalty': 1.1,
                         'mirostat': 2,  # Better coherence
                         'mirostat_tau': 5.0,
-                        'mirostat_eta': 0.1
+                        'mirostat_eta': 0.1,
+                        'stop': ['<|im_end|>', '<|endoftext|>']  # Common stop tokens
                     }
                 }
             ) as response:
@@ -71,8 +77,10 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
                     if line:
                         try:
                             chunk = json.loads(line)
-                            if 'response' in chunk:
-                                chunk_text = chunk['response']
+                            
+                            # Handle chat API response format
+                            if 'message' in chunk and 'content' in chunk['message']:
+                                chunk_text = chunk['message']['content']
                                 full_response += chunk_text
                                 # Stream each chunk to client
                                 await ws.send_json({
@@ -101,8 +109,8 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         # Stop typing indicator
         await ws.send_json({'type': 'typing', 'status': 'stop'})
     
-    # Clean up the response (remove any trailing stop tokens)
-    for stop_token in ['### Human:', '\n### Human:', '<|endoftext|>', '<|end|>']:
+    # Clean up the response
+    for stop_token in ['<|im_end|>', '<|endoftext|>']:
         if full_response.endswith(stop_token):
             full_response = full_response[:-len(stop_token)]
     
