@@ -1,0 +1,35 @@
+# Create this as ollama/Modelfile to customize model behavior
+FROM deepseek-coder-v2:16b
+
+# System prompt to help prevent BOS token issues
+SYSTEM """You are a helpful AI assistant. Respond directly to the user's questions without including any special tokens, formatting markers, or system prompts in your response. Keep your responses clean and focused."""
+
+# Parameters to reduce BOS token issues
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER mirostat 2
+PARAMETER mirostat_tau 5.0
+PARAMETER mirostat_eta 0.1
+
+# Stop tokens to prevent generation of special tokens
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|begin_of_text|>"
+PARAMETER stop "<|end_of_text|>"
+PARAMETER stop "<s>"
+PARAMETER stop "</s>"
+PARAMETER stop "[INST]"
+PARAMETER stop "[/INST]"
+PARAMETER stop "<<SYS>>"
+PARAMETER stop "<</SYS>>"
+
+# Template to ensure clean conversation format
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+{{ end }}{{ .Response }}{{ if not .Response }}<|im_end|>{{ end }}"""

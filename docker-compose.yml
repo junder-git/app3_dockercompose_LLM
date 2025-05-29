@@ -34,10 +34,14 @@ services:
     volumes:
       - ollama_models:/root/.ollama/models
       - ./ollama/scripts:/scripts
+      - ./ollama/Modelfile:/root/Modelfile
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-coder-v2:16b}
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
       #- OLLAMA_VERBOSE=0  # Suppress verbose logging
       #- OLLAMA_NOPRUNE=1  # Prevent token pruning
       #- OLLAMA_DEBUG=false  # Disable debug mode
