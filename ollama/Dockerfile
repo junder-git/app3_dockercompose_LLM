@@ -1,11 +1,11 @@
-FROM ollama/ollama:0.7.0
+FROM ollama/ollama:latest
 
-# Install required packages
-RUN apt-get update && apt-get install -y \
-    curl \
-    bash \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
+# Only install essential packages if needed
+# curl and bash should already be available in the base image
+RUN apt-get update && \
+    apt-get install -y --fix-broken --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* || true
 
 # Copy initialization script and Modelfile
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh

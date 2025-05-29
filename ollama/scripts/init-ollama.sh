@@ -41,7 +41,7 @@ fi
 
 # Display current status
 echo "Current Ollama status:"
-curl -s http://localhost:11434/api/tags | jq '.' 2>/dev/null || curl -s http://localhost:11434/api/tags
+curl -s http://localhost:11434/api/tags || echo "Could not fetch tags"
 
 # Function to test model with better error handling
 test_model() {
