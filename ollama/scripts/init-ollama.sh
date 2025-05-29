@@ -74,6 +74,27 @@ test_model() {
 
 # Check if the specified model exists
 echo "Checking for $MODEL_NAME model..."
+
+# Try to create a custom model from Modelfile if it exists
+if [ -f "/root/Modelfile" ]; then
+    echo "Found Modelfile, creating custom model..."
+    CUSTOM_MODEL_NAME="${MODEL_NAME}-custom"
+    
+    if ollama create "$CUSTOM_MODEL_NAME" -f /root/Modelfile 2>/dev/null; then
+        echo "✓ Created custom model: $CUSTOM_MODEL_NAME"
+        # Test the custom model
+        if test_model "$CUSTOM_MODEL_NAME"; then
+            echo "✓ Custom model is working, using it instead"
+            export OLLAMA_MODEL="$CUSTOM_MODEL_NAME"
+            MODEL_NAME="$CUSTOM_MODEL_NAME"
+        else
+            echo "⚠️ Custom model failed test, falling back to original"
+        fi
+    else
+        echo "⚠️ Failed to create custom model, using original"
+    fi
+fi
+
 if ollama list | grep -q "$MODEL_NAME"; then
     echo "✓ $MODEL_NAME model already exists"
     if test_model "$MODEL_NAME"; then

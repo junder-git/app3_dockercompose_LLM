@@ -14,26 +14,39 @@ MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
 MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))
 MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '300'))
 
-def clean_message_content(content: str) -> str:
+def clean_message_content(content: str, aggressive_clean: bool = False) -> str:
     """Clean message content from BOS tokens and other artifacts"""
     if not content:
         return ""
     
-    # Remove common BOS/EOS tokens that might appear in content
-    tokens_to_remove = [
-        '<|begin_of_text|>', '<|end_of_text|>',
-        '<|im_start|>', '<|im_end|>',
-        '<|endoftext|>', '<|startoftext|>',
-        '<s>', '</s>',
-        '[INST]', '[/INST]',
-        '<BOS>', '<EOS>',
-        '<<SYS>>', '<</SYS>>',
-        # Add any other tokens you notice causing issues
-    ]
-    
     cleaned = content.strip()
-    for token in tokens_to_remove:
-        cleaned = cleaned.replace(token, '').strip()
+    
+    # Only do aggressive cleaning on input, not on streaming output
+    if aggressive_clean:
+        # Remove common BOS/EOS tokens that might appear in content
+        tokens_to_remove = [
+            '<|begin_of_text|>', '<|end_of_text|>',
+            '<|im_start|>', '<|im_end|>',
+            '<|endoftext|>', '<|startoftext|>',
+            '<s>', '</s>',
+            '[INST]', '[/INST]',
+            '<BOS>', '<EOS>',
+            '<<SYS>>', '<</SYS>>',
+        ]
+        
+        for token in tokens_to_remove:
+            cleaned = cleaned.replace(token, '').strip()
+    else:
+        # Light cleaning for output - only remove tokens that are clearly system tokens
+        # and appear at the start or end of content
+        if cleaned.startswith('<|im_start|>'):
+            cleaned = cleaned[12:].strip()
+        if cleaned.endswith('<|im_end|>'):
+            cleaned = cleaned[:-11].strip()
+        if cleaned.startswith('<|begin_of_text|>'):
+            cleaned = cleaned[17:].strip()
+        if cleaned.endswith('<|end_of_text|>'):
+            cleaned = cleaned[:-15].strip()
     
     return cleaned
 
@@ -45,8 +58,8 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
     await ws.send_json({'type': 'typing', 'status': 'start'})
     
     try:
-        # Clean the input prompt
-        cleaned_prompt = clean_message_content(prompt)
+        # Clean the input prompt aggressively
+        cleaned_prompt = clean_message_content(prompt, aggressive_clean=True)
         
         # Build messages array for chat endpoint
         messages = []
@@ -55,7 +68,7 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         if chat_history:
             for msg in chat_history[-8:]:  # Reduced to 8 messages for better performance
                 role = msg.get('role')
-                content = clean_message_content(msg.get('content', ''))
+                content = clean_message_content(msg.get('content', ''), aggressive_clean=True)
                 if role in ['user', 'assistant'] and content:  # Only include valid roles with content
                     messages.append({
                         'role': role,
@@ -81,21 +94,12 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
                     'num_predict': MODEL_MAX_TOKENS,
                     'num_ctx': 4096,
                     'repeat_penalty': 1.1,
-                    'mirostat': 2,
-                    'mirostat_tau': 5.0,
-                    'mirostat_eta': 0.1,
-                    # Enhanced stop tokens to prevent BOS token issues
-                    'stop': [
-                        '<|im_end|>', '<|endoftext|>', '<|end_of_text|>',
-                        '<|begin_of_text|>', '<s>', '</s>',
-                        '[INST]', '[/INST]', '<<SYS>>', '<</SYS>>',
-                        '<BOS>', '<EOS>'
-                    ],
+                    'mirostat': 0,  # Disable mirostat as it can cause issues
+                    # Reduced stop tokens - only essential ones
+                    'stop': ['<|im_end|>', '<|endoftext|>'],
                     # Prevent the model from generating special tokens
                     'penalize_newline': False,
-                    'top_k': 40,
-                    'typical_p': 1.0,
-                    'min_p': 0.05
+                    'top_k': 40
                 }
             }
             
@@ -130,10 +134,11 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
                                     if 'message' in chunk and 'content' in chunk['message']:
                                         chunk_text = chunk['message']['content']
                                         
-                                        # Clean the chunk text
-                                        cleaned_chunk = clean_message_content(chunk_text)
+                                        # Light cleaning for streaming chunks - don't be too aggressive
+                                        cleaned_chunk = clean_message_content(chunk_text, aggressive_clean=False)
                                         
-                                        if cleaned_chunk:  # Only send non-empty chunks
+                                        # Send chunks even if they seem small (could be punctuation, etc.)
+                                        if cleaned_chunk:
                                             full_response += cleaned_chunk
                                             # Stream each chunk to client
                                             await ws.send_json({
@@ -175,8 +180,8 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         # Stop typing indicator
         await ws.send_json({'type': 'typing', 'status': 'stop'})
     
-    # Final cleanup of the complete response
-    final_response = clean_message_content(full_response)
+    # Final cleanup of the complete response - light cleaning only
+    final_response = clean_message_content(full_response, aggressive_clean=False)
     
     return final_response
 
