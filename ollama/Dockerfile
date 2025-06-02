@@ -1,13 +1,22 @@
-FROM ollama/ollama:latest
+FROM ubuntu:20.04
 
-# Only install essential packages if needed
-# curl and bash should already be available in the base image
+# Set environment variables to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OLLAMA_HOST=0.0.0.0
+
+# Install dependencies first
 RUN apt-get update && \
-    apt-get install -y --fix-broken --no-install-recommends && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* || true
+    apt-get install -y --no-install-recommends \
+    curl \
+    bash \
+    ca-certificates \
+    gpg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy initialization script and Modelfile
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
+
+# Copy initialization script and Modelfile  
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY Modelfile /root/Modelfile
 RUN chmod +x /scripts/init-ollama.sh
