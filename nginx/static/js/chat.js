@@ -1,8 +1,7 @@
-// static/js/chat.js - Chat Page Handler with improved streaming
+// static/js/chat.js - Updated with chat management functions
 
 const ChatPage = {
     elements: {},
-    currentSession: null,
     ws: null,
     currentStreamMessage: null,
     isWaitingForResponse: false,
@@ -14,14 +13,15 @@ const ChatPage = {
             sendButton: document.getElementById('sendButton'),
             typingIndicator: document.getElementById('typingIndicator'),
             githubSettingsBtn: document.getElementById('githubSettingsBtn'),
-            sessionsList: document.getElementById('sessionsList'),
-            newSessionBtn: document.getElementById('newSessionBtn')
+            chatStatsBtn: document.getElementById('chatStatsBtn'),
+            exportChatBtn: document.getElementById('exportChatBtn'),
+            compressChatBtn: document.getElementById('compressChatBtn'),
+            clearChatBtn: document.getElementById('clearChatBtn')
         };
         
         this.bindEvents();
         this.initWebSocket();
         this.setupTextareaAutoResize();
-        this.loadSessions();
     },
     
     bindEvents: function() {
@@ -41,173 +41,185 @@ const ChatPage = {
             });
         }
 
-        // New session button
-        if (this.elements.newSessionBtn) {
-            this.elements.newSessionBtn.addEventListener('click', (e) => {
+        // Chat management buttons
+        if (this.elements.chatStatsBtn) {
+            this.elements.chatStatsBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                this.createNewSession();
+                this.showChatStatistics();
             });
+        }
+
+        if (this.elements.exportChatBtn) {
+            this.elements.exportChatBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.exportChat();
+            });
+        }
+
+        if (this.elements.compressChatBtn) {
+            this.elements.compressChatBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.showCompressDialog();
+            });
+        }
+
+        if (this.elements.clearChatBtn) {
+            this.elements.clearChatBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.clearChat();
+            });
+        }
+
+        // Compress chat modal confirm button
+        const confirmCompressBtn = document.getElementById('confirmCompressBtn');
+        if (confirmCompressBtn) {
+            confirmCompressBtn.addEventListener('click', () => this.compressChat());
         }
     },
 
-    loadSessions: async function() {
+    showChatStatistics: async function() {
+        const modal = new bootstrap.Modal(document.getElementById('chatStatsModal'));
+        const contentDiv = document.getElementById('chatStatsContent');
+        
+        modal.show();
+        
         try {
-            const response = await fetch('/api/chat/sessions');
+            const response = await fetch('/api/chat/statistics');
+            const stats = await response.json();
+            
+            contentDiv.innerHTML = `
+                <div class="row">
+                    <div class="col-6">
+                        <div class="text-center p-3 border rounded">
+                            <h4 class="text-primary">${stats.total_messages}</h4>
+                            <small class="text-muted">Total Messages</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-3 border rounded">
+                            <h4 class="text-info">${stats.user_messages}</h4>
+                            <small class="text-muted">Your Messages</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-6">
+                        <div class="text-center p-3 border rounded">
+                            <h4 class="text-success">${stats.assistant_messages}</h4>
+                            <small class="text-muted">AI Responses</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-3 border rounded">
+                            <h6 class="text-warning">
+                                ${stats.session_created ? new Date(stats.session_created).toLocaleDateString() : 'N/A'}
+                            </h6>
+                            <small class="text-muted">Chat Started</small>
+                        </div>
+                    </div>
+                </div>
+                ${stats.oldest_message && stats.newest_message ? `
+                <div class="mt-3 p-3 border rounded">
+                    <small class="text-muted">
+                        <i class="bi bi-clock-history"></i> 
+                        First message: ${new Date(stats.oldest_message).toLocaleString()}<br>
+                        Last message: ${new Date(stats.newest_message).toLocaleString()}
+                    </small>
+                </div>
+                ` : ''}
+            `;
+        } catch (error) {
+            console.error('Error loading statistics:', error);
+            contentDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Failed to load statistics
+                </div>
+            `;
+        }
+    },
+
+    exportChat: async function() {
+        try {
+            const response = await fetch('/api/chat/export');
             const data = await response.json();
             
-            this.renderSessionsList(data.sessions);
+            // Create a blob and download
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat-export-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            window.Utils.showSuccess('Chat exported successfully!', this.elements.chatMessages);
         } catch (error) {
-            console.error('Error loading sessions:', error);
+            console.error('Error exporting chat:', error);
+            window.Utils.showError('Failed to export chat', this.elements.chatMessages);
         }
     },
 
-    renderSessionsList: function(sessions) {
-        if (!this.elements.sessionsList) return;
-        
-        // Clear existing sessions (keep header and new session button)
-        const existingSessions = this.elements.sessionsList.querySelectorAll('.session-item');
-        existingSessions.forEach(item => item.remove());
-
-        // Add sessions
-        sessions.forEach(session => {
-            const sessionItem = document.createElement('li');
-            sessionItem.className = 'session-item';
-            sessionItem.innerHTML = `
-                <a class="dropdown-item d-flex justify-content-between align-items-center" href="#" 
-                   data-session-id="${session.id}">
-                    <div>
-                        <div class="fw-semibold">${session.title}</div>
-                        <small class="text-muted">${session.message_count} messages</small>
-                    </div>
-                    <button class="btn btn-sm btn-outline-danger btn-delete-session" 
-                            data-session-id="${session.id}"
-                            title="Delete session" ${sessions.length <= 1 ? 'disabled' : ''}>
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </a>
-            `;
-            
-            // Add click handler for switching sessions
-            const link = sessionItem.querySelector('a');
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.switchSession(session.id);
-            });
-            
-            // Add click handler for delete button
-            const deleteBtn = sessionItem.querySelector('.btn-delete-session');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteSession(session.id);
-            });
-            
-            this.elements.sessionsList.appendChild(sessionItem);
-        });
-
-        // Add divider if there are sessions
-        if (sessions.length > 0) {
-            const divider = document.createElement('li');
-            divider.innerHTML = '<hr class="dropdown-divider">';
-            this.elements.sessionsList.appendChild(divider);
-        }
+    showCompressDialog: function() {
+        const modal = new bootstrap.Modal(document.getElementById('compressChatModal'));
+        modal.show();
     },
 
-    createNewSession: async function() {
-        const title = prompt('Enter a title for the new chat session (optional):');
+    compressChat: async function() {
+        const keepCount = parseInt(document.getElementById('keepMessagesCount').value);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('compressChatModal'));
         
         try {
-            const response = await fetch('/api/chat/sessions', {
+            const response = await fetch('/api/chat/compress', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 },
-                body: JSON.stringify({ title: title || null })
+                body: JSON.stringify({ keep_count: keepCount })
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                this.currentSession = data.session;
-                
-                // Clear current chat
-                this.elements.chatMessages.innerHTML = '';
-                
-                // Reload sessions list
-                await this.loadSessions();
-                
-                window.Utils.showSuccess('New chat session created!', this.elements.chatMessages);
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                modal.hide();
+                window.Utils.showSuccess(result.message, this.elements.chatMessages);
+                // Reload chat to show compressed history
+                await this.loadChatHistory();
             } else {
-                window.Utils.showError('Failed to create new session', this.elements.chatMessages);
+                window.Utils.showError(result.message || 'Compression failed', this.elements.chatMessages);
             }
         } catch (error) {
-            console.error('Error creating session:', error);
-            window.Utils.showError('Failed to create new session', this.elements.chatMessages);
+            console.error('Error compressing chat:', error);
+            window.Utils.showError('Failed to compress chat', this.elements.chatMessages);
         }
     },
 
-    switchSession: async function(sessionId) {
-        try {
-            const response = await fetch(`/api/chat/sessions/${sessionId}/switch`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                this.currentSession = data.session;
-                
-                // Clear and reload messages
-                this.elements.chatMessages.innerHTML = '';
-                data.messages.forEach(msg => {
-                    this.addMessage(msg.role, msg.content);
-                });
-                
-                // Apply syntax highlighting
-                setTimeout(() => this.applySyntaxHighlighting(), 100);
-                
-                window.Utils.showSuccess(`Switched to: ${data.session.title}`, this.elements.chatMessages);
-            } else {
-                window.Utils.showError('Failed to switch session', this.elements.chatMessages);
-            }
-        } catch (error) {
-            console.error('Error switching session:', error);
-            window.Utils.showError('Failed to switch session', this.elements.chatMessages);
-        }
-    },
-
-    deleteSession: async function(sessionId) {
-        if (!confirm('Are you sure you want to delete this chat session? This action cannot be undone.')) {
+    clearChat: async function() {
+        if (!confirm('Are you sure you want to clear all chat messages? This action cannot be undone.')) {
             return;
         }
-
+        
         try {
-            const response = await fetch(`/api/chat/sessions/${sessionId}`, {
-                method: 'DELETE',
+            const response = await fetch('/api/chat/clear', {
+                method: 'POST',
                 headers: {
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
                 }
             });
-
-            if (response.ok) {
-                // Reload sessions
-                await this.loadSessions();
-                
-                // If this was the current session, reload chat history
-                if (this.currentSession && this.currentSession.id === sessionId) {
-                    await this.loadChatHistory();
-                }
-                
-                window.Utils.showSuccess('Session deleted successfully', this.elements.chatMessages);
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.elements.chatMessages.innerHTML = '';
+                window.Utils.showSuccess(result.message, this.elements.chatMessages);
             } else {
-                const data = await response.json();
-                window.Utils.showError(data.error || 'Failed to delete session', this.elements.chatMessages);
+                window.Utils.showError(result.message || 'Failed to clear chat', this.elements.chatMessages);
             }
         } catch (error) {
-            console.error('Error deleting session:', error);
-            window.Utils.showError('Failed to delete session', this.elements.chatMessages);
+            console.error('Error clearing chat:', error);
+            window.Utils.showError('Failed to clear chat', this.elements.chatMessages);
         }
     },
 
@@ -384,133 +396,4 @@ const ChatPage = {
                 copyBtn.innerHTML = '<i class="bi bi-check"></i>';
                 copyBtn.classList.add('copied');
                 setTimeout(() => {
-                    copyBtn.innerHTML = '<i class="bi bi-copy"></i>';
-                    copyBtn.classList.remove('copied');
-                }, 2000);
-            }
-        });
-
-        // Add GitHub gist functionality
-        const githubBtn = container.querySelector('.btn-github');
-        if (githubBtn) {
-            githubBtn.addEventListener('click', () => {
-                if (window.GitHubIntegration) {
-                    window.GitHubIntegration.createGist(displayCode, language);
-                }
-            });
-        }
-
-        return container;
-    },
-
-    escapeHtml: function(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    },
-
-    finalizeStreamingMessage: function(messageElement) {
-        // Final processing when streaming is complete
-        const content = messageElement.streamContent;
-        const processedContent = window.Utils.processMessageContent(content);
-        const contentDiv = messageElement.querySelector('.message-content') || messageElement;
-        contentDiv.innerHTML = '';
-        contentDiv.appendChild(processedContent);
-        
-        // Apply syntax highlighting to the completed message
-        this.applySyntaxHighlighting();
-    },
-
-    applySyntaxHighlighting: function() {
-        // Apply Prism.js syntax highlighting
-        if (window.Prism) {
-            window.Prism.highlightAll();
-        }
-    },
-    
-    loadChatHistory: async function() {
-        try {
-            const response = await fetch('/api/chat/history');
-            const data = await response.json();
-            
-            this.elements.chatMessages.innerHTML = '';
-            
-            // Store current session info if returned
-            if (data.session) {
-                this.currentSession = data.session;
-            }
-            
-            data.messages.forEach(msg => {
-                this.addMessage(msg.role, msg.content);
-            });
-            
-            // Apply syntax highlighting to loaded messages
-            setTimeout(() => this.applySyntaxHighlighting(), 100);
-        } catch (error) {
-            console.error('Error loading chat history:', error);
-        }
-    },
-    
-    addMessage: function(role, content, cached = false, streaming = false) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`;
-        if (cached) messageDiv.classList.add('cached');
-        
-        if (streaming) {
-            // For streaming messages, start with empty content
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            messageDiv.appendChild(contentDiv);
-            messageDiv.streamContent = '';
-        } else {
-            // For complete messages, process with syntax highlighting
-            const processedContent = window.Utils.processMessageContent(content);
-            messageDiv.appendChild(processedContent);
-            
-            // Apply syntax highlighting after a short delay
-            setTimeout(() => this.applySyntaxHighlighting(), 50);
-        }
-        
-        if (cached && role === 'assistant') {
-            const cachedIndicator = document.createElement('div');
-            cachedIndicator.className = 'cached-indicator';
-            cachedIndicator.innerHTML = '<i class="bi bi-check-circle"></i> Cached response';
-            messageDiv.appendChild(cachedIndicator);
-        }
-        
-        this.elements.chatMessages.appendChild(messageDiv);
-        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
-        return messageDiv;
-    },
-    
-    sendMessage: function() {
-        const message = this.elements.messageInput.value.trim();
-        if (message && this.ws && this.ws.readyState === WebSocket.OPEN && !this.isWaitingForResponse) {
-            this.isWaitingForResponse = true;
-            this.disableInput();
-            
-            this.ws.send(JSON.stringify({
-                type: 'chat',
-                message: message
-            }));
-            
-            this.elements.messageInput.value = '';
-            this.elements.messageInput.style.height = 'auto'; // Reset height
-            this.currentStreamMessage = null;
-        }
-    },
-    
-    enableInput: function() {
-        this.elements.sendButton.disabled = false;
-        this.elements.messageInput.disabled = false;
-        this.elements.messageInput.focus();
-    },
-    
-    disableInput: function() {
-        this.elements.sendButton.disabled = true;
-        this.elements.messageInput.disabled = true;
-    }
-};
-
-// Export for use
-window.ChatPage = ChatPage;
+                    copyBtn.
