@@ -8,7 +8,17 @@ from .utils import sanitize_html
 
 # AI Model configuration
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://ollama:11434')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'deepseek-coder-v2:16b')
+DEFAULT_MODEL = os.environ.get('OLLAMA_MODEL', 'deepseek-coder-v2:16b')
+
+def get_active_model():
+    """Get the active model name from the init script"""
+    try:
+        with open('/tmp/active_model', 'r') as f:
+            return f.read().strip()
+    except:
+        return DEFAULT_MODEL
+
+OLLAMA_MODEL = get_active_model()
 MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE', '0.7'))
 MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
 MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))

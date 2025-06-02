@@ -1,8 +1,9 @@
 # Create this as ollama/Modelfile to customize model behavior
+# Make sure the base model exists before using this
 FROM deepseek-coder-v2:16b
 
 # System prompt to help prevent BOS token issues
-SYSTEM """You are a helpful AI assistant. Respond directly to the user's questions without including any special tokens, formatting markers, or system prompts in your response. Keep your responses clean and focused."""
+SYSTEM """You are a helpful AI coding assistant. Provide clear, detailed responses to programming questions and tasks. Do not include any special formatting tokens or system markers in your responses."""
 
 # Parameters to optimize model behavior
 PARAMETER temperature 0.7
