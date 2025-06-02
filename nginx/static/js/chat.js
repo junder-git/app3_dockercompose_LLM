@@ -396,4 +396,228 @@ const ChatPage = {
                 copyBtn.innerHTML = '<i class="bi bi-check"></i>';
                 copyBtn.classList.add('copied');
                 setTimeout(() => {
-                    copyBtn.
+                    copyBtn.innerHTML = '<i class="bi bi-copy"></i>';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            }
+        });
+
+        // Add GitHub Gist functionality
+        const githubBtn = container.querySelector('.btn-github');
+        if (githubBtn && window.GitHubIntegration) {
+            githubBtn.addEventListener('click', async () => {
+                const filename = `code.${language}`;
+                const result = await window.GitHubIntegration.createGist(filename, displayCode, language);
+                if (result.success) {
+                    window.Utils.showSuccess('Gist created successfully!', this.elements.chatMessages);
+                }
+            });
+        }
+
+        return container;
+    },
+
+    finalizeStreamingMessage: function(messageElement) {
+        // Final processing after streaming is complete
+        const content = messageElement.streamContent || '';
+        const processedContent = this.processMessageContent(content);
+        const contentDiv = messageElement.querySelector('.message-content') || messageElement;
+        contentDiv.innerHTML = processedContent;
+        
+        // Apply final syntax highlighting
+        this.applySyntaxHighlighting();
+        
+        // Add copy buttons to code blocks
+        this.addCodeBlockButtons(messageElement);
+        
+        // Clean up streaming data
+        delete messageElement.streamContent;
+        messageElement.classList.remove('streaming');
+    },
+
+    processMessageContent: function(content) {
+        // Process markdown-like content
+        let processed = content;
+        
+        // Handle code blocks
+        processed = processed.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            const language = lang || 'text';
+            const escapedCode = this.escapeHtml(code.trim());
+            return `
+                <div class="code-block-container">
+                    <div class="code-block-header">
+                        <span class="code-language">${language}</span>
+                        <div class="code-actions">
+                            <button class="btn-copy" title="Copy to clipboard">
+                                <i class="bi bi-copy"></i>
+                            </button>
+                            ${window.GitHubIntegration && window.GitHubIntegration.settings.hasToken ? 
+                                `<button class="btn-github" title="Create GitHub Gist">
+                                    <i class="bi bi-github"></i>
+                                </button>` : ''}
+                        </div>
+                    </div>
+                    <pre><code class="language-${language}">${escapedCode}</code></pre>
+                </div>
+            `;
+        });
+        
+        // Handle inline code
+        processed = processed.replace(/`([^`]+)`/g, '<code>\$1</code>');
+        
+        // Handle bold text
+        processed = processed.replace(/\*\*([^*]+)\*\*/g, '<strong>\$1</strong>');
+        
+        // Handle italic text
+        processed = processed.replace(/\*([^*]+)\*/g, '<em>\$1</em>');
+        
+        // Handle line breaks
+        processed = processed.replace(/\n/g, '<br>');
+        
+        return processed;
+    },
+
+    addCodeBlockButtons: function(messageElement) {
+        const codeBlocks = messageElement.querySelectorAll('.code-block-container');
+        
+        codeBlocks.forEach(block => {
+            const code = block.querySelector('code').textContent;
+            const language = block.querySelector('.code-language').textContent;
+            
+            // Re-attach copy button event
+            const copyBtn = block.querySelector('.btn-copy');
+            if (copyBtn && !copyBtn.hasAttribute('data-initialized')) {
+                copyBtn.setAttribute('data-initialized', 'true');
+                copyBtn.addEventListener('click', async () => {
+                    const success = await window.Utils.copyToClipboard(code);
+                    if (success) {
+                        copyBtn.innerHTML = '<i class="bi bi-check"></i>';
+                        copyBtn.classList.add('copied');
+                        setTimeout(() => {
+                            copyBtn.innerHTML = '<i class="bi bi-copy"></i>';
+                            copyBtn.classList.remove('copied');
+                        }, 2000);
+                    }
+                });
+            }
+            
+            // Re-attach GitHub button event
+            const githubBtn = block.querySelector('.btn-github');
+            if (githubBtn && window.GitHubIntegration && !githubBtn.hasAttribute('data-initialized')) {
+                githubBtn.setAttribute('data-initialized', 'true');
+                githubBtn.addEventListener('click', async () => {
+                    const filename = `code.${language}`;
+                    const result = await window.GitHubIntegration.createGist(filename, code, language);
+                    if (result.success) {
+                        window.Utils.showSuccess('Gist created successfully!', this.elements.chatMessages);
+                    }
+                });
+            }
+        });
+    },
+
+    applySyntaxHighlighting: function() {
+        // Apply syntax highlighting using Prism.js if available
+        if (typeof Prism !== 'undefined') {
+            Prism.highlightAll();
+        }
+    },
+
+    escapeHtml: function(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
+    sendMessage: async function() {
+        const message = this.elements.messageInput.value.trim();
+        if (!message || this.isWaitingForResponse) return;
+        
+        // Clear input and disable
+        this.elements.messageInput.value = '';
+        this.elements.messageInput.style.height = 'auto';
+        this.disableInput();
+        this.isWaitingForResponse = true;
+        
+        // Add user message
+        this.addMessage('user', message);
+        
+        // Send via WebSocket
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'message',
+                content: message
+            }));
+        } else {
+            window.Utils.showError('Connection lost. Please refresh the page.', this.elements.chatMessages);
+            this.enableInput();
+            this.isWaitingForResponse = false;
+        }
+    },
+
+    addMessage: function(role, content, cached = false, isStreaming = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}-message ${isStreaming ? 'streaming' : ''}`;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        
+        if (role === 'user') {
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-role">You</span>
+                    <span class="message-time">${timestamp}</span>
+                </div>
+                <div class="message-content">${this.escapeHtml(content)}</div>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-role">Assistant</span>
+                    ${cached ? '<span class="cached-indicator" title="Cached response"><i class="bi bi-lightning-fill"></i></span>' : ''}
+                    <span class="message-time">${timestamp}</span>
+                </div>
+                <div class="message-content">${isStreaming ? '' : this.processMessageContent(content)}</div>
+            `;
+        }
+        
+        this.elements.chatMessages.appendChild(messageDiv);
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+        
+        return messageDiv;
+    },
+
+    loadChatHistory: async function() {
+        try {
+            const response = await fetch('/api/chat/history');
+            const data = await response.json();
+            
+            if (data.messages && data.messages.length > 0) {
+                this.elements.chatMessages.innerHTML = '';
+                data.messages.forEach(msg => {
+                    this.addMessage(msg.role, msg.content, msg.cached);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading chat history:', error);
+        }
+    },
+
+    enableInput: function() {
+        this.elements.messageInput.disabled = false;
+        this.elements.sendButton.disabled = false;
+        this.elements.messageInput.focus();
+    },
+
+    disableInput: function() {
+        this.elements.messageInput.disabled = true;
+        this.elements.sendButton.disabled = true;
+    }
+};
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    ChatPage.init();
+});
+
+// Export for use in other modules
+window.ChatPage = ChatPage;
