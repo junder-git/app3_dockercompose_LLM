@@ -29,3 +29,5 @@ EXPOSE 11434
 
 # Set entrypoint to initialization script
 ENTRYPOINT ["/scripts/init-ollama.sh"]
+
+

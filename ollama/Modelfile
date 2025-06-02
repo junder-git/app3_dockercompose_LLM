@@ -1,24 +1,9 @@
-# Create this as ollama/Modelfile to customize model behavior
-# Make sure the base model exists before using this
+# Simple Modelfile optimized for Python library usage
 FROM deepseek-coder-v2:16b
 
-# System prompt to help prevent BOS token issues
-SYSTEM """You are a helpful AI coding assistant. Provide clear, detailed responses to programming questions and tasks. Do not include any special formatting tokens or system markers in your responses."""
+# Clear, focused system prompt
+SYSTEM """You are DeepSeek Coder, a helpful AI coding assistant. Provide clear, accurate, and detailed responses to programming questions and tasks."""
 
-# Parameters to optimize model behavior
+# Basic parameters - let the Python library handle most configuration
 PARAMETER temperature 0.7
 PARAMETER top_p 0.9
-PARAMETER top_k 40
-PARAMETER repeat_penalty 1.1
-
-# Only essential stop tokens
-PARAMETER stop "<|im_end|>"
-PARAMETER stop "<|endoftext|>"
-
-# Template to ensure clean conversation format
-TEMPLATE """{{ if .System }}<|im_start|>system
-{{ .System }}<|im_end|>
-{{ end }}{{ if .Prompt }}<|im_start|>user
-{{ .Prompt }}<|im_end|>
-<|im_start|>assistant
-{{ end }}{{ .Response }}{{ if not .Response }}<|im_end|>{{ end }}"""

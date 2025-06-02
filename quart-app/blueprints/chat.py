@@ -47,19 +47,19 @@ async def ws():
                     })
                     continue
                 
-                # Sanitize user input
-                user_message = sanitize_html(data.get('message', ''))
+                # Get user input - NO sanitization for AI processing
+                user_message = data.get('message', '').strip()
                 if not user_message:
                     continue
                 
-                # Save user message to current session (await to ensure it's saved)
+                # Save raw user message to current session
                 await save_message(current_user.auth_id, 'user', user_message, current_session_id)
                 
-                # Send user message back for display
+                # Send user message back for display (only sanitize for display)
                 await websocket.send_json({
                     'type': 'message',
                     'role': 'user',
-                    'content': user_message
+                    'content': user_message  # Show raw message to user
                 })
                 
                 # Check cache first
@@ -67,34 +67,29 @@ async def ws():
                 cached_response = await get_cached_response(prompt_hash)
                 
                 if cached_response:
-                    # Send cached response
+                    # Send cached response (no sanitization)
                     await websocket.send_json({
                         'type': 'message',
                         'role': 'assistant',
                         'content': cached_response,
                         'cached': True
                     })
-                    # Save to current session (await to ensure it's saved)
-                    await save_message(current_user.auth_id, 'assistant', cached_response, current_session_id)
+                    # Raw response already stored in cache/database
                 else:
                     # Get AI response from Ollama with chat history
-                    chat_history = await get_session_messages(current_session_id, 10)  # Last 10 messages for context
+                    chat_history = await get_session_messages(current_session_id, 10)
                     full_response = await get_ai_response(user_message, websocket, chat_history)
                     
                     if full_response:
-                        # Sanitize AI response before caching/saving
-                        sanitized_response = sanitize_html(full_response)
+                        # Store and cache raw AI response (NO sanitization)
+                        await cache_response(prompt_hash, full_response)
+                        await save_message(current_user.auth_id, 'assistant', full_response, current_session_id)
                         
-                        # Cache the response (await both to ensure they complete)
-                        await cache_response(prompt_hash, sanitized_response)
-                        # Save to current session
-                        await save_message(current_user.auth_id, 'assistant', sanitized_response, current_session_id)
-                        
-                        # Send completion signal
+                        # Send completion signal (no sanitization)
                         await websocket.send_json({
                             'type': 'complete',
                             'role': 'assistant',
-                            'content': sanitized_response
+                            'content': full_response
                         })
                 
     except asyncio.CancelledError:

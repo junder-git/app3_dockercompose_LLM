@@ -1,10 +1,8 @@
-# ollama_client.py
+# ollama_client.py - Using Official Ollama Python Library
 import os
-import json
 import asyncio
-import aiohttp
 from typing import List, Dict
-from .utils import sanitize_html
+from ollama import AsyncClient, ResponseError
 
 # AI Model configuration
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://ollama:11434')
@@ -24,41 +22,8 @@ MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
 MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))
 MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '300'))
 
-def clean_message_content(content: str, aggressive_clean: bool = False) -> str:
-    """Clean message content from BOS tokens and other artifacts"""
-    if not content:
-        return ""
-    
-    cleaned = content.strip()
-    
-    # Only do aggressive cleaning on input, not on streaming output
-    if aggressive_clean:
-        # Remove common BOS/EOS tokens that might appear in content
-        tokens_to_remove = [
-            '<|begin_of_text|>', '<|end_of_text|>',
-            '<|im_start|>', '<|im_end|>',
-            '<|endoftext|>', '<|startoftext|>',
-            '<s>', '</s>',
-            '[INST]', '[/INST]',
-            '<BOS>', '<EOS>',
-            '<<SYS>>', '<</SYS>>',
-        ]
-        
-        for token in tokens_to_remove:
-            cleaned = cleaned.replace(token, '').strip()
-    else:
-        # Light cleaning for output - only remove tokens that are clearly system tokens
-        # and appear at the start or end of content
-        if cleaned.startswith('<|im_start|>'):
-            cleaned = cleaned[12:].strip()
-        if cleaned.endswith('<|im_end|>'):
-            cleaned = cleaned[:-11].strip()
-        if cleaned.startswith('<|begin_of_text|>'):
-            cleaned = cleaned[17:].strip()
-        if cleaned.endswith('<|end_of_text|>'):
-            cleaned = cleaned[:-15].strip()
-    
-    return cleaned
+# Create async client
+client = AsyncClient(host=OLLAMA_URL)
 
 async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> str:
     """Get response from Ollama AI model with streaming and chat history"""
@@ -68,18 +33,15 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
     await ws.send_json({'type': 'typing', 'status': 'start'})
     
     try:
-        # Clean the input prompt aggressively
-        cleaned_prompt = clean_message_content(prompt, aggressive_clean=True)
-        
-        # Build messages array for chat endpoint
+        # Build messages array for chat
         messages = []
         
-        # Add chat history as messages (cleaned)
+        # Add chat history (keep it simple - no cleaning)
         if chat_history:
-            for msg in chat_history[-8:]:  # Reduced to 8 messages for better performance
+            for msg in chat_history[-8:]:  # Last 8 messages for context
                 role = msg.get('role')
-                content = clean_message_content(msg.get('content', ''), aggressive_clean=True)
-                if role in ['user', 'assistant'] and content:  # Only include valid roles with content
+                content = msg.get('content', '').strip()
+                if role in ['user', 'assistant'] and content:
                     messages.append({
                         'role': role,
                         'content': content
@@ -88,93 +50,45 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         # Add current user message
         messages.append({
             'role': 'user',
-            'content': cleaned_prompt
+            'content': prompt.strip()
         })
         
-        timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Enhanced payload with better token handling
-            payload = {
-                'model': OLLAMA_MODEL,
-                'messages': messages,
-                'stream': True,
-                'options': {
-                    'temperature': MODEL_TEMPERATURE,
-                    'top_p': MODEL_TOP_P,
-                    'num_predict': MODEL_MAX_TOKENS,
-                    'num_ctx': 4096,
-                    'repeat_penalty': 1.1,
-                    'mirostat': 0,  # Disable mirostat as it can cause issues
-                    # Reduced stop tokens - only essential ones
-                    'stop': ['<|im_end|>', '<|endoftext|>'],
-                    # Prevent the model from generating special tokens
-                    'penalize_newline': False,
-                    'top_k': 40
-                }
-            }
-            
-            async with session.post(f'{OLLAMA_URL}/api/chat', json=payload) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    print(f"Ollama API error {response.status}: {error_text}")
+        # Configure options
+        options = {
+            'temperature': MODEL_TEMPERATURE,
+            'top_p': MODEL_TOP_P,
+            'num_predict': MODEL_MAX_TOKENS,
+            'num_ctx': 4096,
+            'repeat_penalty': 1.1,
+        }
+        
+        # Use async streaming chat
+        stream = await client.chat(
+            model=OLLAMA_MODEL,
+            messages=messages,
+            stream=True,
+            options=options
+        )
+        
+        # Process streaming response
+        async for chunk in stream:
+            if 'message' in chunk and 'content' in chunk['message']:
+                chunk_text = chunk['message']['content']
+                
+                if chunk_text:  # Send any non-empty chunk
+                    full_response += chunk_text
+                    # Stream each chunk to client
                     await ws.send_json({
-                        'type': 'error',
-                        'message': f'AI service error (HTTP {response.status}). Please try again.'
+                        'type': 'stream',
+                        'content': chunk_text
                     })
-                    return ""
-
-                chunk_buffer = ""
-                async for line in response.content:
-                    if line:
-                        try:
-                            # Handle potential incomplete JSON chunks
-                            line_str = line.decode('utf-8').strip()
-                            if not line_str:
-                                continue
-                                
-                            chunk_buffer += line_str
-                            
-                            # Try to parse complete JSON objects
-                            while chunk_buffer:
-                                try:
-                                    chunk = json.loads(chunk_buffer)
-                                    chunk_buffer = ""  # Reset buffer on successful parse
-                                    
-                                    # Handle chat API response format
-                                    if 'message' in chunk and 'content' in chunk['message']:
-                                        chunk_text = chunk['message']['content']
-                                        
-                                        # Light cleaning for streaming chunks - don't be too aggressive
-                                        cleaned_chunk = clean_message_content(chunk_text, aggressive_clean=False)
-                                        
-                                        # Send chunks even if they seem small (could be punctuation, etc.)
-                                        if cleaned_chunk:
-                                            full_response += cleaned_chunk
-                                            # Stream each chunk to client
-                                            await ws.send_json({
-                                                'type': 'stream',
-                                                'content': cleaned_chunk
-                                            })
-                                    
-                                    # Check if generation is complete
-                                    if chunk.get('done', False):
-                                        break
-                                        
-                                except json.JSONDecodeError:
-                                    # If we can't parse, might be incomplete - wait for more data
-                                    if len(chunk_buffer) > 10000:  # Prevent infinite buffer growth
-                                        print(f"Discarding large unparseable buffer: {chunk_buffer[:100]}...")
-                                        chunk_buffer = ""
-                                    break
-                                    
-                        except Exception as e:
-                            print(f"Error processing chunk: {e}")
-                            continue
-                            
-                    # Break if we're done (check periodically)
-                    if full_response and chunk_buffer == "":
-                        break
-                        
+        
+    except ResponseError as e:
+        print(f"Ollama ResponseError: {e.error}")
+        await ws.send_json({
+            'type': 'error',
+            'message': f'AI model error: {e.error}'
+        })
     except asyncio.TimeoutError:
         await ws.send_json({
             'type': 'error',
@@ -190,23 +104,52 @@ async def get_ai_response(prompt: str, ws, chat_history: List[Dict] = None) -> s
         # Stop typing indicator
         await ws.send_json({'type': 'typing', 'status': 'stop'})
     
-    # Final cleanup of the complete response - light cleaning only
-    final_response = clean_message_content(full_response, aggressive_clean=False)
-    
-    return final_response
+    return full_response.strip()
 
 async def health_check_ollama() -> bool:
     """Check if Ollama service is healthy and responsive"""
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(f'{OLLAMA_URL}/api/tags') as response:
-                if response.status == 200:
-                    data = await response.json()
-                    # Check if our model is available
-                    models = [model['name'] for model in data.get('models', [])]
-                    return any(OLLAMA_MODEL in model for model in models)
-                return False
+        # Use the official library's list method to check health
+        models = await client.list()
+        
+        # Check if our model is available
+        available_models = [model['name'] for model in models.get('models', [])]
+        return any(OLLAMA_MODEL in model for model in available_models)
+        
     except Exception as e:
         print(f"Ollama health check failed: {e}")
         return False
+
+async def get_available_models() -> List[str]:
+    """Get list of available models"""
+    try:
+        models = await client.list()
+        return [model['name'] for model in models.get('models', [])]
+    except Exception as e:
+        print(f"Failed to get available models: {e}")
+        return []
+
+async def test_model_response(model_name: str = None) -> Dict:
+    """Test a quick response from the model"""
+    if model_name is None:
+        model_name = OLLAMA_MODEL
+        
+    try:
+        response = await client.chat(
+            model=model_name,
+            messages=[{'role': 'user', 'content': 'Hello, please respond with just "API test successful"'}],
+            stream=False,
+            options={'num_predict': 20, 'temperature': 0.1}
+        )
+        
+        return {
+            'success': True,
+            'response': response['message']['content'],
+            'model': model_name
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'model': model_name
+        }
