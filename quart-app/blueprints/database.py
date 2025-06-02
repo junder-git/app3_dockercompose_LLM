@@ -1,4 +1,4 @@
-# database.py
+# database.py - Modified for single session per user
 import os
 import secrets
 from datetime import datetime
@@ -13,7 +13,6 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
 CHAT_CACHE_TTL = int(os.environ.get('CHAT_CACHE_TTL_SECONDS', '3600'))
 RATE_LIMIT_WINDOW = 60
 RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MESSAGES_PER_MINUTE', '10'))
-MAX_CHATS_PER_USER = 5
 
 # Redis connection pool
 class RedisPool:
@@ -106,26 +105,29 @@ async def get_current_user_data(user_id: str) -> Optional[User]:
     """Get current user data from Redis"""
     return await get_user_by_id(user_id)
 
-# Chat session management
-async def create_chat_session(user_id: str, title: str = None) -> ChatSession:
-    """Create a new chat session for a user"""
+# Chat session management - MODIFIED FOR SINGLE SESSION
+async def get_or_create_user_session(user_id: str) -> ChatSession:
+    """Get or create the single session for a user"""
     r = await get_redis()
     
-    # Check if user has reached max chat limit
-    user_sessions = await r.zrange(f"user_sessions:{user_id}", 0, -1)
-    if len(user_sessions) >= MAX_CHATS_PER_USER:
-        # Remove oldest session
-        oldest_session_id = user_sessions[0]
-        await delete_chat_session(user_id, oldest_session_id)
+    # Check if user already has a session
+    session_id = await r.get(f"user_session:{user_id}")
+    
+    if session_id:
+        # Get existing session
+        session_data = await r.hgetall(f"session:{session_id}")
+        if session_data:
+            return ChatSession.from_dict(session_data)
     
     # Create new session
-    session = ChatSession(user_id=user_id, title=title)
+    session = ChatSession(user_id=user_id, title="My Chat")
+    session.id = f"{user_id}_session"  # Fixed session ID per user
     
     # Save session data
     await r.hset(f"session:{session.id}", mapping=session.to_dict())
     
-    # Add to user's session list (sorted by creation time)
-    await r.zadd(f"user_sessions:{user_id}", {session.id: datetime.utcnow().timestamp()})
+    # Save session ID reference
+    await r.set(f"user_session:{user_id}", session.id)
     
     return session
 
@@ -138,54 +140,88 @@ async def get_chat_session(session_id: str) -> Optional[ChatSession]:
         return ChatSession.from_dict(session_data)
     return None
 
-async def get_user_chat_sessions(user_id: str) -> List[ChatSession]:
-    """Get all chat sessions for a user"""
+async def clear_user_chat(user_id: str) -> Dict[str, Any]:
+    """Clear all messages in user's chat session"""
     r = await get_redis()
-    session_ids = await r.zrevrange(f"user_sessions:{user_id}", 0, -1)
+    result = {'success': False, 'message': '', 'deleted_count': 0}
     
-    sessions = []
-    for session_id in session_ids:
+    try:
+        # Get user's session
+        session_id = await r.get(f"user_session:{user_id}")
+        if not session_id:
+            result['message'] = "No chat session found"
+            return result
+        
+        # Delete all messages in the session
+        message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
+        deleted_count = 0
+        
+        for msg_id in message_ids:
+            await r.delete(f"message:{msg_id}")
+            deleted_count += 1
+        
+        # Clear the session messages list
+        await r.delete(f"session_messages:{session_id}")
+        
+        # Update session timestamp
         session = await get_chat_session(session_id)
         if session:
-            sessions.append(session)
+            session.updated_at = datetime.utcnow().isoformat()
+            await r.hset(f"session:{session_id}", mapping=session.to_dict())
+        
+        result['success'] = True
+        result['message'] = f"Cleared {deleted_count} messages"
+        result['deleted_count'] = deleted_count
+        
+    except Exception as e:
+        result['message'] = f"Failed to clear chat: {str(e)}"
     
-    return sessions
+    return result
 
-async def delete_chat_session(user_id: str, session_id: str):
-    """Delete a chat session and all its messages"""
+async def compress_user_chat(user_id: str, keep_count: int = 50) -> Dict[str, Any]:
+    """Compress chat by keeping only the most recent messages"""
     r = await get_redis()
+    result = {'success': False, 'message': '', 'deleted_count': 0, 'kept_count': 0}
     
-    # Delete all messages in this session
-    message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
-    for msg_id in message_ids:
-        await r.delete(f"message:{msg_id}")
+    try:
+        # Get user's session
+        session_id = await r.get(f"user_session:{user_id}")
+        if not session_id:
+            result['message'] = "No chat session found"
+            return result
+        
+        # Get all message IDs sorted by timestamp
+        all_message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
+        total_messages = len(all_message_ids)
+        
+        if total_messages <= keep_count:
+            result['message'] = f"Chat has only {total_messages} messages, no compression needed"
+            result['kept_count'] = total_messages
+            return result
+        
+        # Get message IDs to delete (older messages)
+        messages_to_delete = all_message_ids[:-keep_count]
+        deleted_count = 0
+        
+        for msg_id in messages_to_delete:
+            await r.delete(f"message:{msg_id}")
+            await r.zrem(f"session_messages:{session_id}", msg_id)
+            deleted_count += 1
+        
+        result['success'] = True
+        result['message'] = f"Compressed chat from {total_messages} to {keep_count} messages"
+        result['deleted_count'] = deleted_count
+        result['kept_count'] = keep_count
+        
+    except Exception as e:
+        result['message'] = f"Failed to compress chat: {str(e)}"
     
-    # Delete session messages list
-    await r.delete(f"session_messages:{session_id}")
-    
-    # Delete session data
-    await r.delete(f"session:{session_id}")
-    
-    # Remove from user's session list
-    await r.zrem(f"user_sessions:{user_id}", session_id)
+    return result
 
 async def get_or_create_current_session(user_id: str) -> str:
     """Get current session ID or create a new one"""
-    from quart import session
-    
-    # Use session storage for current session tracking
-    session_key = f"current_session_{user_id}"
-    
-    if session_key in session:
-        session_id = session[session_key]
-        # Verify session still exists
-        if await get_chat_session(session_id):
-            return session_id
-    
-    # Create new session
-    chat_session = await create_chat_session(user_id)
-    session[session_key] = chat_session.id
-    return chat_session.id
+    session = await get_or_create_user_session(user_id)
+    return session.id
 
 # Message management
 async def save_message(user_id: str, role: str, content: str, session_id: str):
@@ -234,23 +270,57 @@ async def get_session_messages(session_id: str, limit: int = None) -> List[Dict]
     return messages[::-1]  # Reverse to get oldest first
 
 async def get_user_messages(user_id: str, limit: int = None) -> List[Dict]:
-    """Get ALL messages for a user across all sessions (for admin view)"""
+    """Get messages for a user's single session"""
     r = await get_redis()
     
-    # Get all user sessions
-    session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
+    # Get user's session
+    session_id = await r.get(f"user_session:{user_id}")
+    if not session_id:
+        return []
     
-    all_messages = []
-    for session_id in session_ids:
-        session_messages = await get_session_messages(session_id, limit)
-        all_messages.extend(session_messages)
+    return await get_session_messages(session_id, limit)
+
+async def get_chat_statistics(user_id: str) -> Dict[str, Any]:
+    """Get statistics about user's chat"""
+    r = await get_redis()
+    stats = {
+        'total_messages': 0,
+        'user_messages': 0,
+        'assistant_messages': 0,
+        'oldest_message': None,
+        'newest_message': None,
+        'session_created': None
+    }
     
-    # Sort all messages by timestamp
-    all_messages.sort(key=lambda x: x.get('timestamp', ''))
+    try:
+        # Get user's session
+        session_id = await r.get(f"user_session:{user_id}")
+        if not session_id:
+            return stats
+        
+        # Get session info
+        session = await get_chat_session(session_id)
+        if session:
+            stats['session_created'] = session.created_at
+        
+        # Get all messages
+        messages = await get_session_messages(session_id, limit=None)
+        stats['total_messages'] = len(messages)
+        
+        for msg in messages:
+            if msg['role'] == 'user':
+                stats['user_messages'] += 1
+            elif msg['role'] == 'assistant':
+                stats['assistant_messages'] += 1
+        
+        if messages:
+            stats['oldest_message'] = messages[0]['timestamp']
+            stats['newest_message'] = messages[-1]['timestamp']
     
-    if limit:
-        return all_messages[-limit:]  # Return most recent messages
-    return all_messages
+    except Exception as e:
+        print(f"Error getting chat statistics: {e}")
+    
+    return stats
 
 # Rate limiting
 async def check_rate_limit(user_id: str) -> bool:
@@ -283,7 +353,7 @@ async def cache_response(prompt_hash: str, response: str):
     except Exception as e:
         print(f"Redis cache set error: {e}")
 
-# Database management functions
+# Database management functions (keeping existing functions)
 async def get_database_stats():
     """Get comprehensive database statistics"""
     r = await get_redis()
@@ -309,23 +379,18 @@ async def get_database_stats():
         for user_id in user_ids:
             user_data = await r.hgetall(f"user:{user_id}")
             if user_data:
-                # Get session count for this user
-                session_count = len(await r.zrange(f"user_sessions:{user_id}", 0, -1))
-                
-                # Get total message count
-                total_messages = 0
-                session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
-                for session_id in session_ids:
+                # Get message count for user's single session
+                session_id = await r.get(f"user_session:{user_id}")
+                message_count = 0
+                if session_id:
                     message_count = await r.zcard(f"session_messages:{session_id}")
-                    total_messages += message_count
                 
                 users_data.append({
                     'id': user_id,
                     'username': user_data.get('username'),
                     'is_admin': user_data.get('is_admin') == 'true',
                     'created_at': user_data.get('created_at'),
-                    'session_count': session_count,
-                    'message_count': total_messages
+                    'message_count': message_count
                 })
         
         stats['users'] = users_data
@@ -370,15 +435,14 @@ async def delete_user(user_id: str) -> Dict[str, Any]:
             return result
         
         deleted_counts = {
-            'sessions': 0,
             'messages': 0,
             'cache_entries': 0
         }
         
-        # Delete all user sessions and messages
-        session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
-        for session_id in session_ids:
-            # Delete all messages in this session
+        # Delete user's session and messages
+        session_id = await r.get(f"user_session:{user_id}")
+        if session_id:
+            # Delete all messages in the session
             message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
             for msg_id in message_ids:
                 await r.delete(f"message:{msg_id}")
@@ -389,10 +453,9 @@ async def delete_user(user_id: str) -> Dict[str, Any]:
             
             # Delete session data
             await r.delete(f"session:{session_id}")
-            deleted_counts['sessions'] += 1
-        
-        # Delete user sessions list
-        await r.delete(f"user_sessions:{user_id}")
+            
+            # Delete user session reference
+            await r.delete(f"user_session:{user_id}")
         
         # Delete rate limit keys for this user
         rate_limit_key = f"rate_limit:{user_id}"
@@ -430,21 +493,22 @@ async def delete_user_messages_only(user_id: str) -> Dict[str, Any]:
             result['message'] = f"User with ID {user_id} not found"
             return result
         
+        # Get user's session
+        session_id = await r.get(f"user_session:{user_id}")
+        if not session_id:
+            result['message'] = "No chat session found"
+            return result
+        
+        # Delete all messages in the session
+        message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
         deleted_count = 0
         
-        # Get all user sessions
-        session_ids = await r.zrange(f"user_sessions:{user_id}", 0, -1)
-        for session_id in session_ids:
-            # Delete all messages in this session
-            message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
-            for msg_id in message_ids:
-                await r.delete(f"message:{msg_id}")
-                deleted_count += 1
-            
-            # Clear the session messages list but keep the session
-            await r.delete(f"session_messages:{session_id}")
-            # Recreate empty session messages list
-            await r.zadd(f"session_messages:{session_id}", {})
+        for msg_id in message_ids:
+            await r.delete(f"message:{msg_id}")
+            deleted_count += 1
+        
+        # Clear the session messages list
+        await r.delete(f"session_messages:{session_id}")
         
         result['success'] = True
         result['message'] = f"Successfully deleted {deleted_count} messages for user {user.username}"
@@ -526,7 +590,6 @@ async def cleanup_database(cleanup_type: str, admin_user_id: str):
         elif cleanup_type == "fix_sessions":
             # Fix orphaned sessions and messages
             all_session_keys = await r.keys("session:*")
-            all_message_keys = await r.keys("session_messages:*")
             
             # Get valid user IDs
             valid_users = await r.smembers("users")

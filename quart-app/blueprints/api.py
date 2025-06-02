@@ -1,11 +1,11 @@
-# blueprints/api.py
+# blueprints/api.py - Updated with chat management endpoints
 from quart import Blueprint, jsonify, request, session
 from quart_auth import login_required, current_user
 from .models import ChatSession
 from .database import (
-    get_session_messages, get_user_chat_sessions,
-    create_chat_session, get_chat_session, delete_chat_session,
-    get_or_create_current_session
+    get_session_messages, get_or_create_user_session,
+    get_chat_session, clear_user_chat, compress_user_chat,
+    get_chat_statistics
 )
 from .utils import sanitize_html
 
@@ -14,13 +14,10 @@ api_bp = Blueprint('api', __name__, url_prefix='/api')
 @api_bp.route('/chat/history')
 @login_required
 async def chat_history():
-    # Get current session for this user
-    current_session_id = await get_or_create_current_session(current_user.auth_id)
+    # Get user's single session
+    session_obj = await get_or_create_user_session(current_user.auth_id)
     
-    # Get session object
-    session_obj = await get_chat_session(current_session_id)
-    
-    messages = await get_session_messages(current_session_id)
+    messages = await get_session_messages(session_obj.id)
     
     formatted_messages = []
     for msg in messages:
@@ -36,107 +33,70 @@ async def chat_history():
         'session': {
             'id': session_obj.id,
             'title': session_obj.title
-        } if session_obj else None
-    })
-
-@api_bp.route('/chat/sessions')
-@login_required
-async def get_user_sessions():
-    """Get all chat sessions for the current user"""
-    sessions = await get_user_chat_sessions(current_user.auth_id)
-    
-    session_data = []
-    for session_obj in sessions:
-        # Get message count for each session
-        messages = await get_session_messages(session_obj.id)
-        message_count = len(messages)
-        
-        session_data.append({
-            'id': session_obj.id,
-            'title': session_obj.title,
-            'created_at': session_obj.created_at,
-            'updated_at': session_obj.updated_at,
-            'message_count': message_count
-        })
-    
-    return jsonify({'sessions': session_data})
-
-@api_bp.route('/chat/sessions', methods=['POST'])
-@login_required
-async def create_new_session():
-    """Create a new chat session"""
-    data = await request.get_json()
-    title = sanitize_html(data.get('title', '')) if data else None
-    
-    session_obj = await create_chat_session(current_user.auth_id, title)
-    
-    # Update current session in user's session storage
-    session[f"current_session_{current_user.auth_id}"] = session_obj.id
-    
-    return jsonify({
-        'session': {
-            'id': session_obj.id,
-            'title': session_obj.title,
-            'created_at': session_obj.created_at,
-            'updated_at': session_obj.updated_at
         }
     })
 
-@api_bp.route('/chat/sessions/<session_id>/switch', methods=['POST'])
+@api_bp.route('/chat/clear', methods=['POST'])
 @login_required
-async def switch_session(session_id):
-    """Switch to a different chat session"""
-    # Verify session belongs to user
-    session_obj = await get_chat_session(session_id)
-    if not session_obj or session_obj.user_id != current_user.auth_id:
-        return jsonify({'error': 'Session not found'}), 404
+async def clear_chat():
+    """Clear all messages in the user's chat"""
+    result = await clear_user_chat(current_user.auth_id)
     
-    # Update current session
-    session[f"current_session_{current_user.auth_id}"] = session_id
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+@api_bp.route('/chat/compress', methods=['POST'])
+@login_required
+async def compress_chat():
+    """Compress chat to keep only recent messages"""
+    data = await request.get_json()
+    keep_count = data.get('keep_count', 50)
     
-    # Get messages for this session
-    messages = await get_session_messages(session_id)
+    # Validate keep_count
+    if not isinstance(keep_count, int) or keep_count < 10 or keep_count > 200:
+        return jsonify({'error': 'keep_count must be between 10 and 200'}), 400
+    
+    result = await compress_user_chat(current_user.auth_id, keep_count)
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 400
+
+@api_bp.route('/chat/statistics')
+@login_required
+async def chat_statistics():
+    """Get statistics about the user's chat"""
+    stats = await get_chat_statistics(current_user.auth_id)
+    return jsonify(stats)
+
+@api_bp.route('/chat/export')
+@login_required
+async def export_chat():
+    """Export chat history as JSON"""
+    # Get user's session
+    session_obj = await get_or_create_user_session(current_user.auth_id)
+    
+    # Get all messages
+    messages = await get_session_messages(session_obj.id, limit=None)
     
     formatted_messages = []
     for msg in messages:
         formatted_messages.append({
-            'id': msg.get('id'),
             'role': msg.get('role'),
             'content': msg.get('content', ''),
             'timestamp': msg.get('timestamp')
         })
     
-    return jsonify({
-        'session': {
-            'id': session_obj.id,
-            'title': session_obj.title,
-            'created_at': session_obj.created_at,
-            'updated_at': session_obj.updated_at
-        },
+    export_data = {
+        'user': current_user.auth_id,
+        'session_id': session_obj.id,
+        'session_title': session_obj.title,
+        'exported_at': datetime.utcnow().isoformat(),
+        'message_count': len(formatted_messages),
         'messages': formatted_messages
-    })
-
-@api_bp.route('/chat/sessions/<session_id>', methods=['DELETE'])
-@login_required
-async def delete_session(session_id):
-    """Delete a chat session"""
-    # Verify session belongs to user
-    session_obj = await get_chat_session(session_id)
-    if not session_obj or session_obj.user_id != current_user.auth_id:
-        return jsonify({'error': 'Session not found'}), 404
+    }
     
-    # Don't allow deleting the last session
-    user_sessions = await get_user_chat_sessions(current_user.auth_id)
-    if len(user_sessions) <= 1:
-        return jsonify({'error': 'Cannot delete the last session'}), 400
-    
-    await delete_chat_session(current_user.auth_id, session_id)
-    
-    # If this was the current session, switch to another one
-    current_session_key = f"current_session_{current_user.auth_id}"
-    if session.get(current_session_key) == session_id:
-        remaining_sessions = await get_user_chat_sessions(current_user.auth_id)
-        if remaining_sessions:
-            session[current_session_key] = remaining_sessions[0].id
-    
-    return jsonify({'success': True})
+    return jsonify(export_data)

@@ -14,14 +14,24 @@
                     <i class="bi bi-github"></i>
                 </button>
                 <div class="dropdown">
-                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="sessionsDropdown" data-bs-toggle="dropdown">
-                        <i class="bi bi-chat-left"></i> Sessions
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="chatActionsDropdown" data-bs-toggle="dropdown">
+                        <i class="bi bi-gear"></i> Chat Actions
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end" id="sessionsList">
-                        <li><h6 class="dropdown-header">Your Chat Sessions (Max 5)</h6></li>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><h6 class="dropdown-header">Chat Management</h6></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="#" id="newSessionBtn">
-                            <i class="bi bi-plus-circle"></i> New Chat Session
+                        <li><a class="dropdown-item" href="#" id="chatStatsBtn">
+                            <i class="bi bi-bar-chart"></i> View Statistics
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" id="exportChatBtn">
+                            <i class="bi bi-download"></i> Export Chat
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-warning" href="#" id="compressChatBtn">
+                            <i class="bi bi-archive"></i> Compress Chat
+                        </a></li>
+                        <li><a class="dropdown-item text-danger" href="#" id="clearChatBtn">
+                            <i class="bi bi-trash"></i> Clear All Messages
                         </a></li>
                     </ul>
                 </div>
@@ -45,6 +55,63 @@
                          rows="1" autofocus></textarea>
                 <button class="btn btn-primary" type="button" id="sendButton">
                     <i class="bi bi-send"></i> Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chat Statistics Modal -->
+<div class="modal fade" id="chatStatsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-bar-chart"></i> Chat Statistics
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="chatStatsContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Compress Chat Modal -->
+<div class="modal fade" id="compressChatModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-archive"></i> Compress Chat History
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Compress your chat history by keeping only the most recent messages. This helps manage storage and improve performance.</p>
+                <div class="mb-3">
+                    <label for="keepMessagesCount" class="form-label">Keep most recent messages:</label>
+                    <select class="form-select" id="keepMessagesCount">
+                        <option value="10">Last 10 messages</option>
+                        <option value="25">Last 25 messages</option>
+                        <option value="50" selected>Last 50 messages</option>
+                        <option value="100">Last 100 messages</option>
+                        <option value="200">Last 200 messages</option>
+                    </select>
+                </div>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> This action cannot be undone. Older messages will be permanently deleted.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirmCompressBtn">
+                    <i class="bi bi-archive"></i> Compress Chat
                 </button>
             </div>
         </div>

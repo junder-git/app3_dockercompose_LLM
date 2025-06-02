@@ -1,4 +1,4 @@
-// static/js/github-integration.js - Enhanced GitHub Integration Module
+// static/js/github-integration.js - Enhanced with full repository reading
 
 const GitHubIntegration = {
     repos: [],
@@ -8,6 +8,7 @@ const GitHubIntegration = {
         username: '',
         hasToken: false
     },
+    repoContents: new Map(), // Cache for repository contents
     
     init: function() {
         this.loadSettings();
@@ -209,6 +210,14 @@ const GitHubIntegration = {
                                 </nav>
                                 <div id="fileList" class="file-list"></div>
                             </div>
+                            <div id="repoReadProgress" class="mt-3 d-none">
+                                <div class="progress">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                         role="progressbar" id="readProgressBar" 
+                                         style="width: 0%">0%</div>
+                                </div>
+                                <small class="text-muted" id="readProgressText">Preparing to read repository...</small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -292,9 +301,14 @@ const GitHubIntegration = {
                             <span class="text-muted small">Updated: ${new Date(repo.updated_at).toLocaleDateString()}</span>
                         </div>
                     </div>
-                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); GitHubIntegration.downloadRepo('${repo.full_name}')">
-                        <i class="bi bi-download"></i>
-                    </button>
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); GitHubIntegration.loadSingleFile('${repo.full_name}')" title="Load single file">
+                            <i class="bi bi-file-earmark-arrow-down"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); GitHubIntegration.readEntireRepo('${repo.full_name}')" title="Read entire repository">
+                            <i class="bi bi-folder-plus"></i> Read All
+                        </button>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -331,9 +345,14 @@ const GitHubIntegration = {
                             <span class="text-muted small">Updated: ${new Date(repo.updated_at).toLocaleDateString()}</span>
                         </div>
                     </div>
-                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); GitHubIntegration.downloadRepo('${repo.full_name}')">
-                        <i class="bi bi-download"></i>
-                    </button>
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); GitHubIntegration.loadSingleFile('${repo.full_name}')" title="Load single file">
+                            <i class="bi bi-file-earmark-arrow-down"></i>
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); GitHubIntegration.readEntireRepo('${repo.full_name}')" title="Read entire repository">
+                            <i class="bi bi-folder-plus"></i> Read All
+                        </button>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -393,7 +412,16 @@ const GitHubIntegration = {
             return a.name.localeCompare(b.name);
         });
 
-        fileList.innerHTML = contents.map(item => {
+        // Add "Read All Files in This Directory" button if not in root
+        const readAllButton = currentPath ? `
+            <div class="mb-3">
+                <button class="btn btn-success btn-sm" onclick="GitHubIntegration.readDirectoryFiles('${this.currentRepo}', '${currentPath}')">
+                    <i class="bi bi-folder-plus"></i> Read All Files in This Directory
+                </button>
+            </div>
+        ` : '';
+
+        fileList.innerHTML = readAllButton + contents.map(item => {
             const icon = item.type === 'dir' ? 'folder-fill' : this.getFileIcon(item.name);
             const onclick = item.type === 'dir' 
                 ? `GitHubIntegration.browseRepo('${this.currentRepo}', '${item.path}')`
@@ -432,7 +460,14 @@ const GitHubIntegration = {
     showRepos: function() {
         document.getElementById('repoList').classList.remove('d-none');
         document.getElementById('repoContents').classList.add('d-none');
+        document.getElementById('repoReadProgress').classList.add('d-none');
         this.displayRepos();
+    },
+
+    loadSingleFile: async function(repoFullName) {
+        // Show file browser for single file selection
+        this.currentRepo = repoFullName;
+        await this.browseRepo(repoFullName);
     },
 
     loadFile: async function(downloadUrl, fileName, filePath) {
@@ -453,6 +488,289 @@ const GitHubIntegration = {
             console.error('Error loading file:', error);
             alert(`Failed to load file: ${error.message}`);
         }
+    },
+
+    readEntireRepo: async function(repoFullName) {
+        if (!confirm(`This will read all files from the repository "${repoFullName}". This may take some time for large repositories. Continue?`)) {
+            return;
+        }
+
+        // Show progress
+        document.getElementById('repoReadProgress').classList.remove('d-none');
+        
+        try {
+            const files = await this.getAllRepoFiles(repoFullName);
+            
+            if (files.length === 0) {
+                alert('No files found in the repository.');
+                return;
+            }
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('githubRepoModal')).hide();
+            
+            // Create a summary of all files
+            const repoContent = await this.createRepoSummary(repoFullName, files);
+            this.insertRepoIntoChat(repoFullName, repoContent);
+            
+        } catch (error) {
+            console.error('Error reading repository:', error);
+            alert(`Failed to read repository: ${error.message}`);
+        } finally {
+            document.getElementById('repoReadProgress').classList.add('d-none');
+        }
+    },
+
+    readDirectoryFiles: async function(repoFullName, directory) {
+        if (!confirm(`This will read all files from the directory "${directory}". Continue?`)) {
+            return;
+        }
+
+        // Show progress
+        document.getElementById('repoReadProgress').classList.remove('d-none');
+        
+        try {
+            const files = await this.getDirectoryFiles(repoFullName, directory);
+            
+            if (files.length === 0) {
+                alert('No files found in the directory.');
+                return;
+            }
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('githubRepoModal')).hide();
+            
+            // Create a summary of directory files
+            const dirContent = await this.createDirectorySummary(repoFullName, directory, files);
+            this.insertDirectoryIntoChat(directory, dirContent);
+            
+        } catch (error) {
+            console.error('Error reading directory:', error);
+            alert(`Failed to read directory: ${error.message}`);
+        } finally {
+            document.getElementById('repoReadProgress').classList.add('d-none');
+        }
+    },
+
+    getAllRepoFiles: async function(repoFullName, path = '', allFiles = []) {
+        const url = `https://api.github.com/repos/${repoFullName}/contents/${path}`;
+        
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `token ${this.settings.token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+
+            const contents = await response.json();
+            
+            for (const item of contents) {
+                if (item.type === 'file' && this.isReadableFile(item.name)) {
+                    allFiles.push({
+                        path: item.path,
+                        name: item.name,
+                        size: item.size,
+                        download_url: item.download_url
+                    });
+                    
+                    // Update progress
+                    this.updateReadProgress(allFiles.length, `Found ${allFiles.length} files...`);
+                } else if (item.type === 'dir' && !this.isIgnoredDirectory(item.name)) {
+                    // Recursively get files from subdirectories
+                    await this.getAllRepoFiles(repoFullName, item.path, allFiles);
+                }
+            }
+            
+            return allFiles;
+        } catch (error) {
+            console.error(`Error fetching contents at ${path}:`, error);
+            return allFiles;
+        }
+    },
+
+    getDirectoryFiles: async function(repoFullName, directory) {
+        const url = `https://api.github.com/repos/${repoFullName}/contents/${directory}`;
+        const files = [];
+        
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `token ${this.settings.token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+
+            const contents = await response.json();
+            
+            for (const item of contents) {
+                if (item.type === 'file' && this.isReadableFile(item.name)) {
+                    files.push({
+                        path: item.path,
+                        name: item.name,
+                        size: item.size,
+                        download_url: item.download_url
+                    });
+                    
+                    // Update progress
+                    this.updateReadProgress(files.length, `Found ${files.length} files...`);
+                }
+            }
+            
+            return files;
+        } catch (error) {
+            console.error(`Error fetching directory contents:`, error);
+            return files;
+        }
+    },
+
+    createRepoSummary: async function(repoFullName, files) {
+        let summary = `# Repository: ${repoFullName}\n\n`;
+        summary += `Total files: ${files.length}\n\n`;
+        summary += `## File Structure\n\n`;
+        
+        // Group files by directory
+        const fileTree = {};
+        files.forEach(file => {
+            const parts = file.path.split('/');
+            const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '/';
+            if (!fileTree[dir]) fileTree[dir] = [];
+            fileTree[dir].push(file);
+        });
+        
+        // Create tree structure
+        for (const [dir, dirFiles] of Object.entries(fileTree)) {
+            summary += `### ${dir === '/' ? 'Root' : dir}\n`;
+            dirFiles.forEach(file => {
+                summary += `- ${file.name} (${this.formatFileSize(file.size)})\n`;
+            });
+            summary += '\n';
+        }
+        
+        summary += `\n## File Contents\n\n`;
+        
+        // Read and add file contents
+        let processedFiles = 0;
+        for (const file of files) {
+            try {
+                this.updateReadProgress(
+                    Math.round((processedFiles / files.length) * 100),
+                    `Reading ${file.name}...`
+                );
+                
+                const response = await fetch(file.download_url);
+                if (response.ok) {
+                    const content = await response.text();
+                    const lang = this.getFileExtension(file.name);
+                    
+                    summary += `### File: ${file.path}\n\n`;
+                    summary += `\`\`\`${lang}\n${content}\n\`\`\`\n\n`;
+                }
+                
+                processedFiles++;
+            } catch (error) {
+                console.error(`Error reading file ${file.path}:`, error);
+                summary += `### File: ${file.path}\n\n`;
+                summary += `*Error reading file: ${error.message}*\n\n`;
+            }
+        }
+        
+        return summary;
+    },
+
+    createDirectorySummary: async function(repoFullName, directory, files) {
+        let summary = `# Directory: ${directory} (from ${repoFullName})\n\n`;
+        summary += `Total files: ${files.length}\n\n`;
+        summary += `## Files\n\n`;
+        
+        files.forEach(file => {
+            summary += `- ${file.name} (${this.formatFileSize(file.size)})\n`;
+        });
+        
+        summary += `\n## File Contents\n\n`;
+        
+        // Read and add file contents
+        let processedFiles = 0;
+        for (const file of files) {
+            try {
+                this.updateReadProgress(
+                    Math.round((processedFiles / files.length) * 100),
+                    `Reading ${file.name}...`
+                );
+                
+                const response = await fetch(file.download_url);
+                if (response.ok) {
+                    const content = await response.text();
+                    const lang = this.getFileExtension(file.name);
+                    
+                    summary += `### File: ${file.path}\n\n`;
+                    summary += `\`\`\`${lang}\n${content}\n\`\`\`\n\n`;
+                }
+                
+                processedFiles++;
+            } catch (error) {
+                console.error(`Error reading file ${file.path}:`, error);
+                summary += `### File: ${file.path}\n\n`;
+                summary += `*Error reading file: ${error.message}*\n\n`;
+            }
+        }
+        
+        return summary;
+    },
+
+    updateReadProgress: function(percent, message) {
+        const progressBar = document.getElementById('readProgressBar');
+        const progressText = document.getElementById('readProgressText');
+        
+        if (progressBar) {
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${percent}%`;
+        }
+        
+        if (progressText) {
+            progressText.textContent = message;
+        }
+    },
+
+    isReadableFile: function(filename) {
+        const readableExtensions = [
+            '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.cs',
+            '.php', '.rb', '.go', '.rs', '.kt', '.swift', '.m', '.scala', '.r',
+            '.html', '.css', '.scss', '.less', '.sass',
+            '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.conf', '.config',
+            '.md', '.txt', '.rst', '.tex', '.log',
+            '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+            '.sql', '.graphql', '.proto',
+            '.dockerfile', '.docker-compose.yml', '.env', '.env.example',
+            '.gitignore', '.gitattributes', '.editorconfig',
+            'Makefile', 'Rakefile', 'Gemfile', 'Pipfile', 'requirements.txt',
+            'package.json', 'package-lock.json', 'yarn.lock', 'composer.json',
+            'pom.xml', 'build.gradle', 'build.sbt', 'Cargo.toml'
+        ];
+        
+        const lowerName = filename.toLowerCase();
+        return readableExtensions.some(ext => lowerName.endsWith(ext)) ||
+               lowerName === 'readme' || lowerName === 'license' || lowerName === 'changelog' ||
+               !lowerName.includes('.');
+    },
+
+    isIgnoredDirectory: function(dirname) {
+        const ignoredDirs = [
+            'node_modules', '.git', '.svn', '.hg', 'vendor', 'venv', 'env',
+            '__pycache__', '.pytest_cache', '.idea', '.vscode', '.vs',
+            'bin', 'obj', 'dist', 'build', 'out', 'target', '.next',
+            '.nuxt', 'coverage', '.nyc_output', 'bower_components'
+        ];
+        
+        return ignoredDirs.includes(dirname.toLowerCase());
     },
 
     insertFileIntoChat: function(fileName, filePath, content) {
@@ -478,10 +796,50 @@ const GitHubIntegration = {
         }
     },
 
-    downloadRepo: async function(repoFullName) {
-        // For now, just show instructions
-        // In a real implementation, you'd download and zip the repo
-        alert(`To download the entire repository:\n\n1. Use git clone: git clone https://github.com/${repoFullName}.git\n\n2. Or download as ZIP from: https://github.com/${repoFullName}/archive/refs/heads/main.zip`);
+    insertRepoIntoChat: function(repoName, content) {
+        if (!window.ChatPage) {
+            console.error('Chat page not initialized');
+            return;
+        }
+        
+        const messageInput = document.getElementById('messageInput');
+        if (!messageInput) return;
+        
+        // Format the repo content for chat
+        const formattedContent = `I've loaded the entire repository "${repoName}" for analysis. Here's the complete structure and contents:\n\n${content}\n\nPlease analyze this repository and provide insights about its structure, purpose, and any improvements you might suggest.`;
+        
+        messageInput.value = formattedContent;
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+        messageInput.focus();
+        
+        // Show success message
+        if (window.Utils) {
+            window.Utils.showSuccess(`Loaded entire repository ${repoName} into chat`, document.querySelector('.chat-messages'));
+        }
+    },
+
+    insertDirectoryIntoChat: function(directory, content) {
+        if (!window.ChatPage) {
+            console.error('Chat page not initialized');
+            return;
+        }
+        
+        const messageInput = document.getElementById('messageInput');
+        if (!messageInput) return;
+        
+        // Format the directory content for chat
+        const formattedContent = `I've loaded all files from the directory "${directory}". Here are the contents:\n\n${content}\n\nPlease analyze these files and provide any insights or suggestions.`;
+        
+        messageInput.value = formattedContent;
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+        messageInput.focus();
+        
+        // Show success message
+        if (window.Utils) {
+            window.Utils.showSuccess(`Loaded directory ${directory} into chat`, document.querySelector('.chat-messages'));
+        }
     },
 
     getFileIcon: function(fileName) {
