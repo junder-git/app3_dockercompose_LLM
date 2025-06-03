@@ -32,7 +32,7 @@ const RegisterPage = {
 };
 
 // Initialize Prism.js for syntax highlighting
-function initializePrism() {
+/* function initializePrism() {
     // Load Prism.js CSS
     const prismCSS = document.createElement('link');
     prismCSS.rel = 'stylesheet';
@@ -52,12 +52,12 @@ function initializePrism() {
         script.async = true;
         document.head.appendChild(script);
     });
-}
+} */
 
 // Page-specific initialization
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Prism.js for syntax highlighting
-    initializePrism();
+    //initializePrism();
 
     // Initialize GitHub integration
     if (window.GitHubIntegration) {
@@ -83,9 +83,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Apply syntax highlighting to any existing code blocks
-    setTimeout(() => {
+    /*setTimeout(() => {
         if (window.Prism) {
             window.Prism.highlightAll();
         }
-    }, 500);
+    }, 500); */
 });
