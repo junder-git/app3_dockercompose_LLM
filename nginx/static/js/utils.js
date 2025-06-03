@@ -1,24 +1,51 @@
 // static/js/utils.js - Utility functions
 
 const Utils = {
-    showError: function(message, container) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        container.appendChild(errorDiv);
-        
-        // Auto-remove after 5 seconds
-        setTimeout(() => errorDiv.remove(), 5000);
+    copyToClipboard: async function(text) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } else {
+                // Fallback for non-secure contexts
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const successful = document.execCommand('copy');
+                textArea.remove();
+                return successful;
+            }
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            return false;
+        }
     },
     
     showSuccess: function(message, container) {
-        const successDiv = document.createElement('div');
-        successDiv.className = 'success-message';
-        successDiv.textContent = message;
-        container.appendChild(successDiv);
-        
-        // Auto-remove after 3 seconds
-        setTimeout(() => successDiv.remove(), 3000);
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        container.insertBefore(alert, container.firstChild);
+        setTimeout(() => alert.remove(), 5000);
+    },
+    
+    showError: function(message, container) {
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger alert-dismissible fade show';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        container.insertBefore(alert, container.firstChild);
+        setTimeout(() => alert.remove(), 5000);
     },
     
     formatDate: function(dateString) {
@@ -50,33 +77,6 @@ const Utils = {
         codeBlockRegex.lastIndex = 0;
         
         return { text: result, codeBlocks };
-    },
-
-    // Copy text to clipboard
-    copyToClipboard: async function(text) {
-        try {
-            await navigator.clipboard.writeText(text);
-            return true;
-        } catch (err) {
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            
-            try {
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                return true;
-            } catch (err) {
-                document.body.removeChild(textArea);
-                return false;
-            }
-        }
     },
 
     // Render code block with syntax highlighting

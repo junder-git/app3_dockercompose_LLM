@@ -1,120 +1,99 @@
 {% extends "base.html" %}
 
-{% block title %}Chat - AI Chat{% endblock %}
-
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>
-                <i class="bi bi-chat-dots"></i> Chat with AI
-            </h2>
-            <div class="d-flex align-items-center gap-3">
-                <button type="button" class="github-settings-btn" id="githubSettingsBtn" title="GitHub Integration Settings">
-                    <i class="bi bi-github"></i>
-                </button>
-                <div class="dropdown">
-                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="chatActionsDropdown" data-bs-toggle="dropdown">
+<div class="container-fluid h-100">
+    <div class="row h-100">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 sidebar">
+            <div class="d-flex flex-column h-100">
+                <h5 class="sidebar-title">Chat Options</h5>
+                
+                <!-- GitHub Connection -->
+                <div class="mb-3">
+                    <button id="githubConnectBtn" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="bi bi-github"></i> Connect GitHub
+                    </button>
+                </div>
+                
+                <!-- Chat Actions -->
+                <div class="dropdown mb-3">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">
                         <i class="bi bi-gear"></i> Chat Actions
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><h6 class="dropdown-header">Chat Management</h6></li>
-                        <li><hr class="dropdown-divider"></li>
+                    <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="#" id="chatStatsBtn">
-                            <i class="bi bi-bar-chart"></i> View Statistics
+                            <i class="bi bi-graph-up"></i> Statistics
                         </a></li>
                         <li><a class="dropdown-item" href="#" id="exportChatBtn">
                             <i class="bi bi-download"></i> Export Chat
                         </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-warning" href="#" id="compressChatBtn">
-                            <i class="bi bi-archive"></i> Compress Chat
+                        <li><a class="dropdown-item" href="#" id="compressChatBtn">
+                            <i class="bi bi-compress"></i> Compress History
                         </a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="#" id="clearChatBtn">
-                            <i class="bi bi-trash"></i> Clear All Messages
+                            <i class="bi bi-trash"></i> Clear Chat
                         </a></li>
                     </ul>
                 </div>
-                <span class="text-muted">
-                    <i class="bi bi-person"></i> {{ username }}
-                </span>
+                
+                <!-- GitHub Repos (shown when connected) -->
+                <div id="githubRepos" class="flex-grow-1 overflow-auto" style="display: none;">
+                    <h6>Repositories</h6>
+                    <div id="reposList"></div>
+                </div>
             </div>
         </div>
-        <div class="chat-container">
-            <div class="chat-messages" id="chatMessages">
-                <!-- Messages will be loaded here -->
+        
+        <!-- Chat Area -->
+        <div class="col-md-9 col-lg-10 chat-area">
+            <div class="chat-container">
+                <div id="chatMessages" class="chat-messages"></div>
+                <div id="typingIndicator" class="typing-indicator" style="display: none;">
+                    <span></span><span></span><span></span>
+                </div>
             </div>
-            <div class="typing-indicator" id="typingIndicator">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-            <div class="input-group">
-                <textarea class="form-control" id="messageInput" 
-                         placeholder="Type your message... (Shift+Enter for new line)" 
-                         rows="1" autofocus></textarea>
-                <button class="btn btn-primary" type="button" id="sendButton">
-                    <i class="bi bi-send"></i> Send
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Chat Statistics Modal -->
-<div class="modal fade" id="chatStatsModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-bar-chart"></i> Chat Statistics
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="chatStatsContent">
-                <div class="text-center">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
+            
+            <div class="chat-input-container">
+                <div class="input-group">
+                    <textarea id="messageInput" class="form-control" placeholder="Type your message..." rows="1"></textarea>
+                    <button id="sendButton" class="btn btn-primary">
+                        <i class="bi bi-send"></i>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Compress Chat Modal -->
-<div class="modal fade" id="compressChatModal" tabindex="-1">
+<!-- Modals -->
+<!-- GitHub Connect Modal -->
+<div class="modal fade" id="githubConnectModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-archive"></i> Compress Chat History
-                </h5>
+                <h5 class="modal-title">Connect GitHub Account</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Compress your chat history by keeping only the most recent messages. This helps manage storage and improve performance.</p>
-                <div class="mb-3">
-                    <label for="keepMessagesCount" class="form-label">Keep most recent messages:</label>
-                    <select class="form-select" id="keepMessagesCount">
-                        <option value="10">Last 10 messages</option>
-                        <option value="25">Last 25 messages</option>
-                        <option value="50" selected>Last 50 messages</option>
-                        <option value="100">Last 100 messages</option>
-                        <option value="200">Last 200 messages</option>
-                    </select>
-                </div>
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle"></i> This action cannot be undone. Older messages will be permanently deleted.
-                </div>
+                <p>Enter your GitHub Personal Access Token to connect your repositories.</p>
+                <input type="password" id="githubToken" class="form-control" placeholder="ghp_xxxxxxxxxxxx">
+                <small class="text-muted">
+                    <a href="https://github.com/settings/tokens/new" target="_blank">Create a new token</a> with 'repo' scope.
+                </small>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-warning" id="confirmCompressBtn">
-                    <i class="bi bi-archive"></i> Compress Chat
-                </button>
+                <button type="button" class="btn btn-primary" id="connectGithubBtn">Connect</button>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Other modals (stats, compress, etc.) -->
+<!-- ... -->
+
+<script src="/static/js/utils.js"></script>
+<script src="/static/js/github-integration.js"></script>
+<script src="/static/js/chat.js"></script>
 {% endblock %}
