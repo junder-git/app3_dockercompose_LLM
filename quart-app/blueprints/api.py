@@ -1,4 +1,5 @@
 # blueprints/api.py - Updated with chat management endpoints
+import datetime
 from quart import Blueprint, jsonify, request, session
 from quart_auth import login_required, current_user
 from .models import ChatSession
