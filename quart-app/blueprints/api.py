@@ -95,7 +95,7 @@ async def export_chat():
         'user': current_user.auth_id,
         'session_id': session_obj.id,
         'session_title': session_obj.title,
-        'exported_at': "JUNKNOWN",
+        'exported_at': "JUNKNOWN", # USE datetime.whatever in here 
         'message_count': len(formatted_messages),
         'messages': formatted_messages
     }
