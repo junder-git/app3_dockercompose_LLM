@@ -52,7 +52,6 @@ services:
     build: ./nginx
     container_name: ai-nginx
     ports:
-      - "80:80"
       - "443:443"
     depends_on:
       - open-webui

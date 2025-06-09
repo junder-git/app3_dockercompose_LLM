@@ -34,6 +34,7 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 4. **Access the application**
    - Production: https://ai.junder.uk
    - First login: Use credentials from .env file (admin@junder.uk / admin123 by default)
+   - **Download DeepSeek model**: Settings → Models → Download `deepseek-coder-v2:16b`
    - Other subdomains: Show error page with redirect
 
 ## 🔧 Configuration
@@ -75,16 +76,16 @@ geo $allowed_ip {
 ### Traffic Flow Configuration
 
 **Complete HTTPS Chain:**
-1. **Client** → HTTPS:443 → **Cloudflare Load Balancer**
+1. **Client** → HTTPS:443 → **Cloudflare Load Balancer** (SSL termination)
 2. **Cloudflare** → HTTPS:443 → **Your Router**  
-3. **Router** → HTTPS:443 → **NGINX Container** (SSL termination)
+3. **Router** → HTTPS:443 → **NGINX Container** (receives HTTPS, no SSL certs needed)
 4. **NGINX** → HTTP:8080 → **Open WebUI Container**
 
 **NGINX Configuration:**
-- Terminates SSL/TLS and generates self-signed certificates
+- Listens on port 443 for HTTPS traffic from Cloudflare
+- No SSL certificates needed (Cloudflare handles SSL termination)
 - Forwards decrypted HTTP traffic to Open WebUI on port 8080
-- HTTP requests (port 80) automatically redirect to HTTPS (port 443)
-- Proper CORS configuration to prevent wildcard origin warnings
+- Sets `X-Forwarded-Proto: https` header so Open WebUI knows it's HTTPS
 
 ### Domain Configuration
 
@@ -113,7 +114,13 @@ The NGINX configuration is set up for **ai.junder.uk** with rate limiting:
 - **Model Management**: Direct integration with Ollama API
 - **Startup**: Official bundled image with automatic Ollama + Open WebUI startup
 
-No external database (Redis, PostgreSQL, etc.) is required. The model download happens automatically on first use or can be triggered manually.
+**Model Installation:**
+- Models are **NOT** pre-installed in the container
+- Download models after deployment via:
+  1. **Web UI**: Settings → Models → Download `deepseek-coder-v2:16b`
+  2. **CLI**: `docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b`
+
+No external database (Redis, PostgreSQL, etc.) is required.
 
 ## 🎯 Features
 
@@ -147,8 +154,11 @@ docker-compose logs -f nginx
 # Check if model is downloaded
 docker exec ai-open-webui-ollama ollama list
 
-# Manually download DeepSeek model if needed
+# Manually download DeepSeek model
 docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b
+
+# Check download progress
+docker exec ai-open-webui-ollama ollama ps
 ```
 
 ### Health checks
