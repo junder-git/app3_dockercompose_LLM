@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Open WebUI with bundled Ollama (GPU enabled)
   open-webui:
