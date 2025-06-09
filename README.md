@@ -44,6 +44,7 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 - `OLLAMA_MEMORY_LIMIT`: Maximum memory for the container (default: 20G)
 - `NVIDIA_VISIBLE_DEVICES`: GPU access (default: all)
 - `ENABLE_SIGNUP`: Allow new user registration (default: true)
+- `WEBUI_URL`: Full HTTPS URL for Open WebUI (default: https://ai.junder.uk)
 - `DEFAULT_USER_EMAIL`: Admin user email (default: admin@junder.uk)
 - `DEFAULT_USER_NAME`: Admin user display name (default: Admin)
 - `DEFAULT_USER_PASSWORD`: Admin user password (default: admin123)
@@ -70,6 +71,20 @@ geo $allowed_ip {
     YOUR_OFFICE_SUBNET/24 1;      # Replace with your office subnet
 }
 ```
+
+### Traffic Flow Configuration
+
+**Complete HTTPS Chain:**
+1. **Client** → HTTPS:443 → **Cloudflare Load Balancer**
+2. **Cloudflare** → HTTPS:443 → **Your Router**  
+3. **Router** → HTTPS:443 → **NGINX Container** (SSL termination)
+4. **NGINX** → HTTP:8080 → **Open WebUI Container**
+
+**NGINX Configuration:**
+- Terminates SSL/TLS and generates self-signed certificates
+- Forwards decrypted HTTP traffic to Open WebUI on port 8080
+- HTTP requests (port 80) automatically redirect to HTTPS (port 443)
+- Proper CORS configuration to prevent wildcard origin warnings
 
 ### Domain Configuration
 

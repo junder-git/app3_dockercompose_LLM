@@ -16,9 +16,15 @@ services:
       - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-admin@junder.uk}
       - DEFAULT_USER_NAME=${DEFAULT_USER_NAME:-Admin}
       - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-admin123}
+      # CORS Configuration for production
+      - CORS_ALLOW_ORIGIN=${WEBUI_URL:-https://ai.junder.uk}
+      # Open WebUI URL configuration
+      - WEBUI_URL=${WEBUI_URL:-https://ai.junder.uk}
     volumes:
       - ollama_data:/root/.ollama
       - open_webui_data:/app/backend/data
+      # Mount SSL certificates volume for NGINX to use if needed
+      - nginx_ssl:/etc/nginx/ssl:ro
     networks:
       - ai-network
     deploy:
@@ -47,8 +53,12 @@ services:
     container_name: ai-nginx
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - open-webui
+    volumes:
+      # SSL certificates shared with open-webui container if needed
+      - nginx_ssl:/etc/nginx/ssl
     networks:
       - ai-network
     deploy:
@@ -69,3 +79,4 @@ networks:
 volumes:
   ollama_data:
   open_webui_data:
+  nginx_ssl:
