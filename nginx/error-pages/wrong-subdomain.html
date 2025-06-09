@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wrong Subdomain - Junder AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 600px;
+            padding: 40px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.1);
+        }
+        
+        .error-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+        
+        h2 {
+            font-size: 1.8em;
+            margin-bottom: 30px;
+            font-weight: 400;
+            opacity: 0.9;
+        }
+        
+        .message {
+            font-size: 1.1em;
+            margin-bottom: 30px;
+            opacity: 0.85;
+        }
+        
+        .correct-url {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.2em;
+            margin: 20px 0;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px rgba(238, 90, 36, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 35px rgba(238, 90, 36, 0.4);
+        }
+        
+        .domain-info {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.9em;
+            opacity: 0.7;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                margin: 20px;
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            h2 {
+                font-size: 1.4em;
+            }
+            
+            .correct-url {
+                font-size: 1em;
+                padding: 12px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-icon">🤖</div>
+        <h1>Wrong Subdomain</h1>
+        <h2>AI Service Not Available Here</h2>
+        
+        <div class="message">
+            You've reached a valid junder.uk domain, but the AI chat service is only available at the correct subdomain.
+        </div>
+        
+        <div class="correct-url">
+            ai.junder.uk
+        </div>
+        
+        <a href="https://ai.junder.uk" class="btn">Go to AI Chat</a>
+        
+        <div class="domain-info">
+            <strong>Current Domain:</strong> <span id="current-domain"></span><br>
+            <strong>Required Domain:</strong> ai.junder.uk
+        </div>
+    </div>
+    
+    <script>
+        // Display current domain
+        document.getElementById('current-domain').textContent = window.location.hostname;
+        
+        // Auto-redirect after 30 seconds
+        let countdown = 30;
+        const countdownElement = document.createElement('div');
+        countdownElement.style.cssText = `
+            margin-top: 20px;
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #ffd700;
+        `;
+        countdownElement.innerHTML = `Redirecting in <span id="countdown">${countdown}</span> seconds...`;
+        document.querySelector('.container').appendChild(countdownElement);
+        
+        const countdownTimer = setInterval(function() {
+            countdown--;
+            document.getElementById('countdown').textContent = countdown;
+            
+            if (countdown <= 0) {
+                clearInterval(countdownTimer);
+                window.location.href = 'https://ai.junder.uk';
+            }
+        }, 1000);
+        
+        // Show warning about rate limiting
+        const warningElement = document.createElement('div');
+        warningElement.style.cssText = `
+            margin-top: 30px;
+            padding: 15px;
+            background: rgba(255, 193, 7, 0.2);
+            border: 1px solid rgba(255, 193, 7, 0.4);
+            border-radius: 10px;
+            font-size: 0.9em;
+            color: #ffd700;
+        `;
+        warningElement.innerHTML = `
+            <strong>⚠️ Rate Limit Notice:</strong><br>
+            Further requests to this subdomain will be blocked for 30 seconds to prevent spam.
+        `;
+        document.querySelector('.container').appendChild(warningElement);
+    </script>
+</body>
+</html>

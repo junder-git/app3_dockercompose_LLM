@@ -1,9 +1,0 @@
-# Simple Modelfile optimized for Python library usage
-FROM deepseek-coder-v2:16b
-
-# Clear, focused system prompt
-SYSTEM """You are DeepSeek Coder, a helpful AI coding assistant. Provide clear, accurate, and detailed responses to programming questions and tasks."""
-
-# Basic parameters - let the Python library handle most configuration
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
