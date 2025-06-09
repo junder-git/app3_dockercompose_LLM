@@ -75,17 +75,17 @@ geo $allowed_ip {
 
 ### Traffic Flow Configuration
 
-**Complete HTTPS Chain:**
-1. **Client** → HTTPS:443 → **Cloudflare Load Balancer** (SSL termination)
-2. **Cloudflare** → HTTPS:443 → **Your Router**  
-3. **Router** → HTTPS:443 → **NGINX Container** (receives HTTPS, no SSL certs needed)
-4. **NGINX** → HTTP:8080 → **Open WebUI Container**
+**Flexible HTTP/HTTPS Chain:**
+1. **Client** → HTTP/HTTPS → **Cloudflare Load Balancer**
+2. **Cloudflare** → HTTP/HTTPS → **Your Router**  
+3. **Router** → HTTP/HTTPS → **NGINX Container** (accepts both protocols)
+4. **NGINX** → HTTP → **Open WebUI Container** (port 8080)
 
 **NGINX Configuration:**
-- Listens on port 443 for HTTPS traffic from Cloudflare
-- No SSL certificates needed (Cloudflare handles SSL termination)
-- Forwards decrypted HTTP traffic to Open WebUI on port 8080
-- Sets `X-Forwarded-Proto: https` header so Open WebUI knows it's HTTPS
+- Listens on both ports 80 (HTTP) and 443 (HTTPS)
+- Accepts traffic from Cloudflare on either protocol
+- Forwards all traffic as HTTP to Open WebUI on port 8080
+- Sets correct `X-Forwarded-Proto` header based on incoming protocol
 
 ### Domain Configuration
 

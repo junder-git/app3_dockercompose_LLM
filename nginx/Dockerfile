@@ -10,8 +10,8 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Copy error pages
 COPY error-pages/ /usr/share/nginx/html/
 
-# Expose port 443 for HTTPS (Cloudflare handles SSL termination)
-EXPOSE 443
+# Expose ports for both HTTP and HTTPS
+EXPOSE 80 443
 
 # Start NGINX
 CMD ["nginx", "-g", "daemon off;"]
