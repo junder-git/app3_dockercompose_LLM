@@ -1,21 +1,21 @@
 version: '3.8'
 
 services:
-  # Open WebUI with bundled Ollama (GPU enabled)
+  # Open WebUI with bundled Ollama (GPU enabled) - Using official startup
   open-webui:
-    build: ./open-webui
+    image: ghcr.io/open-webui/open-webui:ollama
     container_name: ai-open-webui-ollama
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - OLLAMA_BASE_URL=http://localhost:11434
       - WEBUI_SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
       - WEBUI_AUTH=true
       - DEFAULT_USER_ROLE=user
-      - ENABLE_SIGNUP=true
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-true}
       - ENABLE_LOGIN_FORM=true
-      # Disable direct external access - only through NGINX
-      - WEBUI_HOST=0.0.0.0
-      - WEBUI_PORT=8080
+      # Default admin user configuration
+      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-admin@junder.uk}
+      - DEFAULT_USER_NAME=${DEFAULT_USER_NAME:-Admin}
+      - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-admin123}
     volumes:
       - ollama_data:/root/.ollama
       - open_webui_data:/app/backend/data

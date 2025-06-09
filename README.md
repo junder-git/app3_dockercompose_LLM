@@ -8,16 +8,12 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 ├── docker-compose.yml
 ├── .env
 ├── README.md
-├── nginx/
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── error-pages/
-│       ├── wrong-subdomain.html
-│       └── rate-limited.html
-└── open-webui/
+└── nginx/
     ├── Dockerfile
-    ├── entrypoint.sh
-    └── init-models.sh
+    ├── nginx.conf
+    └── error-pages/
+        ├── wrong-subdomain.html
+        └── rate-limited.html
 ```
 
 ## 🚀 Quick Start
@@ -26,7 +22,7 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 
 2. **Configure environment variables**
    ```bash
-   # Edit .env file
+   # Edit .env file - IMPORTANT: Change default admin credentials!
    nano .env
    ```
 
@@ -37,6 +33,7 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 
 4. **Access the application**
    - Production: https://ai.junder.uk
+   - First login: Use credentials from .env file (admin@junder.uk / admin123 by default)
    - Other subdomains: Show error page with redirect
 
 ## 🔧 Configuration
@@ -46,6 +43,12 @@ A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b mo
 - `SECRET_KEY`: Secret key for Open WebUI sessions
 - `OLLAMA_MEMORY_LIMIT`: Maximum memory for the container (default: 20G)
 - `NVIDIA_VISIBLE_DEVICES`: GPU access (default: all)
+- `ENABLE_SIGNUP`: Allow new user registration (default: true)
+- `DEFAULT_USER_EMAIL`: Admin user email (default: admin@junder.uk)
+- `DEFAULT_USER_NAME`: Admin user display name (default: Admin)
+- `DEFAULT_USER_PASSWORD`: Admin user password (default: admin123)
+
+**Important**: Change the default admin credentials in production!
 - `ALLOWED_IPS`: IP whitelist (default: 0.0.0.0/0 - allow all)
 
 ### IP Whitelisting
@@ -68,14 +71,6 @@ geo $allowed_ip {
 }
 ```
 
-### SSL/HTTPS Configuration
-
-SSL is terminated by **Cloudflare**. The NGINX container:
-- Listens on both ports 80 and 443
-- Uses dummy SSL certificates for direct access
-- Properly handles Cloudflare's real IP headers (`CF-Connecting-IP`)
-- Trusts Cloudflare IP ranges for accurate client IP detection
-
 ### Domain Configuration
 
 The NGINX configuration is set up for **ai.junder.uk** with rate limiting:
@@ -83,15 +78,15 @@ The NGINX configuration is set up for **ai.junder.uk** with rate limiting:
 - **Correct domain**: `ai.junder.uk` - serves the AI chat application
 - **Other junder.uk subdomains**: 
   - Shows styled error page for 30 seconds
-  - Rate limited to 1 request per 30 seconds per IP
+  - Rate limited to 1 request per minute per IP
   - Auto-redirects to ai.junder.uk after 30 seconds
   - Additional requests show rate limit error page
 - **Invalid domains**: Connection closed (return 444)
 
 **Rate Limiting Behavior:**
 - First request: Shows wrong subdomain page with 30-second countdown
-- Subsequent requests within 30 seconds: Shows rate limited error page
-- After 30 seconds: IP can make one new request
+- Subsequent requests within 1 minute: Shows rate limited error page
+- After 1 minute: IP can make one new request
 
 ## 📊 Backend Information
 
@@ -101,16 +96,19 @@ The NGINX configuration is set up for **ai.junder.uk** with rate limiting:
 - **Session Management**: Built-in Python session handling
 - **User Authentication**: Built-in user management system
 - **Model Management**: Direct integration with Ollama API
+- **Startup**: Official bundled image with automatic Ollama + Open WebUI startup
 
-No external database (Redis, PostgreSQL, etc.) is required.
+No external database (Redis, PostgreSQL, etc.) is required. The model download happens automatically on first use or can be triggered manually.
 
 ## 🎯 Features
 
-- ✅ **Smart domain routing** - Only serves ai.junder.uk with 30-second rate limited error pages
-- ✅ **Rate limiting protection** - Prevents subdomain spam (1 request per 30 seconds)
-- ✅ **Cloudflare SSL termination** with proper real IP handling
+- ✅ **Official Open WebUI + Ollama image** - No custom startup scripts needed
+- ✅ **Configurable default admin user** - Set credentials via environment variables
+- ✅ **Smart domain routing** - Only serves ai.junder.uk with rate limited error pages  
+- ✅ **Rate limiting protection** - Prevents subdomain spam (1 request per minute)
+- ✅ **Cloudflare integration** - Proper real IP handling and edge termination
 - ✅ **IP whitelisting** hardcoded in nginx.conf
-- ✅ **Auto-downloads DeepSeek-Coder-v2:16b** model
+- ✅ **Auto-downloads models** on first use or manual trigger
 - ✅ **GPU acceleration** with NVIDIA runtime
 - ✅ **Rate limiting** and security headers
 - ✅ **WebSocket support** for real-time chat
@@ -129,9 +127,13 @@ docker-compose logs -f open-webui
 docker-compose logs -f nginx
 ```
 
-### Check model status
+### Check model download progress
 ```bash
+# Check if model is downloaded
 docker exec ai-open-webui-ollama ollama list
+
+# Manually download DeepSeek model if needed
+docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b
 ```
 
 ### Health checks
@@ -178,12 +180,13 @@ docker exec -it ai-nginx sh
 
 ## 🔐 Security Features
 
-1. **Cloudflare SSL termination** - SSL handled at the edge
+1. **Cloudflare edge termination** - Traffic handled at the edge
 2. **IP whitelisting** - Hardcoded in nginx.conf for security
 3. **Rate limiting** - Prevents abuse with different limits per endpoint
 4. **Security headers** - XSS protection, content type sniffing prevention
 5. **No direct container access** - Only accessible through NGINX
 6. **Real IP detection** - Proper handling of Cloudflare IPs
+7. **Configurable admin credentials** - Set via environment variables
 
 ## 🐛 Troubleshooting
 
@@ -204,9 +207,16 @@ docker exec -it ai-nginx sh
    docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b
    ```
 
-3. **SSL certificate warnings**
+3. **Certificate warnings**
    - Only relevant for direct access (bypassing Cloudflare)
-   - Production should use Cloudflare for SSL termination
+   - Production should use Cloudflare for edge termination
+
+4. **Default admin credentials**
+   ```bash
+   # Change default credentials in .env file before first startup
+   DEFAULT_USER_EMAIL=your-email@domain.com
+   DEFAULT_USER_PASSWORD=your-secure-password
+   ```
 
 4. **Out of memory**
    - Increase `OLLAMA_MEMORY_LIMIT` in `.env`
