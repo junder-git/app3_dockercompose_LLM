@@ -48,13 +48,12 @@ services:
       retries: 3
       start_period: 120s
 
-  # NGINX Reverse Proxy (SSL terminated by Cloudflare)
+  # NGINX Reverse Proxy (Cloudflare SSL termination)
   nginx:
     build: ./nginx
     container_name: ai-nginx
     ports:
-      # Only map port 443
-      - "443:443"
+      - "80:80"
     depends_on:
       - open-webui
     networks:
