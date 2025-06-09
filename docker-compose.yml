@@ -1,10 +1,10 @@
+version: '3.8'
+
 services:
   # Open WebUI with bundled Ollama (GPU enabled)
   open-webui:
-    image: ghcr.io/open-webui/open-webui:ollama
+    build: ./open-webui
     container_name: ai-open-webui-ollama
-    ports:
-      - "3000:8080"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_BASE_URL=http://localhost:11434
@@ -13,13 +13,12 @@ services:
       - DEFAULT_USER_ROLE=user
       - ENABLE_SIGNUP=true
       - ENABLE_LOGIN_FORM=true
-      # Auto-download DeepSeek model on startup
-      - OLLAMA_MODELS=deepseek-coder-v2:16b
+      # Disable direct external access - only through NGINX
+      - WEBUI_HOST=0.0.0.0
+      - WEBUI_PORT=8080
     volumes:
       - ollama_data:/root/.ollama
       - open_webui_data:/app/backend/data
-      # Mount initialization script to auto-download model
-      - ./scripts/init-models.sh:/app/init-models.sh
     networks:
       - ai-network
     deploy:
@@ -32,6 +31,9 @@ services:
           memory: ${OLLAMA_MEMORY_RESERVATION:-12G}
     runtime: nvidia
     restart: unless-stopped
+    # No ports exposed - only accessible through NGINX
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -39,16 +41,12 @@ services:
       retries: 3
       start_period: 120s
 
-  # NGINX Reverse Proxy
+  # NGINX Reverse Proxy (SSL terminated by Cloudflare)
   nginx:
     build: ./nginx
     container_name: ai-nginx
     ports:
       - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/static:/usr/share/nginx/html/static:ro
-      - nginx_cache:/var/cache/nginx
     depends_on:
       - open-webui
     networks:
@@ -66,8 +64,8 @@ services:
 networks:
   ai-network:
     driver: bridge
+    internal: false
 
 volumes:
   ollama_data:
   open_webui_data:
-  nginx_cache:
