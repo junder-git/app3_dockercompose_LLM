@@ -257,6 +257,10 @@ docker exec -it ai-nginx sh
 
 - **RAM**: 16GB minimum, 32GB recommended
 - **Storage**: 25GB+ for DeepSeek model
+### Example: Mount SSD path
+```mkdir -p /mnt/ssd/ollama_data```
+```chown -R 1000:1000 /mnt/ssd/ollama_data```
+### Then set OLLAMA_DATA_PATH=/mnt/ssd/ollama_data in .env
 - **GPU**: NVIDIA GPU with 8GB+ VRAM recommended
 - **CPU**: 4+ cores recommended
 
