@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Open WebUI with bundled Ollama (GPU enabled) - Optimized for 24B models
   open-webui:
@@ -13,8 +11,8 @@ services:
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-true}
       - ENABLE_LOGIN_FORM=true
       # Default admin user configuration
-      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-admin@junder.uk}
-      - DEFAULT_USER_NAME=${DEFAULT_USER_NAME:-Admin}
+      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-j@junder.uk}
+      - DEFAULT_USER_NAME=${DEFAULT_USER_NAME:-jai}
       - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD:-admin123}
       # CORS Configuration for production
       - CORS_ALLOW_ORIGIN=${WEBUI_URL:-https://ai.junder.uk}
@@ -26,7 +24,7 @@ services:
       
       # OLLAMA PERFORMANCE OPTIMIZATIONS
       - OLLAMA_NUM_PARALLEL=4                    # Allow 4 concurrent requests
-      - OLLAMA_MAX_LOADED_MODELS=2               # Keep 2 models in memory
+      - OLLAMA_MAX_LOADED_MODELS=1               # Keep 1 models in memory
       - OLLAMA_MAX_QUEUE=20                      # Queue up to 20 requests
       - OLLAMA_FLASH_ATTENTION=1                 # Enable flash attention (if supported)
       - OLLAMA_HOST=0.0.0.0:11434               # Bind to all interfaces
