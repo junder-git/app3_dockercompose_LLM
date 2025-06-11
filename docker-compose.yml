@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Open WebUI with bundled Ollama (GPU enabled) - Using official startup
+  # Open WebUI with bundled Ollama (GPU enabled) - Optimized for 24B models
   open-webui:
     image: ghcr.io/open-webui/open-webui:ollama
     container_name: ai-open-webui-ollama
@@ -23,32 +23,84 @@ services:
       # Suppress warnings
       - USER_AGENT=Open-WebUI/1.0 (ai.junder.uk)
       - LANGCHAIN_TRACING_V2=false
+      
+      # OLLAMA PERFORMANCE OPTIMIZATIONS
+      - OLLAMA_NUM_PARALLEL=4                    # Allow 4 concurrent requests
+      - OLLAMA_MAX_LOADED_MODELS=2               # Keep 2 models in memory
+      - OLLAMA_MAX_QUEUE=20                      # Queue up to 20 requests
+      - OLLAMA_FLASH_ATTENTION=1                 # Enable flash attention (if supported)
+      - OLLAMA_HOST=0.0.0.0:11434               # Bind to all interfaces
+      - OLLAMA_KEEP_ALIVE=30m                    # Keep models loaded for 30 minutes
+      - OLLAMA_NOHISTORY=false                   # Enable context history
+      
+      # CPU/THREADING OPTIMIZATIONS
+      - OMP_NUM_THREADS=10                       # Use all 10 CPU cores
+      - GOMP_CPU_AFFINITY=0-9                    # Pin to cores 0-9
+      - MKL_NUM_THREADS=10                       # Intel MKL threading
+      - OPENBLAS_NUM_THREADS=10                  # OpenBLAS threading
+      - VECLIB_MAXIMUM_THREADS=10                # Apple Accelerate (if applicable)
+      
+      # MEMORY OPTIMIZATIONS
+      - CUDA_VISIBLE_DEVICES=0                   # Use first GPU
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID            # Consistent GPU ordering
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.6
+      
+      # MODEL LOADING OPTIMIZATIONS
+      - OLLAMA_LOAD_TIMEOUT=600                  # 10 minutes to load large models
+      - OLLAMA_REQUEST_TIMEOUT=300               # 5 minutes for inference
+      - OLLAMA_MAX_VRAM=${MAX_VRAM:-7GB}         # Reserve 1GB VRAM for system
+      
+      # PERFORMANCE TUNING
+      - OLLAMA_RUNNERS_DIR=/tmp/ollama_runners   # Use tmpfs for runners
+      - OLLAMA_TMPDIR=/tmp/ollama_tmp           # Temp directory
+      - MALLOC_ARENA_MAX=2                       # Reduce memory fragmentation
+      
     volumes:
       - ollama_data:/root/.ollama
       - open_webui_data:/app/backend/data
+      # Mount tmpfs for high-speed temporary operations
+      - type: tmpfs
+        target: /tmp/ollama_runners
+        tmpfs:
+          size: 2G
+      - type: tmpfs
+        target: /tmp/ollama_tmp
+        tmpfs:
+          size: 4G
     networks:
       - ai-network
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-20G}
+          cpus: '10.0'                           # Use all 10 cores
+          memory: 28G                            # Use 28GB RAM (leave 4GB for system)
         reservations:
-          cpus: '2.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-12G}
+          cpus: '8.0'                           # Reserve 8 cores minimum
+          memory: 20G                           # Reserve 20GB minimum
     runtime: nvidia
     restart: unless-stopped
     # No ports exposed - only accessible through NGINX
     expose:
       - "8080"
+      - "11434"                                 # Ollama API port for internal use
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s                             # Increased timeout for large models
       retries: 3
-      start_period: 120s
+      start_period: 300s                       # 5 minutes start period for model loading
+    # CPU performance tuning
+    sysctls:
+      - net.core.somaxconn=65535
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65535
+        hard: 65535
 
-  # NGINX Reverse Proxy (Cloudflare SSL termination)
+  # NGINX Reverse Proxy (Cloudflare SSL termination) - Optimized for large responses
   nginx:
     build: ./nginx
     container_name: ai-nginx
@@ -61,18 +113,30 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '2.0'                           # Increased for handling large responses
+          memory: 1G                            # Increased memory
+        reservations:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
     restart: unless-stopped
+    # Optimize for large AI responses
+    sysctls:
+      - net.core.somaxconn=32768
+      - net.ipv4.tcp_max_syn_backlog=32768
 
 networks:
   ai-network:
     driver: bridge
     internal: false
+    driver_opts:
+      com.docker.network.driver.mtu: 1500
 
 volumes:
   ollama_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${OLLAMA_DATA_PATH:-./ollama_data}  # Allow custom path for SSD storage
   open_webui_data:
+    driver: local
