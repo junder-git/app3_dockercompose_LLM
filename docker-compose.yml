@@ -3,68 +3,13 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:ollama
     container_name: ai-open-webui-ollama
+    # Option 1: Use env_file to load ALL variables from .env
+    env_file:
+      - .env
+    
+    # Option 2: Override specific variables that need different container names
     environment:
-      # GPU Configuration
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES}
-      - CUDA_VISIBLE_DEVICES=0
-      - CUDA_DEVICE_ORDER=PCI_BUS_ID
-      
-      # Security & Authentication
-      - WEBUI_SECRET_KEY=${SECRET_KEY}
-      - WEBUI_AUTH=true
-      - DEFAULT_USER_ROLE=user
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP}
-      - ENABLE_LOGIN_FORM=true
-      
-      # Default admin user configuration
-      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL}
-      - DEFAULT_USER_NAME=${DEFAULT_USER_NAME}
-      - DEFAULT_USER_PASSWORD=${DEFAULT_USER_PASSWORD}
-      
-      # CORS Configuration for production
-      - CORS_ALLOW_ORIGIN=${WEBUI_URL}
-      - WEBUI_URL=${WEBUI_URL}
-      
-      # Suppress warnings
-      - USER_AGENT=Open-WebUI/1.0 (ai.junder.uk)
-      - LANGCHAIN_TRACING_V2=false
-      
-      # OLLAMA PERFORMANCE OPTIMIZATIONS
-      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL}
-      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
-      - OLLAMA_MAX_QUEUE=${OLLAMA_MAX_QUEUE}
-      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION}
-      - OLLAMA_HOST=0.0.0.0:11434
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
-      - OLLAMA_NOHISTORY=false
-      - OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT}
-      - OLLAMA_REQUEST_TIMEOUT=${OLLAMA_REQUEST_TIMEOUT}
-      - OLLAMA_MAX_VRAM=${MAX_VRAM}
-      
-      # ADVANCED PERFORMANCE SETTINGS
-      - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
-      - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
-      - OLLAMA_LOW_VRAM=${OLLAMA_LOW_VRAM}
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS}
-      - OLLAMA_MAIN_GPU=${OLLAMA_MAIN_GPU}
-      - OLLAMA_TENSOR_SPLIT=${OLLAMA_TENSOR_SPLIT}
-      - OLLAMA_PRELOAD_MODEL=${OLLAMA_PRELOAD_MODEL}
-      - OLLAMA_OFFLOAD_KQV=${OLLAMA_OFFLOAD_KQV}
-      
-      # CPU/THREADING OPTIMIZATIONS
-      - OMP_NUM_THREADS=${OMP_NUM_THREADS}
-      - GOMP_CPU_AFFINITY=${GOMP_CPU_AFFINITY}
-      - MKL_NUM_THREADS=${OMP_NUM_THREADS}
-      - OPENBLAS_NUM_THREADS=${OMP_NUM_THREADS}
-      - VECLIB_MAXIMUM_THREADS=${OMP_NUM_THREADS}
-      
-      # MEMORY OPTIMIZATIONS
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:1024,garbage_collection_threshold:0.6
-      - MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX}
-      
-      # PERFORMANCE TUNING
-      - OLLAMA_RUNNERS_DIR=/tmp/ollama_runners
-      - OLLAMA_TMPDIR=/tmp/ollama_tmp
+      - WEBUI_SECRET_KEY=${SECRET_KEY}  # Map SECRET_KEY to WEBUI_SECRET_KEY
       
     volumes:
       - ollama_data:/root/.ollama
@@ -83,7 +28,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '8.0'
+          cpus: '10.0'
           memory: ${OLLAMA_MEMORY_LIMIT}
         reservations:
           cpus: '6.0'
@@ -148,10 +93,10 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: ${OLLAMA_DATA_PATH:-./ollama_data}
+      device: ${OLLAMA_DATA_PATH}
   webui_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${WEBUI_DATA_PATH:-./webui_data}
+      device: ${WEBUI_DATA_PATH}
