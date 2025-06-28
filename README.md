@@ -1,3 +1,5 @@
+```sudo chown -R 1000:1000 /mnt/nvme/ollama_data```
+
 # Open WebUI + Ollama with DeepSeek-Coder Setup
 
 A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b model, featuring NGINX reverse proxy with HTTPS and IP whitelisting.
