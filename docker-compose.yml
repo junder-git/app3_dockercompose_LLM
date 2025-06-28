@@ -5,12 +5,7 @@ services:
     container_name: ai-open-webui-ollama
     # Option 1: Use env_file to load ALL variables from .env
     env_file:
-      - .env
-    
-    # Option 2: Override specific variables that need different container names
-    environment:
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}  # Map SECRET_KEY to WEBUI_SECRET_KEY
-      
+      - .env      
     volumes:
       - ollama_data:/root/.ollama
       - webui_data:/app/backend/data
@@ -18,11 +13,11 @@ services:
       - type: tmpfs
         target: /tmp/ollama_runners
         tmpfs:
-          size: 1G
+          size: 512M
       - type: tmpfs
         target: /tmp/ollama_tmp
         tmpfs:
-          size: 2G
+          size: 1G
     networks:
       - ai-network
     deploy:
