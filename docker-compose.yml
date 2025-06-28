@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Dedicated Ollama service with custom build
   ollama:
@@ -90,6 +88,7 @@ services:
     container_name: ai-nginx
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - open-webui
     networks:

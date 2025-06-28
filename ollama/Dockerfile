@@ -13,11 +13,13 @@ RUN mkdir -p /root/.ollama/models /tmp/ollama_cache
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Copy startup script
-COPY start-ollama.sh /usr/local/bin/start-ollama.sh
-RUN chmod +x /usr/local/bin/start-ollama.sh
+RUN mkdir -p /app
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Expose the default port
 EXPOSE 11434
 
-# Use custom startup script
-CMD ["/usr/local/bin/start-ollama.sh"]
+# Override the ENTRYPOINT and use our custom script
+ENTRYPOINT []
+CMD ["/app/start.sh"]
