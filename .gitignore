@@ -2,4 +2,4 @@
 **/__pycache__/
 **/__pycache__
 !example.env
-ollama_data
+ollama_data/id_ed25519
