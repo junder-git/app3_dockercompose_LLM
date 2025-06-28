@@ -73,11 +73,11 @@ services:
       - type: tmpfs
         target: /tmp/ollama_runners
         tmpfs:
-          size: 4G
+          size: 1G
       - type: tmpfs
         target: /tmp/ollama_tmp
         tmpfs:
-          size: 8G
+          size: 2G
     networks:
       - ai-network
     deploy:
