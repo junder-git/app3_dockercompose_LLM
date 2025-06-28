@@ -1,7 +1,7 @@
 services:
   # Open WebUI with bundled Ollama (GPU enabled) - Optimized for 24B models
   open-webui:
-    image: ghcr.io/open-webui/open-webui:git-7523613-cuda
+    image: ghcr.io/open-webui/open-webui:git-962e078-ollama
     container_name: ai-open-webui-ollama
     # Option 1: Use env_file to load ALL variables from .env
     env_file:
