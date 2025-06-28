@@ -1,4 +1,4 @@
-```sudo chown -R 1000:1000 /mnt/nvme/ollama_data```
+```mkdir -p /mnt/nvme/ollama_data   sudo chown -R 1000:1000 /mnt/nvme/ollama_data```
 
 # Open WebUI + Ollama with DeepSeek-Coder Setup
 
