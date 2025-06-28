@@ -2,8 +2,8 @@ FROM ollama/ollama:latest
 
 # Set environment variables
 ENV OLLAMA_HOST=0.0.0.0:11434
-ENV OLLAMA_KEEP_ALIVE=24h
-ENV OLLAMA_MAX_LOADED_MODELS=4
+ENV OLLAMA_KEEP_ALIVE=-1
+ENV OLLAMA_MAX_LOADED_MODELS=1
 ENV OLLAMA_MODELS=/root/.ollama/models
 
 # Create necessary directories
