@@ -9,7 +9,7 @@ services:
     
     # Option 2: Override specific variables that need different container names
     environment:
-      - WEBUI_SECRET_KEY=${SECRET_KEY}  # Map SECRET_KEY to WEBUI_SECRET_KEY
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}  # Map SECRET_KEY to WEBUI_SECRET_KEY
       
     volumes:
       - ollama_data:/root/.ollama
