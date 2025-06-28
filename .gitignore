@@ -1,4 +1,4 @@
-*.env
+#*.env #Secure envs at some point
 **/__pycache__/
 **/__pycache__
 !example.env

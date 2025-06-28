@@ -1,4 +1,7 @@
-```mkdir -p /mnt/nvme/ollama_data   sudo chown -R 1000:1000 /mnt/nvme/ollama_data``` do 4 webui_data as well    
+sudo mkdir -p /mnt/nvme/ollama_data /mnt/nvme/webui_data
+sudo chown -R 1000:1000 /mnt/nvme/ollama_data /mnt/nvme/webui_data
+sudo chmod -R 755 /mnt/nvme/ollama_data /mnt/nvme/webui_data
+
   
 https://ollama.com/library/devstral  
 128k context window  

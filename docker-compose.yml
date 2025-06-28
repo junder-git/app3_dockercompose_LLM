@@ -1,15 +1,12 @@
-# Separate Ollama and Open WebUI containers (More robust)
 services:
-  # Dedicated Ollama service
+  # Dedicated Ollama service with custom build
   ollama:
-    image: ollama/ollama:latest
+    build: ./ollama
     container_name: ai-ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0:11434
-      - OLLAMA_KEEP_ALIVE=24h
-      - OLLAMA_MAX_LOADED_MODELS=4
+    env_file:
+      - ./ollama/.env
     volumes:
-      - ollama_data:/root/.ollama
+      - /mnt/nvme/ollama_data:/root/.ollama
       - type: tmpfs
         target: /tmp/ollama_runners
         tmpfs:
@@ -34,10 +31,10 @@ services:
       resources:
         limits:
           cpus: '8.0'
-          memory: ${OLLAMA_MEMORY_LIMIT}
+          memory: 24G
         reservations:
           cpus: '4.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION}
+          memory: 12G
     sysctls:
       - net.core.somaxconn=65535
     ulimits:
@@ -48,27 +45,14 @@ services:
         soft: 65535
         hard: 65535
 
-  # Open WebUI (frontend only - no bundled Ollama)
+  # Open WebUI (full backend but using external Ollama)
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:latest
     container_name: ai-open-webui
     env_file:
-      - .env
-    environment:
-      # Point to separate Ollama container
-      - OLLAMA_BASE_URL=http://ollama:11434
-      # Disable bundled Ollama completely
-      - ENABLE_OLLAMA_API=false
-      - OLLAMA_API_BASE_URL=http://ollama:11434
-      # Optional: Add other API endpoints
-      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      # WebUI specific settings
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
-      - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
+      - ./open-webui/.env
     volumes:
-      - webui_data:/app/backend/data
-      # Remove Ollama data volume since it's handled by separate container
+      - /mnt/nvme/webui_data:/app/backend/data
     networks:
       - ai-network
     depends_on:
@@ -98,7 +82,7 @@ services:
         soft: 65535
         hard: 65535
 
-  # NGINX Reverse Proxy (unchanged)
+  # NGINX Reverse Proxy
   nginx:
     build: ./nginx
     container_name: ai-nginx
@@ -127,17 +111,3 @@ networks:
     internal: false
     driver_opts:
       com.docker.network.driver.mtu: 1500
-
-volumes:
-  ollama_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${OLLAMA_DATA_PATH}
-  webui_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${WEBUI_DATA_PATH}
