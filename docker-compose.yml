@@ -1,15 +1,15 @@
+# Separate Ollama and Open WebUI containers (More robust)
 services:
-  # Open WebUI with bundled Ollama (GPU enabled) - Optimized for 24B models
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:latest
-    container_name: ai-open-webui-ollama
-    # Option 1: Use env_file to load ALL variables from .env
-    env_file:
-      - .env      
+  # Dedicated Ollama service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_MAX_LOADED_MODELS=4
     volumes:
       - ollama_data:/root/.ollama
-      - webui_data:/app/backend/data
-      # Mount tmpfs for high-speed temporary operations
       - type: tmpfs
         target: /tmp/ollama_runners
         tmpfs:
@@ -20,27 +20,24 @@ services:
           size: 1G
     networks:
       - ai-network
+    runtime: nvidia
+    restart: unless-stopped
+    expose:
+      - "11434"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
-          cpus: '10.0'
+          cpus: '8.0'
           memory: ${OLLAMA_MEMORY_LIMIT}
         reservations:
-          cpus: '6.0'
+          cpus: '4.0'
           memory: ${OLLAMA_MEMORY_RESERVATION}
-    runtime: nvidia
-    restart: unless-stopped
-    # No ports exposed - only accessible through NGINX
-    expose:
-      - "8080"
-      - "11434"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://open-webui:8080/health"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 300s
-    # CPU performance tuning
     sysctls:
       - net.core.somaxconn=65535
     ulimits:
@@ -51,7 +48,57 @@ services:
         soft: 65535
         hard: 65535
 
-  # NGINX Reverse Proxy (Cloudflare SSL termination) - Optimized for large responses
+  # Open WebUI (frontend only - no bundled Ollama)
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: ai-open-webui
+    env_file:
+      - .env
+    environment:
+      # Point to separate Ollama container
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Disable bundled Ollama completely
+      - ENABLE_OLLAMA_API=false
+      - OLLAMA_API_BASE_URL=http://ollama:11434
+      # Optional: Add other API endpoints
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # WebUI specific settings
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
+    volumes:
+      - webui_data:/app/backend/data
+      # Remove Ollama data volume since it's handled by separate container
+    networks:
+      - ai-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    sysctls:
+      - net.core.somaxconn=32768
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  # NGINX Reverse Proxy (unchanged)
   nginx:
     build: ./nginx
     container_name: ai-nginx
@@ -70,7 +117,6 @@ services:
           cpus: '0.5'
           memory: 1G
     restart: unless-stopped
-    # Optimize for large AI responses
     sysctls:
       - net.core.somaxconn=32768
       - net.ipv4.tcp_max_syn_backlog=32768
