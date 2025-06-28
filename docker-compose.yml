@@ -68,7 +68,7 @@ services:
       
     volumes:
       - ollama_data:/root/.ollama
-      - open_webui_data:/app/backend/data
+      - webui_data:/app/backend/data
       # Mount tmpfs for high-speed temporary operations
       - type: tmpfs
         target: /tmp/ollama_runners
@@ -149,5 +149,9 @@ volumes:
       type: none
       o: bind
       device: ${OLLAMA_DATA_PATH:-./ollama_data}
-  open_webui_data:
+  webui_data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${WEBUI_DATA_PATH:-./webui_data}
