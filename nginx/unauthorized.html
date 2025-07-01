@@ -2,45 +2,13 @@
 <html>
 <head>
     <title>Access Denied</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #0f172a;
-            color: #e2e8f0;
-            margin: 40px;
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            border: 1px solid #334155;
-            border-radius: 5px;
-            background-color: #1e293b;
-        }
-        h1 {
-            color: #ef4444;
-        }
-        p {
-            margin-bottom: 20px;
-        }
-        .ip {
-            color: #94a3b8;
-            font-size: 0.9em;
-            margin-top: 30px;
-        }
-    </style>
+    <link href="/static/css/styles.css" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div class="error-page-container">
         <h1>Access Denied</h1>
         <p>Your IP address is not authorized to access this server.</p>
         <p>If you believe this is an error, please contact the system administrator.</p>
-        <div class="ip">Your IP address: <span id="ip-address"></span></div>
     </div>
-    <script>
-        // NGINX will replace this with the actual client IP
-        document.getElementById('ip-address').textContent = '${remote_addr}';
-    </script>
 </body>
 </html>

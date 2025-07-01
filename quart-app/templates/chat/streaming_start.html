@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Devstral AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i> Devstral AI
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="nav-link">
+                    <i class="bi bi-person-circle"></i> {{ username }}
+                </span>
+                <a class="nav-link" href="{{ url_for('auth.logout') }}">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+    <main class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2><i class="bi bi-chat-dots"></i> Chat with AI</h2>
+                    <span class="text-muted">
+                        <i class="bi bi-person"></i> {{ username }}
+                    </span>
+                </div>
+                <div class="chat-container">
+                    <div class="chat-messages">
+                        <!-- Display existing messages -->
+                        {% for msg in messages %}
+                        <div class="message {{ 'user-message' if msg.role == 'user' else 'assistant-message' }}">
+                            <div class="message-content">
+                                <pre>{{ msg.content | e }}</pre>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        
+                        <!-- Add user's new message -->
+                        <div class="message user-message">
+                            <div class="message-content">
+                                <pre>{{ user_message }}</pre>
+                            </div>
+                        </div>
+                        
+                        <!-- Processing indicator -->
+                        <div class="processing-indicator">
+                            AI is thinking...
+                        </div>
+                        
+                        <!-- Start AI response container -->
+                        <div class="message streaming-message">
+                            <div class="message-content">
+                                <pre>

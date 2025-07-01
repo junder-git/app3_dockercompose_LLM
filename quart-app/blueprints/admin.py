@@ -1,12 +1,11 @@
-# blueprints/admin.py
-from quart import Blueprint, render_template, jsonify, request, redirect, url_for, current_app
+# quart-app/blueprints/admin.py - Essential Admin (No JavaScript)
+from quart import Blueprint, render_template, request, redirect, url_for, flash
 from quart_auth import login_required, current_user
 from functools import wraps
 from .database import (
     get_current_user_data, get_all_users, get_user_messages,
-    get_database_stats, cleanup_database, delete_user, delete_user_messages_only
+    get_database_stats, cleanup_database, delete_user
 )
-from datetime import datetime
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -23,140 +22,82 @@ def admin_required(f):
 @admin_bp.route('/admin')
 @admin_required
 async def admin():
-    return await render_template('admin.html')
-
-@admin_bp.route('/api/admin/users')
-@admin_required
-async def admin_users():
+    # Get database stats and users
+    stats = await get_database_stats()
     users = await get_all_users()
     
-    users_data = []
-    for user in users:
-        users_data.append({
-            'id': user.id,
-            'username': user.username,
-            'is_admin': user.is_admin,
-            'created_at': user.created_at
-        })
-    
-    return jsonify({'users': users_data})
+    return await render_template('admin.html', 
+                               stats=stats, 
+                               users=users)
 
-@admin_bp.route('/api/admin/chat/<user_id>')
-@admin_required
-async def admin_user_chat(user_id):
-    # Get all messages for the user across all sessions
-    messages = await get_user_messages(user_id)
-    
-    formatted_messages = []
-    for msg in messages:
-        formatted_messages.append({
-            'id': msg.get('id'),
-            'role': msg.get('role'),
-            'content': msg.get('content', ''),
-            'timestamp': msg.get('timestamp')
-        })
-    
-    return jsonify({'messages': formatted_messages})
-
-@admin_bp.route('/api/admin/database/stats')
-@admin_required
-async def get_admin_database_stats():
-    """Get database statistics for admin panel"""
-    stats = await get_database_stats()
-    return jsonify(stats)
-
-@admin_bp.route('/api/admin/database/cleanup', methods=['POST'])
+@admin_bp.route('/admin/cleanup', methods=['POST'])
 @admin_required
 async def admin_database_cleanup():
-    """Perform database cleanup operations"""
-    data = await request.get_json()
-    cleanup_type = data.get('type')
+    """Perform database cleanup operations via form"""
+    form_data = await request.form
+    cleanup_type = form_data.get('type')
     
     if not cleanup_type:
-        return jsonify({'error': 'Cleanup type is required'}), 400
+        flash('Cleanup type is required', 'error')
+        return redirect(url_for('admin.admin'))
     
     valid_types = ['complete_reset', 'fix_users', 'recreate_admin', 'clear_cache', 'fix_sessions']
     if cleanup_type not in valid_types:
-        return jsonify({'error': 'Invalid cleanup type'}), 400
+        flash('Invalid cleanup type', 'error')
+        return redirect(url_for('admin.admin'))
     
     # Perform cleanup
     result = await cleanup_database(cleanup_type, current_user.auth_id)
     
     if result['success']:
-        return jsonify(result)
+        flash(result['message'], 'success')
     else:
-        return jsonify(result), 500
+        flash(result['message'], 'error')
+    
+    return redirect(url_for('admin.admin'))
 
-@admin_bp.route('/api/admin/database/backup')
+@admin_bp.route('/admin/user/<user_id>')
 @admin_required
-async def create_database_backup():
-    """Create a database backup"""
-    try:
-        from ..database import get_redis
-        r = await get_redis()
-        
-        # Get all keys and their data
-        all_keys = await r.keys("*")
-        backup_data = {}
-        
-        for key in all_keys:
-            key_type = await r.type(key)
-            
-            if key_type == 'string':
-                backup_data[key] = {
-                    'type': 'string',
-                    'value': await r.get(key)
-                }
-            elif key_type == 'hash':
-                backup_data[key] = {
-                    'type': 'hash',
-                    'value': await r.hgetall(key)
-                }
-            elif key_type == 'set':
-                backup_data[key] = {
-                    'type': 'set',
-                    'value': list(await r.smembers(key))
-                }
-            elif key_type == 'zset':
-                backup_data[key] = {
-                    'type': 'zset',
-                    'value': await r.zrange(key, 0, -1, withscores=True)
-                }
-        
-        backup = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'total_keys': len(all_keys),
-            'data': backup_data
-        }
-        
-        return jsonify(backup)
-        
-    except Exception as e:
-        current_app.logger.error(f"Backup creation failed: {e}")
-        return jsonify({'error': str(e)}), 500
+async def admin_user_detail(user_id):
+    """View detailed user information and chat history"""
+    # Get user messages
+    messages = await get_user_messages(user_id)
+    
+    # Get user info
+    users = await get_all_users()
+    user_info = next((u for u in users if u.id == user_id), None)
+    
+    if not user_info:
+        flash('User not found', 'error')
+        return redirect(url_for('admin.admin'))
+    
+    # Format messages for display
+    formatted_messages = []
+    for msg in messages:
+        formatted_messages.append({
+            'role': msg.get('role'),
+            'content': msg.get('content', ''),
+            'timestamp': msg.get('timestamp')
+        })
+    
+    return await render_template('admin_user.html', 
+                               user=user_info,
+                               messages=formatted_messages)
 
-@admin_bp.route('/api/admin/users/<user_id>', methods=['DELETE'])
+@admin_bp.route('/admin/user/<user_id>/delete', methods=['POST'])
 @admin_required
-async def delete_user_endpoint(user_id):
-    """Delete a specific user and all their data"""
+async def admin_delete_user(user_id):
+    """Delete a user via form submission"""
     # Check if trying to delete self
     if user_id == current_user.auth_id:
-        return jsonify({'error': 'Cannot delete your own account'}), 400
+        flash('Cannot delete your own account', 'error')
+        return redirect(url_for('admin.admin'))
     
     result = await delete_user(user_id)
     
     if result['success']:
-        return jsonify(result)
+        flash(result['message'], 'success')
     else:
-        return jsonify(result), 400
-
-@admin_bp.route('/api/admin/users/<user_id>/messages', methods=['DELETE'])
-@admin_required
-async def delete_user_messages_endpoint(user_id):
-    """Delete only the messages for a specific user"""
-    result = await delete_user_messages_only(user_id)
+        flash(result['message'], 'error')
     
-    if result['success']:
-        return jsonify(result)
-    else:
-        return jsonify(result), 400
+    return redirect(url_for('admin.admin'))

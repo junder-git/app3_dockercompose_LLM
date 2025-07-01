@@ -1,10 +1,11 @@
-/* static/css/styles.css - Enhanced version with proper code block styling */
+/* nginx/static/css/styles.css - Complete JavaScript-Free Styles */
 
 /* Global Dark Theme Styles */
 body {
     background-color: #121212;
     color: #e0e0e0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.6;
 }
 
 /* Navbar customization */
@@ -41,14 +42,6 @@ body {
     background-color: #333 !important;
     border-color: #0d6efd !important;
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* Enhanced textarea for message input */
-#messageInput {
-    resize: none;
-    transition: height 0.1s ease;
-    font-family: inherit;
-    line-height: 1.5;
 }
 
 /* Buttons */
@@ -97,35 +90,6 @@ a:hover {
     color: #ea868f;
 }
 
-.error-message {
-    background-color: #dc3545;
-    color: white;
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    animation: slideIn 0.3s ease;
-}
-
-.success-message {
-    background-color: #198754;
-    color: white;
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 /* Chat specific styles */
 .chat-container {
     height: calc(100vh - 200px);
@@ -140,186 +104,6 @@ a:hover {
     background-color: #1a1a1a;
     border-radius: 10px;
     margin-bottom: 20px;
-}
-
-/* Message content styling */
-.message-content {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.message-text {
-    white-space: pre-wrap;
-    line-height: 1.5;
-}
-
-/* Code Block Styling - PROPERLY SIZED */
-.code-block-container {
-    margin: 10px 0;
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: #0d1117;
-    border: 1px solid #30363d;
-}
-
-.code-block-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: #21262d;
-    padding: 8px 12px;
-    border-bottom: 1px solid #30363d;
-    font-size: 0.8rem;
-    min-height: 32px;
-}
-
-.code-language {
-    color: #7d8590;
-    font-weight: 500;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.5px;
-}
-
-.code-actions {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-}
-
-/* Properly sized code action buttons */
-.btn-copy, .btn-github {
-    background: transparent;
-    border: 1px solid #30363d;
-    color: #7d8590;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    line-height: 1;
-    height: 24px;
-    min-width: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.btn-copy:hover, .btn-github:hover {
-    background-color: #30363d;
-    color: #f0f6fc;
-    border-color: #8b949e;
-}
-
-.btn-copy.copied {
-    color: #7c3aed;
-    border-color: #7c3aed;
-}
-
-.btn-copy i, .btn-github i {
-    font-size: 0.7rem;
-    line-height: 1;
-}
-
-/* Code block content */
-.code-block-container pre {
-    margin: 0;
-    padding: 16px;
-    background-color: #0d1117 !important;
-    overflow-x: auto;
-    font-size: 0.85rem;
-    line-height: 1.5;
-}
-
-.code-block-container code {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    color: #f0f6fc !important;
-    background: transparent !important;
-    padding: 0 !important;
-}
-
-/* Prism.js theme overrides for better dark mode */
-.token.comment,
-.token.prolog,
-.token.doctype,
-.token.cdata {
-    color: #6a737d;
-}
-
-.token.punctuation {
-    color: #f0f6fc;
-}
-
-.token.property,
-.token.tag,
-.token.boolean,
-.token.number,
-.token.constant,
-.token.symbol,
-.token.deleted {
-    color: #79c0ff;
-}
-
-.token.selector,
-.token.attr-name,
-.token.string,
-.token.char,
-.token.builtin,
-.token.inserted {
-    color: #a5d6ff;
-}
-
-.token.operator,
-.token.entity,
-.token.url,
-.language-css .token.string,
-.style .token.string {
-    color: #ff7b72;
-}
-
-.token.atrule,
-.token.attr-value,
-.token.keyword {
-    color: #ff7b72;
-}
-
-.token.function,
-.token.class-name {
-    color: #d2a8ff;
-}
-
-.token.regex,
-.token.important,
-.token.variable {
-    color: #ffa657;
-}
-
-/* Inline code styling */
-code:not([class*="language-"]) {
-    background-color: #262c36;
-    color: #f0f6fc;
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 0.85em;
-    border: 1px solid #30363d;
-}
-
-/* GitHub settings button in navbar */
-.github-settings-btn {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 1.1rem;
-    padding: 8px;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.github-settings-btn:hover {
-    background-color: #333;
-    color: #e2e8f0;
 }
 
 /* Message styling */
@@ -358,65 +142,84 @@ code:not([class*="language-"]) {
     gap: 4px;
 }
 
+/* Streaming message styles */
+.streaming-message {
+    background-color: #1e1e1e;
+    border: 1px solid #0d6efd;
+    color: #e0e0e0;
+    margin-bottom: 15px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    max-width: 85%;
+    word-wrap: break-word;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Processing indicator */
+.processing-indicator {
+    text-align: center;
+    padding: 20px;
+    color: #0d6efd;
+    font-style: italic;
+}
+
+.processing-indicator::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #0d6efd;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Code blocks */
+pre {
+    background-color: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #f0f6fc;
+    margin: 10px 0;
+}
+
+code {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    background-color: #262c36;
+    color: #f0f6fc;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
+
 /* Admin specific styles */
 .user-card {
     cursor: default;
     transition: background-color 0.2s;
+    padding: 12px;
+    margin-bottom: 8px;
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
 }
 
 .user-card:hover {
     background-color: #2a2a2a !important;
-}
-
-.user-card .user-name {
-    cursor: pointer;
-    flex: 1;
-}
-
-.user-card .user-name:hover {
-    text-decoration: underline;
-}
-
-.user-card .user-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.user-card .btn-group {
-    opacity: 0.7;
-    transition: opacity 0.2s;
-}
-
-.user-card:hover .btn-group {
-    opacity: 1;
-}
-
-.admin-message {
-    margin-bottom: 15px;
-    padding: 12px 16px;
-    border-radius: 12px;
-    max-width: 100%;
-}
-
-.admin-user-message {
-    background-color: #0d6efd;
-    margin-left: 20%;
-    color: white;
-}
-
-.admin-assistant-message {
-    background-color: #1e1e1e;
-    border: 1px solid #333;
-    margin-right: 20%;
-    color: #e0e0e0;
-}
-
-.message-timestamp {
-    display: block;
-    margin-top: 8px;
-    font-size: 0.75em;
-    opacity: 0.7;
 }
 
 /* Database management styles */
@@ -428,83 +231,6 @@ code:not([class*="language-"]) {
     border-top: 4px solid #0d6efd;
     border-radius: 50%;
     animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* GitHub Repository Browser Styles */
-.repo-list {
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.repo-item {
-    padding: 12px;
-    margin-bottom: 8px;
-    background-color: #1e1e1e;
-    border: 1px solid #333;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.repo-item:hover {
-    background-color: #2a2a2a;
-    border-color: #0d6efd;
-}
-
-.repo-meta {
-    margin-top: 4px;
-}
-
-.repo-meta .badge {
-    margin-right: 8px;
-}
-
-.file-list {
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-.file-item {
-    padding: 8px 12px;
-    border-bottom: 1px solid #333;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: background-color 0.2s ease;
-}
-
-.file-item:hover {
-    background-color: #2a2a2a;
-}
-
-.file-item i {
-    font-size: 1.1rem;
-}
-
-.file-item small {
-    margin-left: auto;
-}
-
-.breadcrumb {
-    background-color: #1e1e1e;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    border-radius: 4px;
-}
-
-.breadcrumb-item a {
-    text-decoration: none;
-    color: #0d6efd;
-}
-
-.breadcrumb-item a:hover {
-    text-decoration: underline;
 }
 
 /* Chat history container */
@@ -521,57 +247,48 @@ code:not([class*="language-"]) {
     overflow-y: auto;
 }
 
-/* Typing indicator */
-.typing-indicator {
-    display: none;
-    padding: 10px;
-    text-align: center;
+/* ERROR PAGE STYLES - for nginx error pages */
+.error-page-container {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 20px;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    background-color: #1e293b;
+    color: #e2e8f0;
+    font-family: Arial, sans-serif;
 }
 
-.typing-indicator span {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #0d6efd;
-    margin: 0 2px;
-    animation: typing 1.4s infinite;
+.error-page-container h1 {
+    color: #ef4444;
+    margin-bottom: 20px;
 }
 
-.typing-indicator span:nth-child(2) {
-    animation-delay: 0.2s;
+.error-page-container p {
+    margin-bottom: 20px;
 }
 
-.typing-indicator span:nth-child(3) {
-    animation-delay: 0.4s;
+.error-page-container a {
+    color: #60a5fa;
+    text-decoration: none;
 }
 
-@keyframes typing {
-    0%, 60%, 100% {
-        transform: translateY(0);
-        opacity: 0.7;
-    }
-    30% {
-        transform: translateY(-10px);
-        opacity: 1;
-    }
+.error-page-container a:hover {
+    text-decoration: underline;
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
-    .message {
+    .message, .streaming-message {
         max-width: 95%;
     }
     
-    .code-block-header {
-        padding: 6px 8px;
-        font-size: 0.7rem;
+    .chat-container {
+        height: calc(100vh - 150px);
     }
     
-    .btn-copy, .btn-github {
-        padding: 2px 6px;
-        font-size: 0.65rem;
-        height: 20px;
-        min-width: 20px;
+    .error-page-container {
+        margin: 20px;
+        padding: 15px;
     }
 }

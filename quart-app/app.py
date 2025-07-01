@@ -1,4 +1,4 @@
-# app_refactored.py - Refactored main application using blueprints
+# quart-app/app.py - Clean and Secure Application
 import os
 import secrets
 from datetime import timedelta
@@ -8,8 +8,8 @@ from quart import Quart, render_template, redirect, url_for, session, request, j
 from quart_auth import AuthUser, QuartAuth, current_user
 from werkzeug.security import generate_password_hash
 
-# Import blueprints
-from blueprints import auth_bp, chat_bp, admin_bp, api_bp, github_bp
+# Import only essential blueprints
+from blueprints import auth_bp, chat_bp, admin_bp
 from blueprints.database import get_user_by_username, save_user
 from blueprints.models import User
 from blueprints.utils import generate_csrf_token, validate_csrf_token
@@ -32,12 +32,10 @@ app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 # Initialize extensions
 auth = QuartAuth(app)
 
-# Register blueprints
+# Register essential blueprints only
 app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(admin_bp)
-app.register_blueprint(api_bp)
-app.register_blueprint(github_bp)
 
 # Make sessions permanent by default
 @app.before_request
@@ -50,10 +48,10 @@ async def make_session_permanent():
 async def csrf_protect():
     """Validate CSRF token for state-changing requests"""
     if request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
-        # Skip CSRF for WebSocket and API endpoints that use different auth
-        if request.path.startswith('/ws') or request.path.startswith('/api/'):
+        # Skip health check
+        if request.path == '/health':
             return
-        
+            
         token = (await request.form).get('csrf_token') or request.headers.get('X-CSRF-Token')
         if not await validate_csrf_token(token):
             return jsonify({'error': 'Invalid CSRF token'}), 403
@@ -67,6 +65,16 @@ async def add_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    
+    # Strict CSP - NO JavaScript allowed except Bootstrap
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "font-src 'self' https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; "
+        "script-src https://cdn.jsdelivr.net; "  # Only Bootstrap JS
+        "connect-src 'none'"  # No AJAX/WebSocket allowed
+    )
     
     # Add CSRF token to all HTML responses
     if response.content_type and 'text/html' in response.content_type:
@@ -88,7 +96,6 @@ async def init_admin():
     
     admin = await get_user_by_username(ADMIN_USERNAME)
     if not admin:
-        # Create admin with fixed ID = 'admin'
         admin_user = User(
             user_id='admin',  # Fixed ID for admin
             username=ADMIN_USERNAME,
@@ -96,7 +103,7 @@ async def init_admin():
             is_admin=True
         )
         await save_user(admin_user)
-        app.logger.info(f"Created default admin user: {ADMIN_USERNAME} with ID: admin")
+        app.logger.info(f"Created default admin user: {ADMIN_USERNAME}")
     else:
         # Ensure existing admin has correct admin status
         if not admin.is_admin:
@@ -107,6 +114,11 @@ async def init_admin():
 @app.before_serving
 async def startup():
     await init_admin()
+
+# Health check endpoint
+@app.route('/health')
+async def health():
+    return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
 
 # Routes
 @app.route('/')
