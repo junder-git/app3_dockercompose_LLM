@@ -1,279 +1,282 @@
-sudo mkdir -p /mnt/nvme/ollama_data /mnt/nvme/webui_data
-sudo chown -R 1000:1000 /mnt/nvme/ollama_data /mnt/nvme/webui_data
-sudo chmod -R 755 /mnt/nvme/ollama_data /mnt/nvme/webui_data
+# DeepSeek-Coder AI Chat Application
 
-  
-https://ollama.com/library/devstral  
-128k context window  
-  
-# Open WebUI + Ollama with DeepSeek-Coder Setup
-
-A production-ready setup for Open WebUI with Ollama and DeepSeek-Coder-v2:16b model, featuring NGINX reverse proxy with HTTPS and IP whitelisting.
-
-## 🏗️ Project Structure
-
-```
-├── docker-compose.yml
-├── .env
-├── README.md
-└── nginx/
-    ├── Dockerfile
-    ├── nginx.conf
-    └── error-pages/
-        ├── wrong-subdomain.html
-        └── rate-limited.html
-```
+A complete AI chat application using DeepSeek-Coder models with Docker containerization, featuring web UI, Redis persistence, NGINX reverse proxy, and GitHub integration.
 
 ## 🚀 Quick Start
 
-1. **Clone and navigate to the project directory**
+### Prerequisites
 
-2. **Configure environment variables**
-   ```bash
-   # Edit .env file - IMPORTANT: Change default admin credentials!
-   nano .env
-   ```
+- Docker and Docker Compose installed
+- NVIDIA Docker runtime (optional, for GPU acceleration)
+- At least 16GB RAM (32GB recommended for larger models)
+- 50GB free disk space
 
-3. **Build and start the services**
-   ```bash
-   docker-compose up --build
-   ```
+### 1. Clone and Setup
 
-4. **Access the application**
-   - Production: https://ai.junder.uk
-   - First login: Use credentials from .env file (admin@junder.uk / admin123 by default)
-   - **Download DeepSeek model**: Settings → Models → Download `deepseek-coder-v2:16b`
-   - Other subdomains: Show error page with redirect
+```bash
+git clone <your-repo-url>
+cd deepseek-coder-setup
+chmod +x docker-compose-startup.sh
+./docker-compose-startup.sh
+```
 
-## 🔧 Configuration
+### 2. Manual Setup (Alternative)
+
+```bash
+# Copy environment file
+cp example.env .env
+
+# Edit configuration
+nano .env
+
+# Start services
+docker-compose up -d --build
+```
+
+### 3. Access Application
+
+- **Web Interface**: http://localhost
+- **Default Login**: admin / admin123
+- **API Docs**: http://localhost/api (if implemented)
+
+## 📋 Features
+
+### Core Features
+- 🤖 **AI Chat Interface** - Clean, responsive web UI
+- 💾 **Persistent Storage** - Redis-based chat history and user management
+- 🔐 **User Authentication** - Secure login system with admin panel
+- 📱 **Session Management** - Multiple chat sessions per user (max 5)
+- ⚡ **Real-time Streaming** - WebSocket-based streaming responses
+- 🎨 **Syntax Highlighting** - Code blocks with copy functionality
+- 📊 **Admin Dashboard** - User management and database tools
+
+### GitHub Integration
+- 🐙 **Repository Browser** - Browse and load files from GitHub repos
+- 📝 **Gist Creation** - Create GitHub gists from code blocks
+- 🔑 **Token Management** - Secure server-side token storage
+- 📁 **File Loading** - Load repository files directly into chat
+
+### Technical Features
+- 🌐 **NGINX Reverse Proxy** - Load balancing and rate limiting
+- 🐳 **Docker Containerization** - Easy deployment and scaling
+- 🚀 **GPU Acceleration** - NVIDIA GPU support for faster inference
+- 💨 **Response Caching** - Redis-based response caching
+- 🛡️ **Security** - CSRF protection, XSS prevention, rate limiting
+- 📈 **Resource Management** - Configurable memory and CPU limits
+
+## 🏗️ Architecture
+
+```
+├── nginx/                 # Reverse proxy and static files
+│   ├── static/           # CSS, JS, and static assets
+│   └── nginx.conf        # NGINX configuration
+├── quart-app/            # Python web application
+│   ├── blueprints/       # Modular route handlers
+│   ├── templates/        # Jinja2 HTML templates
+│   └── app.py           # Main application
+├── ollama/               # AI model service
+│   └── scripts/         # Model initialization scripts
+├── redis/                # Database service
+│   └── redis.conf       # Redis configuration
+└── docker-compose.yml   # Service orchestration
+```
+
+## ⚙️ Configuration
 
 ### Environment Variables (.env)
 
-- `SECRET_KEY`: Secret key for Open WebUI sessions
-- `OLLAMA_MEMORY_LIMIT`: Maximum memory for the container (default: 20G)
-- `NVIDIA_VISIBLE_DEVICES`: GPU access (default: all)
-- `ENABLE_SIGNUP`: Allow new user registration (default: true)
-- `WEBUI_URL`: Full HTTPS URL for Open WebUI (default: https://ai.junder.uk)
-- `DEFAULT_USER_EMAIL`: Admin user email (default: admin@junder.uk)
-- `DEFAULT_USER_NAME`: Admin user display name (default: Admin)
-- `DEFAULT_USER_PASSWORD`: Admin user password (default: admin123)
+```env
+# Security
+SECRET_KEY=your-secret-key
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
 
-**Important**: Change the default admin credentials in production!
-- `ALLOWED_IPS`: IP whitelist (default: 0.0.0.0/0 - allow all)
+# AI Model
+OLLAMA_MODEL=deepseek-coder-v2:16b
+MODEL_TEMPERATURE=0.7
+MODEL_MAX_TOKENS=2048
 
-### IP Whitelisting
-
-To restrict access to specific IPs, modify the `geo $allowed_ip` block in `nginx/nginx.conf`:
-
-```nginx
-# Change from:
-geo $allowed_ip {
-    default 1;  # Allow all IPs
-}
-
-# To:
-geo $allowed_ip {
-    default 0;                      # Deny all by default
-    127.0.0.1/32 1;               # Allow localhost
-    192.168.0.0/16 1;             # Allow private network 192.168.x.x
-    YOUR_PUBLIC_IP/32 1;          # Replace with your specific public IP
-    YOUR_OFFICE_SUBNET/24 1;      # Replace with your office subnet
-}
+# Performance
+OLLAMA_MEMORY_LIMIT=16G
+RATE_LIMIT_MESSAGES_PER_MINUTE=10
+CHAT_CACHE_TTL_SECONDS=3600
 ```
 
-### Traffic Flow Configuration
+### Supported Models
 
-**Flexible HTTP/HTTPS Chain:**
-1. **Client** → HTTP/HTTPS → **Cloudflare Load Balancer**
-2. **Cloudflare** → HTTP/HTTPS → **Your Router**  
-3. **Router** → HTTP/HTTPS → **NGINX Container** (accepts both protocols)
-4. **NGINX** → HTTP → **Open WebUI Container** (port 8080)
+The application supports various DeepSeek models:
+- `deepseek-coder-v2:16b` (recommended)
+- `deepseek-coder-v2:7b` (lighter)
+- `deepseek-coder:33b` (larger)
+- `deepseek-coder:latest`
 
-**NGINX Configuration:**
-- Listens on both ports 80 (HTTP) and 443 (HTTPS)
-- Accepts traffic from Cloudflare on either protocol
-- Forwards all traffic as HTTP to Open WebUI on port 8080
-- Sets correct `X-Forwarded-Proto` header based on incoming protocol
+## 🔧 Development
 
-### Domain Configuration
+### Local Development
 
-The NGINX configuration is set up for **ai.junder.uk** with rate limiting:
-
-- **Correct domain**: `ai.junder.uk` - serves the AI chat application
-- **Other junder.uk subdomains**: 
-  - Shows styled error page for 30 seconds
-  - Rate limited to 1 request per minute per IP
-  - Auto-redirects to ai.junder.uk after 30 seconds
-  - Additional requests show rate limit error page
-- **Invalid domains**: Connection closed (return 444)
-
-**Rate Limiting Behavior:**
-- First request: Shows wrong subdomain page with 30-second countdown
-- Subsequent requests within 1 minute: Shows rate limited error page
-- After 1 minute: IP can make one new request
-
-## 📊 Backend Information
-
-**Open WebUI uses:**
-- **Database**: SQLite (built-in, stored in `/app/backend/data`)
-- **File Storage**: Local filesystem
-- **Session Management**: Built-in Python session handling
-- **User Authentication**: Built-in user management system
-- **Model Management**: Direct integration with Ollama API
-- **Startup**: Official bundled image with automatic Ollama + Open WebUI startup
-
-**Model Installation:**
-- Models are **NOT** pre-installed in the container
-- Download models after deployment via:
-  1. **Web UI**: Settings → Models → Download `deepseek-coder-v2:16b`
-  2. **CLI**: `docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b`
-
-No external database (Redis, PostgreSQL, etc.) is required.
-
-## 🎯 Features
-
-- ✅ **Official Open WebUI + Ollama image** - No custom startup scripts needed
-- ✅ **Configurable default admin user** - Set credentials via environment variables
-- ✅ **Smart domain routing** - Only serves ai.junder.uk with rate limited error pages  
-- ✅ **Rate limiting protection** - Prevents subdomain spam (1 request per minute)
-- ✅ **Cloudflare integration** - Proper real IP handling and edge termination
-- ✅ **IP whitelisting** hardcoded in nginx.conf
-- ✅ **Auto-downloads models** on first use or manual trigger
-- ✅ **GPU acceleration** with NVIDIA runtime
-- ✅ **Rate limiting** and security headers
-- ✅ **WebSocket support** for real-time chat
-- ✅ **File upload support** up to 1GB
-- ✅ **Health monitoring** with automatic restarts
-
-## 🔍 Monitoring
-
-### View logs
 ```bash
-# All services
-docker-compose logs -f
+# Start in development mode
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 
-# Specific service
-docker-compose logs -f open-webui
-docker-compose logs -f nginx
+# View logs
+docker-compose logs -f quart-app
+
+# Rebuild specific service
+docker-compose up -d --build quart-app
 ```
 
-### Check model download progress
+### Database Management
+
+Access the admin panel at `/admin` to:
+- View user statistics
+- Manage chat sessions
+- Clean up database
+- Download backups
+- Monitor system health
+
+### Adding New Features
+
+The application uses a modular blueprint structure:
+- Add new routes in `quart-app/blueprints/`
+- Create templates in `quart-app/templates/`
+- Add static assets in `nginx/static/`
+
+## 📚 API Reference
+
+### WebSocket API
+
+Connect to `/ws` for real-time chat:
+
+```javascript
+const ws = new WebSocket('ws://localhost/ws');
+ws.send(JSON.stringify({
+    type: 'chat',
+    message: 'Hello, AI!'
+}));
+```
+
+### REST API
+
+- `GET /api/chat/history` - Get chat history
+- `POST /api/chat/sessions` - Create new session
+- `GET /api/admin/users` - List users (admin only)
+- `POST /api/github/settings` - Save GitHub token
+
+## 🚀 Production Deployment
+
+### Docker Swarm
+
 ```bash
-# Check if model is downloaded
-docker exec ai-open-webui-ollama ollama list
+# Initialize swarm
+docker swarm init
 
-# Manually download DeepSeek model
-docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b
-
-# Check download progress
-docker exec ai-open-webui-ollama ollama ps
+# Deploy stack
+docker stack deploy -c docker-compose.yml deepseek-stack
 ```
 
-### Health checks
-### Check application access
-- Production: https://ai.junder.uk/health
-- Container health: `docker ps` (shows health status)
+### Kubernetes
 
-## 🛠️ Management Commands
-
-### Start services
 ```bash
-docker-compose up -d
+# Generate Kubernetes manifests
+kompose convert
+
+# Apply manifests
+kubectl apply -f .
 ```
 
-### Stop services
-```bash
-docker-compose down
+### Performance Tuning
+
+For production environments:
+
+```env
+# Increase worker processes
+APP_WORKERS=8
+
+# Enable secure cookies
+SECURE_COOKIES=true
+
+# Optimize memory usage
+OLLAMA_MEMORY_LIMIT=32G
+REDIS_MEMORY_LIMIT=4G
 ```
 
-### Rebuild and restart
-```bash
-docker-compose up --build -d
-```
-
-### Update Open WebUI
-```bash
-docker-compose pull
-docker-compose up -d
-```
-
-### Access container shell
-```bash
-# Open WebUI container
-docker exec -it ai-open-webui-ollama bash
-
-# NGINX container
-docker exec -it ai-nginx sh
-```
-
-## 📁 Data Persistence
-
-- **Ollama models**: Stored in `ollama_data` volume
-- **Open WebUI data**: Stored in `open_webui_data` volume (includes users, chats, settings)
-
-## 🔐 Security Features
-
-1. **Cloudflare edge termination** - Traffic handled at the edge
-2. **IP whitelisting** - Hardcoded in nginx.conf for security
-3. **Rate limiting** - Prevents abuse with different limits per endpoint
-4. **Security headers** - XSS protection, content type sniffing prevention
-5. **No direct container access** - Only accessible through NGINX
-6. **Real IP detection** - Proper handling of Cloudflare IPs
-7. **Configurable admin credentials** - Set via environment variables
-
-## 🐛 Troubleshooting
+## 🛠️ Troubleshooting
 
 ### Common Issues
 
-1. **GPU not detected**
+1. **Model not downloading**
+   ```bash
+   docker exec -it ai-ollama ollama pull deepseek-coder-v2:16b
+   ```
+
+2. **GPU not detected**
    ```bash
    # Check NVIDIA runtime
    docker info | grep nvidia
-   ```
-
-2. **Model download fails**
-   ```bash
-   # Check container logs
-   docker-compose logs open-webui
    
-   # Manually download model
-   docker exec ai-open-webui-ollama ollama pull deepseek-coder-v2:16b
+   # Install nvidia-container-toolkit
+   sudo apt install nvidia-container-toolkit
    ```
 
-3. **Certificate warnings**
-   - Only relevant for direct access (bypassing Cloudflare)
-   - Production should use Cloudflare for edge termination
-
-4. **Default admin credentials**
+3. **Out of memory errors**
    ```bash
-   # Change default credentials in .env file before first startup
-   DEFAULT_USER_EMAIL=your-email@domain.com
-   DEFAULT_USER_PASSWORD=your-secure-password
+   # Reduce model size or increase memory limits
+   OLLAMA_MODEL=deepseek-coder-v2:7b
    ```
 
-4. **Out of memory**
-   - Increase `OLLAMA_MEMORY_LIMIT` in `.env`
-   - Ensure sufficient system RAM (32GB+ recommended)
-
-5. **Permission denied errors**
+4. **Redis connection issues**
    ```bash
-   # Fix permissions
-   sudo chown -R $USER:$USER nginx/ssl/
+   # Check Redis health
+   docker exec ai-redis redis-cli ping
    ```
 
-## 📈 Resource Requirements
+### Logs and Monitoring
 
-- **RAM**: 16GB minimum, 32GB recommended
-- **Storage**: 25GB+ for DeepSeek model
-### Example: Mount SSD path
-```sudo mkdir -p /mnt/nvme/ollama_data```
-```sudo chown -R 1000:1000 /mnt/nvme/ollama_data```
-### Then set OLLAMA_DATA_PATH=/mnt/nvme/ollama_data in .env
-- **GPU**: NVIDIA GPU with 8GB+ VRAM recommended
-- **CPU**: 4+ cores recommended
+```bash
+# View all logs
+docker-compose logs -f
 
-## 🔄 Updates
+# View specific service logs
+docker-compose logs -f quart-app
+docker-compose logs -f ollama
+docker-compose logs -f nginx
 
-The setup uses specific image tags for stability. To update:
+# Monitor resource usage
+docker stats
+```
 
-1. Check for new releases on [Open WebUI GitHub](https://github.com/open-webui/open-webui
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+### Development Guidelines
+
+- Follow PEP 8 for Python code
+- Use ESLint for JavaScript
+- Add docstrings to functions
+- Update documentation for new features
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- [DeepSeek](https://deepseek.com/) for the AI models
+- [Ollama](https://ollama.ai/) for model serving
+- [Quart](https://quart.palletsprojects.com/) for the async web framework
+- [Redis](https://redis.io/) for data persistence
+
+## 📞 Support
+
+- Create an issue for bug reports
+- Join discussions for feature requests
+- Check the wiki for additional documentation
+
+---
+
+**Made with ❤️ for the AI community**

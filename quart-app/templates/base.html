@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}AI Chat Application{% endblock %}</title>
+    
+    <!-- Bootstrap CSS from CDN (cached by Nginx) -->
+    <link href="/cdn/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link href="/cdn/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="/static/css/styles.css" rel="stylesheet">
+    
+    <!-- Prism.js CSS for syntax highlighting -->
+    <link href="/cdn/npm/prismjs@1.29.0/themes/prism-tomorrow.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-chat-dots-fill"></i> AI Chat
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/chat">
+                                <i class="bi bi-chat"></i> Chat
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin">
+                                <i class="bi bi-shield-lock"></i> Admin
+                            </a>
+                        </li>
+                        {% if request.endpoint == 'chat.chat' %}
+                        <li class="nav-item">
+                            <button type="button" class="nav-link btn btn-link github-settings-btn" id="navGithubSettingsBtn" title="GitHub Integration">
+                                <i class="bi bi-github"></i>
+                            </button>
+                        </li>
+                        {% endif %}
+                        <li class="nav-item">
+                            <span class="nav-link">
+                                <i class="bi bi-person-circle"></i> 
+                                {% if username %}{{ username }}{% else %}User{% endif %}
+                            </span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/logout">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="/login">
+                                <i class="bi bi-box-arrow-in-right"></i> Login
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/register">
+                                <i class="bi bi-person-plus"></i> Register
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Bootstrap JS Bundle from CDN (cached by Nginx) -->
+    <script src="/cdn/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Prism.js for syntax highlighting -->
+    <script src="/cdn/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+    <script src="/cdn/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    
+    <!-- Custom JS - Load in order -->
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/github-intergration.js"></script>
+    <script src="/static/js/chat.js"></script>
+    <script src="/static/js/admin.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

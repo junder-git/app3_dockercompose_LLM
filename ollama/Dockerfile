@@ -1,25 +1,33 @@
-FROM ollama/ollama:latest
+FROM ubuntu:20.04
 
-# Set environment variables
-ENV OLLAMA_HOST=0.0.0.0:11434
-ENV OLLAMA_KEEP_ALIVE=-1
-ENV OLLAMA_MAX_LOADED_MODELS=1
-ENV OLLAMA_MODELS=/root/.ollama/models
+# Set environment variables to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV OLLAMA_HOST=0.0.0.0
 
-# Create necessary directories
-RUN mkdir -p /root/.ollama/models /tmp/ollama_cache
+# Install dependencies first
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    bash \
+    ca-certificates \
+    gpg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install curl if not present (for healthchecks)
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh
 
-# Copy startup script
-RUN mkdir -p /app
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+# Copy initialization script and Modelfile  
+COPY scripts/init-ollama.sh /scripts/init-ollama.sh
+COPY Modelfile /root/Modelfile
+RUN chmod +x /scripts/init-ollama.sh
 
-# Expose the default port
+# Set working directory
+WORKDIR /root
+
+# Expose Ollama port
 EXPOSE 11434
 
-# Override the ENTRYPOINT and use our custom script
-ENTRYPOINT []
-CMD ["/app/start.sh"]
+# Set entrypoint to initialization script
+ENTRYPOINT ["/scripts/init-ollama.sh"]
+
+
