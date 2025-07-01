@@ -1,4 +1,4 @@
-# blueprints/auth.py
+# quart-app/blueprints/auth.py - Fixed template paths
 from quart import Blueprint, render_template, request, redirect, url_for, session
 from quart_auth import login_user, logout_user, login_required, current_user, AuthUser
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -21,9 +21,9 @@ async def login():
             login_user(AuthUser(user.id))
             return redirect(url_for('chat.chat'))
         else:
-            return await render_template('login.html', error='Invalid username or password')
+            return await render_template('auth/login.html', error='Invalid username or password')
     
-    return await render_template('login.html')
+    return await render_template('auth/login.html')
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 async def register():
@@ -34,14 +34,14 @@ async def register():
         
         # Validate inputs
         if len(username) < 3:
-            return await render_template('register.html', error='Username must be at least 3 characters')
+            return await render_template('auth/register.html', error='Username must be at least 3 characters')
         if len(password) < 6:
-            return await render_template('register.html', error='Password must be at least 6 characters')
+            return await render_template('auth/register.html', error='Password must be at least 6 characters')
         
         # Check if user exists
         existing_user = await get_user_by_username(username)
         if existing_user:
-            return await render_template('register.html', error='Username already exists')
+            return await render_template('auth/register.html', error='Username already exists')
         
         # Create new user
         new_user = User(
@@ -53,7 +53,7 @@ async def register():
         
         return redirect(url_for('auth.login'))
     
-    return await render_template('register.html')
+    return await render_template('auth/register.html')
 
 @auth_bp.route('/logout')
 @login_required

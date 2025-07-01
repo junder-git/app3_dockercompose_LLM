@@ -1,16 +1,16 @@
-# quart-app/app.py - Clean and Secure Application
+# quart-app/app.py - Fixed with Proper User Context Loading
 import os
 import secrets
 from datetime import timedelta
 from dotenv import load_dotenv
 
-from quart import Quart, render_template, redirect, url_for, session, request, jsonify
+from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
 from quart_auth import AuthUser, QuartAuth, current_user
 from werkzeug.security import generate_password_hash
 
 # Import only essential blueprints
 from blueprints import auth_bp, chat_bp, admin_bp
-from blueprints.database import get_user_by_username, save_user
+from blueprints.database import get_user_by_username, save_user, get_current_user_data
 from blueprints.models import User
 from blueprints.utils import generate_csrf_token, validate_csrf_token
 
@@ -42,6 +42,14 @@ app.register_blueprint(admin_bp)
 async def make_session_permanent():
     """Make sessions permanent (persist across browser sessions)"""
     session.permanent = True
+
+# Load user data for templates
+@app.before_request
+async def load_user_data():
+    """Load current user data for template context"""
+    g.current_user_data = None
+    if await current_user.is_authenticated:
+        g.current_user_data = await get_current_user_data(current_user.auth_id)
 
 # CSRF Protection for POST requests
 @app.before_request
@@ -84,9 +92,12 @@ async def add_security_headers(response):
 
 # Template globals
 @app.context_processor
-async def inject_csrf_token():
-    """Inject CSRF token into all templates"""
-    return {'csrf_token': await generate_csrf_token()}
+async def inject_template_globals():
+    """Inject global variables into all templates"""
+    return {
+        'csrf_token': await generate_csrf_token(),
+        'current_user_data': g.get('current_user_data')
+    }
 
 # Initialize admin user
 async def init_admin():

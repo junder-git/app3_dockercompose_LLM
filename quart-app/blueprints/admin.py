@@ -1,4 +1,4 @@
-# quart-app/blueprints/admin.py - Fixed Admin Blueprint
+# quart-app/blueprints/admin.py - Fixed template paths
 from quart import Blueprint, render_template, request, redirect, url_for, flash, g
 from quart_auth import login_required, current_user
 from functools import wraps
@@ -27,9 +27,7 @@ async def admin():
     stats = await get_database_stats()
     users = await get_all_users()
     
-    return await render_template('admin/admin.html', 
-                               stats=stats, 
-                               users=users)
+    return await render_template('admin/index.html', stats=stats, users=users)
 
 @admin_bp.route('/admin/cleanup', methods=['POST'])
 @admin_required
@@ -81,9 +79,7 @@ async def admin_user_detail(user_id):
             'timestamp': msg.get('timestamp')
         })
     
-    return await render_template('admin/admin_user.html', 
-                               user=user_info,
-                               messages=formatted_messages)
+    return await render_template('admin/user_detail.html', user=user_info, messages=formatted_messages)
 
 @admin_bp.route('/admin/user/<user_id>/delete', methods=['POST'])
 @admin_required
