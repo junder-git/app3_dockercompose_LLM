@@ -1,5 +1,5 @@
-# quart-app/blueprints/admin.py - Essential Admin (No JavaScript)
-from quart import Blueprint, render_template, request, redirect, url_for, flash
+# quart-app/blueprints/admin.py - Fixed Admin Blueprint
+from quart import Blueprint, render_template, request, redirect, url_for, flash, g
 from quart_auth import login_required, current_user
 from functools import wraps
 from .database import (
@@ -15,6 +15,7 @@ def admin_required(f):
     async def decorated_function(*args, **kwargs):
         user_data = await get_current_user_data(current_user.auth_id)
         if not user_data or not user_data.is_admin:
+            flash('Admin access required', 'error')
             return redirect(url_for('chat.chat'))
         return await f(*args, **kwargs)
     return decorated_function
@@ -26,7 +27,7 @@ async def admin():
     stats = await get_database_stats()
     users = await get_all_users()
     
-    return await render_template('admin.html', 
+    return await render_template('admin/admin.html', 
                                stats=stats, 
                                users=users)
 
@@ -80,7 +81,7 @@ async def admin_user_detail(user_id):
             'timestamp': msg.get('timestamp')
         })
     
-    return await render_template('admin_user.html', 
+    return await render_template('admin/admin_user.html', 
                                user=user_info,
                                messages=formatted_messages)
 
