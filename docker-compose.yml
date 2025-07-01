@@ -1,127 +1,158 @@
 version: '3.8'
 
 services:
-  # Nginx Reverse Proxy
+  # Nginx Reverse Proxy with IP whitelisting
   nginx:
     build: ./nginx
-    container_name: ai-nginx
+    container_name: devstral-nginx
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/static:/usr/share/nginx/html/static:ro  # Mount static files
+      - ./nginx/static:/usr/share/nginx/html/static:ro
       - nginx_cache:/var/cache/nginx
+      - nginx_logs:/var/log/nginx
     depends_on:
       - quart-app
     networks:
-      - ai-network
+      - devstral-network
     deploy:
       resources:
         limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
     restart: unless-stopped
-  
-  # Ollama Model Server with GPU acceleration  
+
+  # Ollama CUDA Server with Devstral:24b permanently loaded
   ollama:
     build:
       context: ./ollama
       dockerfile: Dockerfile
-    container_name: ai-ollama
+    container_name: devstral-ollama
     volumes:
-      - ollama_models:/root/.ollama/models
-      - ./ollama/scripts:/scripts
-      - ./ollama/Modelfile:/root/Modelfile
+      # Persistent volume for Ollama models (critical for 14GB model)
+      - ollama_models:/root/.ollama
+      - ./ollama/scripts:/scripts:ro
+      - ./ollama/Modelfile:/root/Modelfile:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-coder-v2:16b}
-      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
+      - OLLAMA_KEEP_ALIVE=-1              # Keep model permanently in memory
       - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_MAX_LOADED_MODELS=1
-      #- OLLAMA_VERBOSE=0  # Suppress verbose logging
-      #- OLLAMA_NOPRUNE=1  # Prevent token pruning
-      #- OLLAMA_DEBUG=false  # Disable debug mode
+      # Hybrid GPU+CPU configuration for RTX 3060 Ti
+      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-15}
+      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
+      - CUDA_VISIBLE_DEVICES=0
+      - OLLAMA_MAIN_GPU=0
+      # Memory and performance optimization
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      - OLLAMA_LOW_VRAM=${OLLAMA_LOW_VRAM:-1}
+      - OLLAMA_ROPE_SCALING=${OLLAMA_ROPE_SCALING:-1}
     ports:
       - "11434:11434"
     networks:
-      - ai-network
+      - devstral-network
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-16G}
+          cpus: '8.0'                     # Use 8 of your 10 cores
+          memory: ${OLLAMA_MEMORY_LIMIT:-26G}
         reservations:
-          cpus: '1.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-8G}
+          cpus: '4.0'
+          memory: ${OLLAMA_MEMORY_RESERVATION:-16G}
           devices:
             - driver: nvidia
-              count: all
+              count: 1
               capabilities: [gpu]
     runtime: nvidia
     restart: unless-stopped
-  
-  # Web UI Application
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 300s                  # Give time for initial model download
+
+  # Quart Web Application
   quart-app:
     build:
       context: ./quart-app
       dockerfile: Dockerfile
-    container_name: ai-quart-app
+    container_name: devstral-quart-app
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-deepseek-coder-v2:16b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
       - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
-      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-2048}
+      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-4096}
       - MODEL_TIMEOUT=${MODEL_TIMEOUT:-300}
-      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-10}
-      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-3600}
-      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-100}
+      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-8}
+      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-7200}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-50}
       - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
       - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      # SSE Configuration
+      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL:-30}
+      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-25}
+      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
     volumes:
+      # Persistent volume for application data
+      - app_data:/app/data
+      - app_logs:/app/logs
+      # Development mount (comment out for production)
       - ./quart-app:/app
     depends_on:
-      - redis
-      - ollama
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
-      - ai-network
+      - devstral-network
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 8G
+          cpus: '2.0'
+          memory: ${QUART_APP_MEMORY_LIMIT:-4G}
         reservations:
-          cpus: '0.5'
-          memory: 4G
+          cpus: '1.0'
+          memory: ${QUART_APP_MEMORY_RESERVATION:-2G}
     restart: unless-stopped
-  
-  #Database in JSON format with data persist docker volume and conf
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Database with persistence
   redis:
     build: ./redis
-    container_name: ai-redis
+    container_name: devstral-redis
     volumes:
+      # Persistent volume for Redis data
       - redis_data:/data
+      - redis_logs:/var/log/redis
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
     networks:
-      - ai-network
+      - devstral-network
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 2G
+          cpus: '1.0'
+          memory: ${REDIS_MEMORY_LIMIT:-2G}
         reservations:
           cpus: '0.25'
-          memory: 1G
+          memory: 512M
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -130,10 +161,39 @@ services:
       retries: 3
 
 networks:
-  ai-network:
+  devstral-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
 
 volumes:
+  # Nginx volumes
   nginx_cache:
+    driver: local
+  nginx_logs:
+    driver: local
+  
+  # Ollama volumes (critical for 14GB model persistence)
   ollama_models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/ollama_models
+  
+  # Application volumes
+  app_data:
+    driver: local
+  app_logs:
+    driver: local
+  
+  # Redis volumes
   redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/redis_data
+  redis_logs:
+    driver: local
