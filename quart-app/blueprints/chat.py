@@ -1,11 +1,11 @@
-# quart-app/blueprints/chat.py - Merged with Direct Ollama Integration
+# quart-app/blueprints/chat.py - Fixed with Proper App Context Management
 import os
 import hashlib
 import aiohttp
 import asyncio
 import json
 from typing import List, Dict, AsyncGenerator
-from quart import Blueprint, render_template, request, redirect, url_for, Response
+from quart import Blueprint, render_template, request, redirect, url_for, Response, current_app
 from quart_auth import login_required, current_user
 
 from .database import (
@@ -217,17 +217,82 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
     )
 
 async def generate_chat_stream(user_id: str, session_id: str, user_message: str, username: str, prompt_hash: str):
-    """Generate chunked HTML response with AI streaming"""
+    """Generate chunked HTML response with AI streaming - Fixed with proper app context"""
     
     # Get chat history for context
     chat_history = await get_session_messages(session_id, 10)
     
-    # Render the streaming template start
-    template_start = await render_template('chat/streaming_start.html', 
-                                         username=username,
-                                         messages=chat_history,
-                                         user_message=escape_html(user_message))
-    yield template_start
+    # Create a simple HTML response without using templates
+    # This avoids the app context issue while still providing a functional streaming interface
+    
+    # HTML start with inline CSS and Bootstrap
+    html_start = f'''<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - Devstral AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i> Devstral AI
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="nav-link">
+                    <i class="bi bi-person-circle"></i> {escape_html(username)}
+                </span>
+                <a class="nav-link" href="/logout">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+    <main class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2><i class="bi bi-chat-dots"></i> Chat with AI</h2>
+                    <span class="text-muted">
+                        <i class="bi bi-person"></i> {escape_html(username)}
+                    </span>
+                </div>
+                <div class="chat-container">
+                    <div class="chat-messages">'''
+    
+    # Add existing messages
+    for msg in chat_history:
+        role = msg.get('role')
+        content = escape_html(msg.get('content', ''))
+        message_class = 'user-message' if role == 'user' else 'assistant-message'
+        html_start += f'''
+                        <div class="message {message_class}">
+                            <div class="message-content">
+                                <pre>{content}</pre>
+                            </div>
+                        </div>'''
+    
+    # Add user's new message
+    html_start += f'''
+                        <div class="message user-message">
+                            <div class="message-content">
+                                <pre>{escape_html(user_message)}</pre>
+                            </div>
+                        </div>
+                        
+                        <div class="processing-indicator">
+                            AI is thinking...
+                        </div>
+                        
+                        <div class="message streaming-message">
+                            <div class="message-content">
+                                <pre>'''
+    
+    yield html_start
     
     # Force browser to render immediately
     yield " " * 1024  # Padding to trigger browser rendering
@@ -251,9 +316,37 @@ async def generate_chat_stream(user_id: str, session_id: str, user_message: str,
         yield escape_html(error_msg)
         full_response += error_msg
     
-    # Render the streaming template end
-    template_end = await render_template('chat/streaming_end.html')
-    yield template_end
+    # HTML end with form
+    html_end = f'''</pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <form method="POST" action="/chat" class="mt-3">
+                        <input type="hidden" name="csrf_token" value="">
+                        <div class="input-group">
+                            <textarea name="message" class="form-control" 
+                                    placeholder="Type your message..." 
+                                    rows="3" maxlength="10000" required autofocus></textarea>
+                            <button class="btn btn-primary" type="submit">
+                                <i class="bi bi-send"></i> Send
+                            </button>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            Your message will stream in real-time as the AI responds
+                        </small>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>'''
+    
+    yield html_end
     
     # Save the complete AI response to database and cache
     if full_response.strip():
