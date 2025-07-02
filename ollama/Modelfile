@@ -1,4 +1,4 @@
-# Modelfile optimized for Devstral:24b on RTX 3060 Ti (Hybrid CPU+GPU)
+# Modelfile optimized for Devstral:24b on RTX 3060 Ti (More Conservative Settings)
 FROM devstral:24b
 
 # Enhanced system prompt for Devstral's agentic coding capabilities
@@ -24,13 +24,15 @@ SYSTEM """You are Devstral, an advanced AI coding agent created by Mistral AI an
 
 Provide detailed, well-reasoned responses with proper code formatting. When working on multi-step problems, outline your approach first, then implement systematically."""
 
-# Optimized parameters for 24B model on hybrid CPU+GPU setup
+# CONSERVATIVE parameters for 24B model to fit in 8GB VRAM
 PARAMETER temperature 0.7
 PARAMETER top_p 0.9
-PARAMETER num_ctx 32768       # Leverage 128k context capability (reduced for memory)
+PARAMETER num_ctx 16384       # Reduced context to save memory (was 32768)
 PARAMETER repeat_penalty 1.1
 PARAMETER top_k 40
-PARAMETER num_gpu 15          # ~50% layers on GPU (fits in 8GB VRAM)
-PARAMETER num_thread 8        # Use 8 CPU cores for remaining layers
-PARAMETER num_batch 256       # Smaller batch for hybrid setup
+PARAMETER num_gpu 12          # Reduced GPU layers (was 15) - more conservative
+PARAMETER num_thread 10       # Increased CPU threads to compensate
+PARAMETER num_batch 128       # Smaller batch size (was 256)
 PARAMETER rope_scaling_type 1 # Better long context handling
+PARAMETER use_mmap true       # Enable memory mapping to reduce RAM usage
+PARAMETER use_mlock false     # Disable memory locking to be more flexible
