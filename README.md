@@ -1,5 +1,5 @@
 ## Useful commands   
-docker-compose up --build --no-cache ollama
+docker-compose up --build --no-cache
   
 # Devstral AI Chat - High Performance Docker Stack
 
