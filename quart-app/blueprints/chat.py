@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Optimized for 7.5GB VRAM performance
+# quart-app/blueprints/chat.py - Fixed form handling and options
 import os
 import hashlib
 import aiohttp
@@ -17,17 +17,17 @@ from .utils import escape_html
 
 chat_bp = Blueprint('chat', __name__)
 
-# AI Model configuration - OPTIMIZED for 7.5GB VRAM
+# AI Model configuration - HIGH PERFORMANCE 7.5GB
 OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://ollama:11434')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'devstral:24b')
 MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE', '0.7'))
 MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
-MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))     # Increased
-MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '90'))            # Slightly longer
+MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))
+MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '120'))
 
-# OPTIMIZED hardware settings for 7.5GB VRAM
-OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '22'))     # Much higher
-OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD', '8'))      # Fewer CPU threads
+# Hardware settings
+OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '22'))
+OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD', '8'))
 
 def get_active_model():
     """Get the active model name from the init script"""
@@ -40,29 +40,28 @@ def get_active_model():
 ACTIVE_MODEL = get_active_model()
 
 async def stream_ai_response(prompt: str, chat_history: List[Dict] = None) -> AsyncGenerator[str, None]:
-    """Stream AI response - OPTIMIZED for 7.5GB VRAM performance"""
+    """Stream AI response - HIGH PERFORMANCE with valid options only"""
     
     try:
-        # Build messages array with IMPROVED context (more VRAM available)
+        # Build messages array
         messages = []
         
-        # Use more context history with higher VRAM
+        # Use good context history with higher VRAM
         if chat_history:
-            for msg in chat_history[-8:]:  # Increased from 2-3 to 8
+            for msg in chat_history[-8:]:
                 role = msg.get('role')
                 content = msg.get('content', '').strip()
                 if role in ['user', 'assistant'] and content:
-                    # Less aggressive truncation with more VRAM
-                    if len(content) > 2000:  # Increased from 300-500
+                    if len(content) > 2000:
                         content = content[:2000] + "..."
                     messages.append({
                         'role': role,
                         'content': content
                     })
         
-        # Add current user message (less aggressive truncation)
+        # Add current user message
         user_prompt = prompt.strip()
-        if len(user_prompt) > 5000:  # Increased from 800-1000
+        if len(user_prompt) > 5000:
             user_prompt = user_prompt[:5000] + "..."
         
         messages.append({
@@ -70,29 +69,26 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None) -> As
             'content': user_prompt
         })
         
-        # HIGH PERFORMANCE payload for 7.5GB VRAM
+        # HIGH PERFORMANCE payload with ONLY VALID options
         payload = {
             'model': ACTIVE_MODEL,
             'messages': messages,
             'stream': True,
-            'keep_alive': -1,  # Permanent loading
+            'keep_alive': -1,
             'options': {
                 'temperature': MODEL_TEMPERATURE,
                 'top_p': MODEL_TOP_P,
                 'num_predict': MODEL_MAX_TOKENS,
-                'num_ctx': 16384,                    # Doubled context size
+                'num_ctx': 16384,
                 'repeat_penalty': 1.1,
                 'top_k': 40,
-                # HIGH PERFORMANCE hardware settings
-                'num_gpu': OLLAMA_GPU_LAYERS,        # 22 layers on GPU (target 7.5GB)
-                'num_thread': OLLAMA_NUM_THREAD,     # 8 CPU threads (fewer needed)
-                'num_batch': 256,                    # Larger batches for better performance
-                'flash_attention': True,
-                'low_vram': False                    # Disable low VRAM mode
+                # ONLY VALID options - removed invalid ones
+                'num_gpu': OLLAMA_GPU_LAYERS,
+                'num_thread': OLLAMA_NUM_THREAD,
+                'num_batch': 256
             }
         }
         
-        # Timeout for higher performance setup
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -140,7 +136,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None) -> As
 @chat_bp.route('/chat', methods=['GET', 'POST'])
 @login_required
 async def chat():
-    """Main chat interface with improved performance"""
+    """Main chat interface"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -150,8 +146,8 @@ async def chat():
     if request.method == 'POST':
         return await handle_chat_message(user_data.id, current_session_id, user_data.username)
     
-    # GET request - show more chat history with better performance
-    messages = await get_session_messages(current_session_id, 25)  # Increased from 8-10
+    # GET request - show chat page
+    messages = await get_session_messages(current_session_id, 25)
     
     formatted_messages = []
     for msg in messages:
@@ -167,7 +163,7 @@ async def chat():
                                messages=formatted_messages)
 
 async def handle_chat_message(user_id: str, session_id: str, username: str):
-    """Handle chat message with improved limits"""
+    """Handle chat message with proper duplicate prevention"""
     
     # Check rate limit
     if not await check_rate_limit(user_id):
@@ -186,8 +182,8 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
     if not user_message:
         return redirect(url_for('chat.chat'))
     
-    # HIGHER message length limit with more VRAM
-    if len(user_message) > 5000:  # Increased from 1500
+    # Higher message length limit
+    if len(user_message) > 5000:
         messages = await get_session_messages(session_id, 15)
         formatted_messages = [{'role': msg.get('role'), 'content': msg.get('content', ''), 
                              'timestamp': msg.get('timestamp')} for msg in messages]
@@ -196,11 +192,24 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
                                    messages=formatted_messages,
                                    error="Message too long. Maximum 5,000 characters allowed.")
     
-    # Check for duplicate submission
+    # ROBUST duplicate prevention with timestamp check
+    import time
+    current_time = time.time()
+    
+    # Check for duplicate submission in last 10 seconds
     recent_messages = await get_session_messages(session_id, 5)
     for msg in recent_messages:
-        if msg.get('role') == 'user' and msg.get('content') == user_message:
-            return redirect(url_for('chat.chat'))
+        if (msg.get('role') == 'user' and 
+            msg.get('content') == user_message and 
+            msg.get('timestamp')):
+            try:
+                from datetime import datetime
+                msg_time = datetime.fromisoformat(msg.get('timestamp').replace('Z', '+00:00'))
+                if (current_time - msg_time.timestamp()) < 10:  # Within 10 seconds
+                    print(f"Duplicate message detected within 10 seconds, redirecting")
+                    return redirect(url_for('chat.chat'))
+            except:
+                pass
     
     # Save user message
     await save_message(user_id, 'user', user_message, session_id)
@@ -220,12 +229,12 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
     )
 
 async def generate_chat_stream(user_id: str, session_id: str, user_message: str, username: str, prompt_hash: str):
-    """Generate chunked HTML response with improved performance"""
+    """Generate chunked HTML response with FIXED form handling"""
     
-    # Get more chat history with better performance
-    chat_history = await get_session_messages(session_id, 8)  # Increased from 4-5
+    # Get chat history
+    chat_history = await get_session_messages(session_id, 8)
     
-    # Enhanced HTML with better performance messaging
+    # Enhanced HTML with PROPER form handling
     html_start = f'''<!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
@@ -363,28 +372,28 @@ async def generate_chat_stream(user_id: str, session_id: str, user_message: str,
         yield escape_html(error_msg)
         full_response += error_msg
     
-    # HTML end with improved form
+    # HTML end with NO JAVASCRIPT (pure form handling)
     html_end = f'''</pre>
                             </div>
                         </div>
                     </div>
                     
-                    <form method="POST" action="/chat" class="mt-4" id="chatForm">
+                    <form method="POST" action="/chat" class="mt-4">
                         <div class="input-group">
-                            <textarea name="message" id="messageInput" class="form-control" 
+                            <textarea name="message" class="form-control" 
                                     placeholder="Type your message (max 5,000 chars)..." 
                                     rows="4" maxlength="5000" required autofocus></textarea>
-                            <button class="btn btn-success" type="submit" id="sendButton">
+                            <button class="btn btn-success" type="submit">
                                 <i class="bi bi-send"></i> Send
                             </button>
                         </div>
                         <small class="text-muted mt-2 d-block">
                             <i class="bi bi-info-circle"></i> 
-                            Press <strong>Enter</strong> to send • <strong>Shift+Enter</strong> for new line
+                            Submit with <strong>Send button</strong> • <strong>Shift+Enter</strong> for new line in textarea
                         </small>
                         <small class="text-success">
                             <i class="bi bi-lightning-fill"></i> High Performance Mode: 
-                            7.5GB VRAM • Larger context • Better responses
+                            7.5GB VRAM • No JavaScript • Pure HTML forms
                         </small>
                     </form>
                 </div>
@@ -392,45 +401,8 @@ async def generate_chat_stream(user_id: str, session_id: str, user_message: str,
         </div>
     </main>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Enhanced form handling for high performance mode
-        document.addEventListener('DOMContentLoaded', function() {{
-            const form = document.getElementById('chatForm');
-            const messageInput = document.getElementById('messageInput');
-            const sendButton = document.getElementById('sendButton');
-            let isSubmitting = false;
-            
-            // Handle Enter key behavior
-            messageInput.addEventListener('keydown', function(e) {{
-                if (e.key === 'Enter' && !e.shiftKey) {{
-                    e.preventDefault();
-                    if (!isSubmitting && messageInput.value.trim()) {{
-                        form.submit();
-                    }}
-                }}
-            }});
-            
-            // Prevent double submission
-            form.addEventListener('submit', function(e) {{
-                if (isSubmitting) {{
-                    e.preventDefault();
-                    return false;
-                }}
-                
-                if (!messageInput.value.trim()) {{
-                    e.preventDefault();
-                    return false;
-                }}
-                
-                isSubmitting = true;
-                sendButton.disabled = true;
-                messageInput.disabled = true;
-                
-                sendButton.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
-            }});
-        }});
-    </script>
+    <!-- Bootstrap CSS only - NO JAVASCRIPT -->
+    <!-- All interactions handled by pure HTML forms -->
 </body>
 </html>'''
     
@@ -445,7 +417,7 @@ async def generate_chat_stream(user_id: str, session_id: str, user_message: str,
 @chat_bp.route('/chat/health')
 @login_required
 async def chat_health():
-    """Check AI service health with performance info"""
+    """Check AI service health"""
     try:
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:

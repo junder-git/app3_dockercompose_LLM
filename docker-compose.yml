@@ -1,39 +1,13 @@
 version: '3.8'
 
 services:
-  # Nginx Reverse Proxy with extended timeouts
-  nginx:
-    build: ./nginx
-    container_name: devstral-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/static:/usr/share/nginx/html/static:ro
-      - nginx_cache:/var/cache/nginx
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - quart-app
-    networks:
-      - devstral-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: unless-stopped
-
-  # Ollama CUDA Server with PERMANENT model loading
+  # Ollama CUDA Server with PROPER model loading verification
   ollama:
     build:
       context: ./ollama
       dockerfile: Dockerfile
     container_name: devstral-ollama
     volumes:
-      # Persistent volume for Ollama models (critical for 14GB model)
       - ollama_models:/root/.ollama
       - ./ollama/scripts:/scripts:ro
       - ./ollama/Modelfile:/root/Modelfile:ro
@@ -44,18 +18,13 @@ services:
       - OLLAMA_KEEP_ALIVE=-1              # PERMANENT: Never unload model
       - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_MAX_LOADED_MODELS=1
-      # Keep your working configuration
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-12}
-      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-10}
+      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
+      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
       - CUDA_VISIBLE_DEVICES=0
       - OLLAMA_MAIN_GPU=0
-      # Memory and performance optimization for permanent loading
-      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
-      - OLLAMA_LOW_VRAM=${OLLAMA_LOW_VRAM:-1}
-      # Extended startup time for model pre-loading
-      - OLLAMA_LOAD_TIMEOUT=10m           # Allow 10 minutes for model loading
-      - OLLAMA_CONTEXT_SIZE=8192
-      - OLLAMA_BATCH_SIZE=128
+      - OLLAMA_LOAD_TIMEOUT=15m           # Allow 15 minutes for full model loading
+      - OLLAMA_CONTEXT_SIZE=16384
+      - OLLAMA_BATCH_SIZE=256
     ports:
       - "11434:11434"
     networks:
@@ -64,10 +33,10 @@ services:
       resources:
         limits:
           cpus: '8.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-22G}    # Higher for permanent loading
+          memory: ${OLLAMA_MEMORY_LIMIT:-24G}
         reservations:
           cpus: '4.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-10G}  # Higher reservation
+          memory: ${OLLAMA_MEMORY_RESERVATION:-12G}
           devices:
             - driver: nvidia
               count: 1
@@ -75,72 +44,34 @@ services:
     runtime: nvidia
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 60s
-      timeout: 30s
-      retries: 5
-      start_period: 600s                  # 10 minutes startup period for model loading
-
-  # Quart Web Application with shorter timeouts (model pre-loaded)
-  quart-app:
-    build:
-      context: ./quart-app
-      dockerfile: Dockerfile
-    container_name: devstral-quart-app
-    environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
-      - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
-      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-1024}
-      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-60}          # Shorter since model is pre-loaded
-      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-5}
-      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-7200}
-      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-15}
-      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
-      - SECURE_COOKIES=${SECURE_COOKIES:-false}
-      # SSE Configuration
-      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL:-30}
-      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-10}
-      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
-    volumes:
-      # Persistent volume for application data
-      - app_data:/app/data
-      - app_logs:/app/logs
-      # Development mount (comment out for production)
-      - ./quart-app:/app
-    depends_on:
-      ollama:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - devstral-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: ${QUART_APP_MEMORY_LIMIT:-2G}
-        reservations:
-          cpus: '1.0'
-          memory: ${QUART_APP_MEMORY_RESERVATION:-512M}
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # CRITICAL: This health check now verifies MODEL IS LOADED AND READY
+      test: |
+        bash -c '
+        # Step 1: Check if Ollama API is responding
+        curl -f http://localhost:11434/api/tags > /dev/null 2>&1 || exit 1
+        
+        # Step 2: Check if model is actually loaded and responding
+        response=$$(curl -s -X POST http://localhost:11434/api/chat \
+          -H "Content-Type: application/json" \
+          -d "{\"model\": \"${OLLAMA_MODEL:-devstral:24b}\", \"messages\": [{\"role\": \"user\", \"content\": \"test\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
+        
+        # Step 3: Verify we got a proper response (not an error)
+        echo "$$response" | grep -q "\"message\"" || exit 1
+        
+        # Step 4: Create ready marker file
+        touch /tmp/model_ready
+        exit 0
+        '
       interval: 30s
-      timeout: 10s
-      retries: 3
+      timeout: 60s
+      retries: 20                         # Allow many retries during loading
+      start_period: 900s                  # 15 minutes startup period for full model loading
 
-  # Redis Database with persistence
+  # Redis Database - starts independently
   redis:
     build: ./redis
     container_name: devstral-redis
     volumes:
-      # Persistent volume for Redis data
       - redis_data:/data
       - redis_logs:/var/log/redis
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -159,9 +90,88 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Quart Web Application - WAITS for model to be fully loaded
+  quart-app:
+    build:
+      context: ./quart-app
+      dockerfile: Dockerfile
+    container_name: devstral-quart-app
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
+      - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
+      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-2048}
+      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-0}
+      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-10000}
+      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-7200}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-25}
+      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
+      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL:-30}
+      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-1000}
+      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
+    volumes:
+      - app_data:/app/data
+      - app_logs:/app/logs
+      - ./quart-app:/app
+    depends_on:
+      # CRITICAL: Now waits for BOTH services to be truly ready
+      ollama:
+        condition: service_healthy        # Waits for model to be loaded and responding
+      redis:
+        condition: service_healthy        # Waits for Redis to be ready
+    networks:
+      - devstral-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: ${QUART_APP_MEMORY_LIMIT:-3G}
+        reservations:
+          cpus: '1.0'
+          memory: ${QUART_APP_MEMORY_RESERVATION:-1G}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Nginx Reverse Proxy - WAITS for quart-app to be ready
+  nginx:
+    build: ./nginx
+    container_name: devstral-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/static:/usr/share/nginx/html/static:ro
+      - nginx_cache:/var/cache/nginx
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      # CRITICAL: Only starts after quart-app is healthy (which waits for ollama)
+      quart-app:
+        condition: service_healthy
+    networks:
+      - devstral-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: unless-stopped
 
 networks:
   devstral-network:
@@ -171,13 +181,11 @@ networks:
         - subnet: 172.21.0.0/16
 
 volumes:
-  # Nginx volumes
   nginx_cache:
     driver: local
   nginx_logs:
     driver: local
   
-  # Ollama volumes (critical for 14GB model persistence)
   ollama_models:
     driver: local
     driver_opts:
@@ -185,13 +193,11 @@ volumes:
       o: bind
       device: ${PWD}/volumes/ollama_models
   
-  # Application volumes
   app_data:
     driver: local
   app_logs:
     driver: local
   
-  # Redis volumes
   redis_data:
     driver: local
     driver_opts:

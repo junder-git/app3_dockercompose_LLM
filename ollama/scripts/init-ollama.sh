@@ -1,50 +1,46 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - Pre-load and permanently keep Devstral in memory
+# ollama/scripts/init-ollama.sh - Enhanced with COMPLETE model loading verification
 
-# Get model name from environment variable
 MODEL_NAME=${OLLAMA_MODEL:-"devstral:24b"}
 
-echo "=== Devstral Ollama Initialization ==="
+echo "=== Devstral Ollama Initialization (Enhanced) ==="
 echo "Target model: $MODEL_NAME"
-echo "Strategy: Pre-load model into VRAM/RAM before any requests"
-echo "Keep-alive: Permanent (model stays loaded)"
+echo "Strategy: Complete model loading verification before container ready"
+echo "Timeline: This will take 5-15 minutes but ensures zero delays later"
 
 # Start Ollama service in the background
 echo "Starting Ollama service..."
 OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 ollama serve &
 OLLAMA_PID=$!
 
-# Wait for Ollama to be ready
-echo "Waiting for Ollama to start..."
+# Wait for Ollama API to be ready
+echo "Waiting for Ollama API to start..."
 MAX_ATTEMPTS=60
 ATTEMPT=0
 
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-        echo "✓ Ollama service is ready!"
+        echo "✓ Ollama API is ready!"
         break
     fi
     
     ATTEMPT=$((ATTEMPT + 1))
-    echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Ollama not ready yet, waiting..."
+    echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Ollama API not ready yet..."
     sleep 2
 done
 
 if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-    echo "❌ Failed to start Ollama after $MAX_ATTEMPTS attempts"
+    echo "❌ Failed to start Ollama API after $MAX_ATTEMPTS attempts"
     exit 1
 fi
 
-echo "Ollama is ready. Current status:"
-curl -s http://localhost:11434/api/tags || echo "Could not fetch model list"
-
-# Check if Devstral model exists
+# Ensure model exists
 echo "Checking for Devstral model: $MODEL_NAME..."
 if ollama list | grep -q "$MODEL_NAME"; then
     echo "✓ Devstral model $MODEL_NAME already exists"
 else
-    echo "❌ Devstral model $MODEL_NAME not found. Downloading..."
-    echo "⚠️  This is a 14GB download and may take 10-30 minutes depending on internet speed"
+    echo "❌ Downloading Devstral model $MODEL_NAME (14GB)..."
+    echo "⏳ This will take 10-30 minutes depending on internet speed"
     
     if ollama pull "$MODEL_NAME"; then
         echo "✓ Successfully downloaded Devstral model $MODEL_NAME"
@@ -54,7 +50,7 @@ else
     fi
 fi
 
-# Create optimized custom model from Modelfile if it exists
+# Create optimized model if Modelfile exists
 CUSTOM_MODEL_NAME="${MODEL_NAME}-optimized"
 
 if [ -f "/root/Modelfile" ]; then
@@ -66,24 +62,22 @@ if [ -f "/root/Modelfile" ]; then
     else
         echo "❌ Failed to create optimized model, using base model"
     fi
-else
-    echo "⚠️ No Modelfile found at /root/Modelfile, using base model"
 fi
 
-# === CRITICAL: PRE-LOAD MODEL INTO MEMORY ===
+# === ENHANCED: COMPLETE MODEL LOADING AND VERIFICATION ===
 echo "=========================================="
-echo "🚀 PRE-LOADING MODEL INTO MEMORY"
+echo "🚀 COMPLETE MODEL LOADING SEQUENCE"
 echo "=========================================="
-echo "Loading $MODEL_NAME into VRAM/RAM..."
-echo "This will take 1-3 minutes but ensures instant responses later"
+echo "Loading $MODEL_NAME completely into VRAM/RAM..."
+echo "This ensures ZERO delays for the first chat message"
 
-# Strategy 1: Load model with a simple prompt to initialize all layers
-echo "Step 1: Initializing model with warm-up prompt..."
-WARMUP_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+# Stage 1: Initial model loading
+echo "Stage 1/4: Initial model loading..."
+INITIAL_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Hello, please confirm you are loaded and ready.\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"Initialize model and load all layers into memory.\"}],
         \"stream\": false,
         \"keep_alive\": -1,
         \"options\": {
@@ -92,114 +86,135 @@ WARMUP_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
         }
     }")
 
-if echo "$WARMUP_RESPONSE" | grep -q "\"message\""; then
-    echo "✓ Model initialization successful!"
-    echo "Response preview: $(echo "$WARMUP_RESPONSE" | jq -r '.message.content' 2>/dev/null | head -c 100)..."
+if echo "$INITIAL_RESPONSE" | grep -q "\"message\""; then
+    echo "✓ Stage 1 complete: Model successfully initialized"
 else
-    echo "⚠️ Model initialization had issues but continuing..."
-    echo "Response: $WARMUP_RESPONSE"
+    echo "❌ Stage 1 failed: Model initialization error"
+    echo "Response: $INITIAL_RESPONSE"
+    exit 1
 fi
 
-# Strategy 2: Send a few more prompts to fully warm up the model
-echo "Step 2: Warming up model with coding prompts..."
-
-for i in {1..3}; do
-    echo "Warm-up prompt $i/3..."
+# Stage 2: Warm up all layers with multiple prompts
+echo "Stage 2/4: Warming up all model layers..."
+for i in {1..5}; do
+    echo "  Warm-up prompt $i/5..."
     curl -s -X POST http://localhost:11434/api/chat \
         -H "Content-Type: application/json" \
         -d "{
             \"model\": \"$MODEL_NAME\",
-            \"messages\": [{\"role\": \"user\", \"content\": \"Write a simple hello world function in Python.\"}],
+            \"messages\": [{\"role\": \"user\", \"content\": \"Write a function to sort an array in Python. Make it efficient.\"}],
             \"stream\": false,
             \"keep_alive\": -1,
             \"options\": {
-                \"num_predict\": 100,
+                \"num_predict\": 200,
                 \"temperature\": 0.3
             }
         }" > /dev/null
     
-    echo "Warm-up $i complete"
-    sleep 2
+    if [ $? -eq 0 ]; then
+        echo "  ✓ Warm-up $i complete"
+    else
+        echo "  ❌ Warm-up $i failed"
+        exit 1
+    fi
+    sleep 1
 done
 
-# Strategy 3: Keep the model loaded with a background keep-alive
-echo "Step 3: Setting up permanent keep-alive..."
-curl -s -X POST http://localhost:11434/api/chat \
+# Stage 3: Verify model performance with complex prompt
+echo "Stage 3/4: Performance verification..."
+PERF_TEST=$(curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Stay loaded permanently.\"}],
+        \"messages\": [
+            {\"role\": \"user\", \"content\": \"Create a simple REST API endpoint in Python Flask that handles user authentication with JWT tokens. Include error handling.\"}
+        ],
         \"stream\": false,
         \"keep_alive\": -1,
         \"options\": {
-            \"num_predict\": 10
+            \"num_predict\": 500,
+            \"temperature\": 0.7
         }
-    }" > /dev/null
+    }")
 
-echo "✓ Model keep-alive configured for permanent loading"
+if echo "$PERF_TEST" | grep -q "\"message\"" && echo "$PERF_TEST" | grep -q "Flask"; then
+    echo "✓ Stage 3 complete: Model performance verified"
+else
+    echo "❌ Stage 3 failed: Model performance test failed"
+    echo "Response preview: $(echo "$PERF_TEST" | head -c 200)..."
+    exit 1
+fi
 
-# Verify model is loaded and get memory usage
-echo "=========================================="
-echo "🔍 VERIFYING MODEL STATUS"
-echo "=========================================="
-
-# Check if model is actually loaded
-MODEL_STATUS=$(curl -s -X POST http://localhost:11434/api/chat \
+# Stage 4: Final readiness verification
+echo "Stage 4/4: Final readiness verification..."
+READY_TEST=$(curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Ready?\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"Confirm you are ready for production use.\"}],
         \"stream\": false,
         \"keep_alive\": -1,
         \"options\": {
-            \"num_predict\": 5,
+            \"num_predict\": 20,
             \"temperature\": 0.1
         }
     }")
 
-if echo "$MODEL_STATUS" | grep -q "\"message\""; then
-    echo "✅ MODEL SUCCESSFULLY PRE-LOADED!"
-    echo "✅ Model is now permanently resident in memory"
-    echo "✅ Future requests will be instant (no loading delay)"
+if echo "$READY_TEST" | grep -q "\"message\""; then
+    echo "✓ Stage 4 complete: Model ready for production"
+    
+    # Extract response preview
+    RESPONSE_PREVIEW=$(echo "$READY_TEST" | jq -r '.message.content' 2>/dev/null | head -c 100)
+    echo "Model response preview: $RESPONSE_PREVIEW..."
 else
-    echo "❌ Model pre-loading verification failed"
-    echo "Response: $MODEL_STATUS"
+    echo "❌ Stage 4 failed: Final readiness check failed"
+    exit 1
 fi
 
-# Show memory usage
+# Create readiness marker for health check
+touch /tmp/model_ready
+echo "✅ Model readiness marker created"
+
+# Show final status
 echo "=========================================="
-echo "📊 MEMORY USAGE REPORT"
+echo "🎯 MODEL LOADING COMPLETE"
 echo "=========================================="
 
-# Try to get GPU memory info if nvidia-smi is available
+# Try to get memory usage info
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "GPU Memory Usage:"
     nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | while read used total; do
         echo "VRAM: ${used}MB / ${total}MB used"
         percentage=$((used * 100 / total))
-        echo "VRAM Usage: ${percentage}%"
+        echo "VRAM Usage: ${percentage}% (Target: ~93% for 7.5GB)"
+        if [ $percentage -lt 80 ]; then
+            echo "⚠️  VRAM usage seems low - model may not be fully loaded"
+        elif [ $percentage -gt 95 ]; then
+            echo "⚠️  VRAM usage very high - monitor for stability"
+        else
+            echo "✅ VRAM usage looks optimal"
+        fi
     done
 else
-    echo "nvidia-smi not available, cannot show GPU memory"
+    echo "nvidia-smi not available"
 fi
 
-# Show system memory
 echo "System Memory Usage:"
 free -h | grep "Mem:" | awk '{print "RAM: "$3" / "$2" used"}'
 
-echo "=========================================="
-
-# Write the final model name to a file that the Python client can read
+# Write active model info
 echo "$MODEL_NAME" > /tmp/active_model
 
-echo "=== Devstral Initialization Complete ==="
-echo "✅ Active model: $MODEL_NAME"
-echo "✅ Status: Permanently loaded in memory" 
-echo "✅ Service PID: $OLLAMA_PID"
-echo "✅ API endpoint: http://localhost:11434"
-echo "✅ Ready for instant responses!"
+echo "=========================================="
+echo "✅ DEVSTRAL READY FOR PRODUCTION"
+echo "✅ Model: $MODEL_NAME"
+echo "✅ Status: Fully loaded and verified"
+echo "✅ Performance: Tested and confirmed"
+echo "✅ First message will respond instantly"
+echo "✅ Ready for quart-app and nginx startup"
+echo "=========================================="
 
-# Set up signal handlers for graceful shutdown
+# Set up signal handlers
 cleanup() {
     echo "Shutting down Ollama..."
     kill $OLLAMA_PID 2>/dev/null
@@ -209,20 +224,21 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Keep the container running and monitor the process
-echo "Monitoring Ollama service..."
+# Monitor and maintain model
+echo "Monitoring Ollama service (PID: $OLLAMA_PID)..."
 while true; do
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
         echo "❌ Ollama process died, restarting..."
         OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 ollama serve &
         OLLAMA_PID=$!
         
-        # Re-load the model after restart
+        # Re-load model after restart
         sleep 10
-        echo "Re-loading Devstral model after restart..."
+        echo "Re-loading model after restart..."
         curl -s -X POST http://localhost:11434/api/chat \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"$MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"Reload\"}], \"stream\": false, \"keep_alive\": -1}" > /dev/null
+        touch /tmp/model_ready
         echo "Model reloaded after restart"
     fi
     sleep 30
