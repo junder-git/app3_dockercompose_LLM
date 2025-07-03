@@ -1,13 +1,10 @@
 ## Useful commands   
-### Force rebuild with no cache  
-```docker-compose build --no-cache```  
-    
-```docker-compose up --build -d```  
+```docker-compose up --build docker-compose up --renew-anon-volumes -d```  
   
 # Devstral AI Chat - High Performance Docker Stack  
   
-A complete AI chat application featuring **Devstral 24B** with advanced memory optimization, permanent RAM/VRAM loading, and enterprise-grade security. Built for maximum performance and zero-latency responses.
-
+A complete AI chat application featuring **Devstral 24B** with advanced memory optimization, permanent RAM/VRAM loading, and enterprise-grade security. Built for maximum performance and zero-latency responses.  
+  
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -30,8 +27,6 @@ chmod +x docker-compose-startup.sh
 ### 2. Manual Setup (Alternative)
 
 ```bash
-# Copy environment file
-cp .env.example .env
 
 # Edit configuration if needed
 nano .env

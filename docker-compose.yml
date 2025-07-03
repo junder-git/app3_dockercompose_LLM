@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Hybrid Ollama: Official image + Custom optimizations
   ollama:

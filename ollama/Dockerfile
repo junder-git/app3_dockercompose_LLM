@@ -20,14 +20,15 @@ WORKDIR /root
 # Build argument to force rebuild ONLY for file copies
 ARG CACHEBUST=1
 
-# Copy our advanced initialization script and Modelfile
+# Copy our custom initialization script and Modelfile
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY Modelfile /root/Modelfile
 
-# Set permissions and prepare directories
+# Set permissions and prepare directories (run as root)
 RUN chmod +x /scripts/init-ollama.sh && \
     mkdir -p /tmp/ollama-health && \
-    chown -R ollama:ollama /home/ollama
+    mkdir -p /home/ollama/.ollama && \
+    chmod 755 /home/ollama/.ollama
 
 # CRITICAL: Set environment variables that will be inherited by Ollama
 # These are the KEY optimizations for memory management
@@ -54,5 +55,6 @@ ENV OLLAMA_MAIN_GPU=0
 # Expose Ollama port
 EXPOSE 11434
 
-# Use our custom initialization script but keep ollama user context
+# Stay as root for privileged operations (mlock requires this)
+# Use our custom initialization script
 ENTRYPOINT ["/scripts/init-ollama.sh"]
