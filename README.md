@@ -1,5 +1,5 @@
-## Useful commands   
-```docker-compose up --build docker-compose up --renew-anon-volumes -d```  
+## Useful commands  
+```docker-compose up --build -d```  
   
 # Devstral AI Chat - High Performance Docker Stack  
   

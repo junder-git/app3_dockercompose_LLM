@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # Hybrid Ollama: Official image + Custom optimizations
   ollama:
@@ -190,8 +192,16 @@ networks:
 volumes:
   nginx_cache:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/nginx_cache
   nginx_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/nginx_logs
   
   ollama_models:
     driver: local
@@ -202,8 +212,16 @@ volumes:
   
   app_data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/app_data
   app_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/app_logs
   
   redis_data:
     driver: local
@@ -213,3 +231,7 @@ volumes:
       device: ${PWD}/volumes/redis_data
   redis_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/volumes/redis_logs
