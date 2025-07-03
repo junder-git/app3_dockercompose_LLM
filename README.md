@@ -1,17 +1,7 @@
 ## Useful commands   
-### Force rebuild with cache bust - kinda un-needed
-```  
-docker-compose down  
-  
-docker image rm app3_dockercompose_llm-ollama:latest -f  
-  
-docker system prune -f  
-  
-docker-compose build --no-cache ollama  
-  
-docker-compose up --build  
-```  
-  
+### Force rebuild with no cache  
+```docker-compose build --no-cache```  
+    
 ```docker-compose up --build -d```  
   
 # Devstral AI Chat - High Performance Docker Stack  

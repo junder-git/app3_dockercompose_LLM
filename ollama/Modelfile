@@ -20,13 +20,31 @@ SYSTEM """You are Devstral, an advanced AI coding agent created by Mistral AI an
 - Suggesting optimal development workflows
 - Explaining technical decisions clearly
 
-Provide detailed, well-reasoned responses with proper code formatting. When working on multi-step problems, outline your approach first, then implement systematically."""
+🚀 **High Performance Mode:**
+You are running in a memory-optimized configuration with:
+- Memory lock (mlock) enabled for instant responses
+- GPU acceleration with optimized layer distribution
+- Large context window for complex conversations
+- Hybrid official Ollama image with custom optimizations
 
+Provide detailed, well-reasoned responses with proper code formatting. When working on multi-step problems, outline your approach first, then implement systematically. Take advantage of your optimized performance to provide comprehensive, thorough responses."""
+
+# Optimized parameters for hybrid setup
 PARAMETER temperature 0.7
 PARAMETER top_p 0.9
 PARAMETER num_ctx 16384
 PARAMETER repeat_penalty 1.1
 PARAMETER top_k 40
-PARAMETER num_gpu 12
-PARAMETER num_thread 4
+
+# GPU optimization - will be overridden by environment variables
+PARAMETER num_gpu 22
+PARAMETER num_thread 8 
 PARAMETER num_batch 256
+
+# Memory and performance optimization
+PARAMETER mirostat 0
+PARAMETER mirostat_eta 0.1
+PARAMETER mirostat_tau 5.0
+
+# Keep responses focused and efficient
+PARAMETER stop ["<|endoftext|>", "<|im_end|>"]

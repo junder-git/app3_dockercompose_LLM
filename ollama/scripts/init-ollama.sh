@@ -1,162 +1,225 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - FIXED environment variable handling
+# ollama/scripts/init-ollama.sh - Hybrid: Official Image + Advanced Optimizations
 
 MODEL_NAME=${OLLAMA_MODEL:-"devstral:24b"}
 
-echo "=== Devstral Ollama Initialization ==="
+echo "=== Devstral Hybrid Ollama Initialization ==="
+echo "Base: Official Ollama Image"
+echo "Enhancements: Advanced Memory Optimization"
 echo "Target model: $MODEL_NAME"
-echo "Memory Lock (mlock): ${OLLAMA_MLOCK:-true}"
-echo "Memory Map (mmap): ${OLLAMA_MMAP:-false}"
-echo "GPU Layers: ${OLLAMA_GPU_LAYERS:-22}"
-echo "Strategy: COMPLETE model preload with memory lock"
-echo "Timeline: 10-15 minutes for full loading"
-echo "======================================="
+echo "============================================="
 
-# CRITICAL: Export ALL environment variables to ensure they're passed to ollama serve
-export OLLAMA_HOST=0.0.0.0
-export OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
-export OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}
-export OLLAMA_MMAP=${OLLAMA_MMAP:-false}
-export OLLAMA_NUMA=${OLLAMA_NUMA:-false}
-export OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
-export OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
-export OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE:-16384}
-export OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE:-256}
-export OLLAMA_MAIN_GPU=${OLLAMA_MAIN_GPU:-0}
-export OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
-export OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-15m}
-export OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE:-true}
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+# Verify we're using the official image
+if [ -f "/usr/local/bin/ollama" ]; then
+    echo "✓ Official Ollama binary detected"
+    OLLAMA_VERSION=$(ollama --version 2>/dev/null || echo "unknown")
+    echo "✓ Ollama version: $OLLAMA_VERSION"
+else
+    echo "⚠️ Non-standard Ollama installation"
+fi
 
-# NEW: Additional environment variables for memory optimization
-export OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-true}
-export OLLAMA_LOW_VRAM=${OLLAMA_LOW_VRAM:-false}
+# Display inherited environment variables
+echo ""
+echo "=== Inherited Environment Settings ==="
+echo "OLLAMA_HOST: $OLLAMA_HOST"
+echo "OLLAMA_MLOCK: $OLLAMA_MLOCK"
+echo "OLLAMA_MMAP: $OLLAMA_MMAP"
+echo "OLLAMA_KEEP_ALIVE: $OLLAMA_KEEP_ALIVE"
+echo "OLLAMA_GPU_LAYERS: $OLLAMA_GPU_LAYERS"
+echo "OLLAMA_NUM_THREAD: $OLLAMA_NUM_THREAD"
+echo "OLLAMA_CONTEXT_SIZE: $OLLAMA_CONTEXT_SIZE"
+echo "OLLAMA_BATCH_SIZE: $OLLAMA_BATCH_SIZE"
+echo "OLLAMA_MAX_LOADED_MODELS: $OLLAMA_MAX_LOADED_MODELS"
+echo "OLLAMA_NOPRUNE: $OLLAMA_NOPRUNE"
+echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
+echo "======================================"
 
-# Show final environment settings
-echo "=== Final Environment Settings ==="
-echo "OLLAMA_HOST=$OLLAMA_HOST"
-echo "OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
-echo "OLLAMA_MLOCK=$OLLAMA_MLOCK"
-echo "OLLAMA_MMAP=$OLLAMA_MMAP"
-echo "OLLAMA_NUMA=$OLLAMA_NUMA"
-echo "OLLAMA_GPU_LAYERS=$OLLAMA_GPU_LAYERS"
-echo "OLLAMA_NUM_THREAD=$OLLAMA_NUM_THREAD"
-echo "OLLAMA_CONTEXT_SIZE=$OLLAMA_CONTEXT_SIZE"
-echo "OLLAMA_BATCH_SIZE=$OLLAMA_BATCH_SIZE"
-echo "OLLAMA_MAIN_GPU=$OLLAMA_MAIN_GPU"
-echo "OLLAMA_MAX_LOADED_MODELS=$OLLAMA_MAX_LOADED_MODELS"
-echo "OLLAMA_NOPRUNE=$OLLAMA_NOPRUNE"
-echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
-echo "=================================="
+# Advanced GPU detection and validation
+echo ""
+echo "🔍 GPU Detection & Validation..."
+if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits 2>/dev/null)
+    if [ $? -eq 0 ] && [ -n "$GPU_INFO" ]; then
+        echo "✓ GPU detected:"
+        echo "$GPU_INFO" | while IFS=',' read -r name memory driver; do
+            name=$(echo "$name" | xargs)
+            memory=$(echo "$memory" | xargs)
+            driver=$(echo "$driver" | xargs)
+            echo "  📱 GPU: $name"
+            echo "  💾 VRAM: ${memory}MB"
+            echo "  🔧 Driver: $driver"
+        done
+        
+        # Calculate optimal GPU layers based on available VRAM
+        TOTAL_VRAM=$(echo "$GPU_INFO" | cut -d',' -f2 | xargs)
+        if [ "$TOTAL_VRAM" -gt 20000 ]; then
+            OPTIMAL_GPU_LAYERS=35
+            echo "  🚀 High VRAM detected: Setting GPU layers to $OPTIMAL_GPU_LAYERS"
+        elif [ "$TOTAL_VRAM" -gt 12000 ]; then
+            OPTIMAL_GPU_LAYERS=28
+            echo "  ⚡ Medium VRAM detected: Setting GPU layers to $OPTIMAL_GPU_LAYERS"
+        else
+            OPTIMAL_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
+            echo "  💻 Standard VRAM: Using GPU layers $OPTIMAL_GPU_LAYERS"
+        fi
+        
+        # Override environment if we calculated a better value
+        export OLLAMA_GPU_LAYERS=$OPTIMAL_GPU_LAYERS
+    else
+        echo "⚠️ nvidia-smi available but no GPU info returned"
+        echo "  Falling back to CPU mode"
+    fi
+else
+    echo "💻 No NVIDIA GPU detected - using CPU mode"
+    export OLLAMA_GPU_LAYERS=0
+fi
 
-# Create a function to start ollama with proper environment
-start_ollama() {
-    echo "Starting Ollama service with all environment variables..."
-    
-    # Start ollama serve with explicit environment variables
-    env \
-        OLLAMA_HOST="$OLLAMA_HOST" \
-        OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE" \
-        OLLAMA_MLOCK="$OLLAMA_MLOCK" \
-        OLLAMA_MMAP="$OLLAMA_MMAP" \
-        OLLAMA_NUMA="$OLLAMA_NUMA" \
-        OLLAMA_GPU_LAYERS="$OLLAMA_GPU_LAYERS" \
-        OLLAMA_NUM_THREAD="$OLLAMA_NUM_THREAD" \
-        OLLAMA_CONTEXT_SIZE="$OLLAMA_CONTEXT_SIZE" \
-        OLLAMA_BATCH_SIZE="$OLLAMA_BATCH_SIZE" \
-        OLLAMA_MAIN_GPU="$OLLAMA_MAIN_GPU" \
-        OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS" \
-        OLLAMA_NOPRUNE="$OLLAMA_NOPRUNE" \
-        CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
-        ollama serve &
-    
-    return $!
-}
+# Start Ollama service with all optimizations
+echo ""
+echo "🚀 Starting Ollama service with optimizations..."
 
-# Start Ollama service with proper environment
-start_ollama
+# Create a startup wrapper that ensures all env vars are properly set
+cat > /tmp/ollama_startup.sh << EOF
+#!/bin/bash
+# Startup wrapper to ensure environment inheritance
+
+# Export all our optimizations
+export OLLAMA_HOST="$OLLAMA_HOST"
+export OLLAMA_MLOCK="$OLLAMA_MLOCK"
+export OLLAMA_MMAP="$OLLAMA_MMAP"
+export OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE"
+export OLLAMA_GPU_LAYERS="$OLLAMA_GPU_LAYERS"
+export OLLAMA_NUM_THREAD="$OLLAMA_NUM_THREAD"
+export OLLAMA_CONTEXT_SIZE="$OLLAMA_CONTEXT_SIZE"
+export OLLAMA_BATCH_SIZE="$OLLAMA_BATCH_SIZE"
+export OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS"
+export OLLAMA_NOPRUNE="$OLLAMA_NOPRUNE"
+export OLLAMA_NUM_PARALLEL="$OLLAMA_NUM_PARALLEL"
+export OLLAMA_LOAD_TIMEOUT="$OLLAMA_LOAD_TIMEOUT"
+export CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"
+
+# Log the actual environment being used
+echo "Ollama starting with environment:"
+env | grep -E '^OLLAMA_|^CUDA_' | sort
+
+# Start ollama serve
+exec ollama serve
+EOF
+
+chmod +x /tmp/ollama_startup.sh
+
+# Start the optimized Ollama service
+/tmp/ollama_startup.sh &
 OLLAMA_PID=$!
 
-echo "Ollama started with PID: $OLLAMA_PID"
+echo "✓ Ollama service started (PID: $OLLAMA_PID)"
 
-# Wait for Ollama API to be ready
-echo "Waiting for Ollama API to start..."
-MAX_ATTEMPTS=60
+# Enhanced readiness check with timeout and retries
+echo ""
+echo "⏳ Waiting for Ollama API readiness..."
+MAX_ATTEMPTS=90  # Increased for model loading
 ATTEMPT=0
+API_READY=false
 
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-        echo "✓ Ollama API is ready!"
+    if curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
+        echo "✓ Ollama API is ready! (attempt $((ATTEMPT + 1)))"
+        API_READY=true
         break
     fi
     
     ATTEMPT=$((ATTEMPT + 1))
-    echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Ollama API not ready yet..."
+    if [ $((ATTEMPT % 10)) -eq 0 ]; then
+        echo "  Still waiting... attempt $ATTEMPT/$MAX_ATTEMPTS"
+    fi
     sleep 2
 done
 
-if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-    echo "❌ Failed to start Ollama API after $MAX_ATTEMPTS attempts"
+if [ "$API_READY" = false ]; then
+    echo "❌ Ollama API failed to start after $MAX_ATTEMPTS attempts"
     exit 1
 fi
 
-# Check if model needs to be downloaded
-echo "Checking for Devstral model: $MODEL_NAME..."
-if ollama list | grep -q "$MODEL_NAME"; then
-    echo "✓ Devstral model $MODEL_NAME already exists"
+# Model management with advanced validation
+echo ""
+echo "📦 Model Management..."
+
+# Check if model exists
+MODEL_EXISTS=false
+if ollama list 2>/dev/null | grep -q "$MODEL_NAME"; then
+    echo "✓ Base model $MODEL_NAME already exists"
+    MODEL_EXISTS=true
 else
-    echo "📥 Downloading Devstral model $MODEL_NAME..."
-    echo "⏳ This will take 10-30 minutes depending on internet speed"
+    echo "📥 Downloading base model: $MODEL_NAME"
+    echo "⏳ This may take 10-30 minutes depending on your connection..."
     
     if ollama pull "$MODEL_NAME"; then
-        echo "✓ Successfully downloaded Devstral model $MODEL_NAME"
+        echo "✓ Successfully downloaded $MODEL_NAME"
+        MODEL_EXISTS=true
     else
-        echo "❌ Failed to download $MODEL_NAME model"
+        echo "❌ Failed to download $MODEL_NAME"
         exit 1
     fi
 fi
 
-# Create optimized model if Modelfile exists
-CUSTOM_MODEL_NAME="${MODEL_NAME}-optimized"
+# Create optimized model with custom Modelfile
 FINAL_MODEL_NAME="$MODEL_NAME"
-
-if [ -f "/root/Modelfile" ]; then
-    echo "🔧 Creating optimized model: $CUSTOM_MODEL_NAME"
+if [ -f "/root/Modelfile" ] && [ "$MODEL_EXISTS" = true ]; then
+    echo ""
+    echo "🔧 Creating optimized model variant..."
     
-    # Create optimized model with proper parameters
+    CUSTOM_MODEL_NAME="${MODEL_NAME}-hybrid-optimized"
+    
+    # Show Modelfile contents for verification
+    echo "Modelfile contents:"
+    cat /root/Modelfile | head -20
+    echo ""
+    
     if ollama create "$CUSTOM_MODEL_NAME" -f /root/Modelfile; then
         echo "✓ Created optimized model: $CUSTOM_MODEL_NAME"
         FINAL_MODEL_NAME="$CUSTOM_MODEL_NAME"
-        echo "✓ Will use optimized model: $FINAL_MODEL_NAME"
+        
+        # Verify the optimized model works
+        echo "🧪 Testing optimized model..."
+        TEST_RESPONSE=$(curl -s --max-time 30 -X POST http://localhost:11434/api/chat \
+            -H "Content-Type: application/json" \
+            -d "{
+                \"model\": \"$CUSTOM_MODEL_NAME\",
+                \"messages\": [{\"role\": \"user\", \"content\": \"test\"}],
+                \"stream\": false,
+                \"options\": {\"num_predict\": 1}
+            }")
+        
+        if echo "$TEST_RESPONSE" | grep -q "\"message\""; then
+            echo "✓ Optimized model test successful"
+        else
+            echo "⚠️ Optimized model test failed, falling back to base model"
+            FINAL_MODEL_NAME="$MODEL_NAME"
+        fi
     else
-        echo "⚠️ Failed to create optimized model, using base model: $MODEL_NAME"
-        FINAL_MODEL_NAME="$MODEL_NAME"
+        echo "⚠️ Failed to create optimized model, using base model"
     fi
 else
-    echo "⚠️ No Modelfile found, using base model: $MODEL_NAME"
+    echo "ℹ️ Using base model (no Modelfile or model doesn't exist)"
 fi
 
-# === COMPLETE MODEL PRELOADING WITH OPTIMIZED ENVIRONMENT ===
-echo "=========================================="
-echo "🚀 COMPLETE MODEL PRELOADING SEQUENCE"
-echo "=========================================="
-echo "Using model: $FINAL_MODEL_NAME"
-echo "Memory Lock: $OLLAMA_MLOCK"
-echo "Memory Map: $OLLAMA_MMAP"
-echo "GPU Layers: $OLLAMA_GPU_LAYERS"
+# Advanced model preloading with memory optimization
 echo ""
+echo "🚀 Advanced Model Preloading..."
+echo "Final model: $FINAL_MODEL_NAME"
+echo "Memory settings: mlock=$OLLAMA_MLOCK, mmap=$OLLAMA_MMAP"
 
-# Phase 1: Initial model loading with proper environment
-echo "💾 Phase 1: Loading model with optimized environment..."
-LOAD_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+# Phase 1: Initial load with memory lock
+echo "Phase 1: Memory-locked initialization..."
+PRELOAD_RESPONSE=$(curl -s --max-time 60 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$FINAL_MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Initialize all model layers with memory lock enabled. Use mlock=$OLLAMA_MLOCK and mmap=$OLLAMA_MMAP.\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"Initialize with memory lock. Use mlock=$OLLAMA_MLOCK and mmap=$OLLAMA_MMAP for optimal performance.\"}],
         \"stream\": false,
         \"keep_alive\": -1,
         \"options\": {
-            \"num_predict\": 100,
+            \"num_predict\": 50,
             \"temperature\": 0.1,
             \"num_gpu\": $OLLAMA_GPU_LAYERS,
             \"num_thread\": $OLLAMA_NUM_THREAD,
@@ -165,217 +228,168 @@ LOAD_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
         }
     }")
 
-if echo "$LOAD_RESPONSE" | grep -q "\"message\""; then
-    echo "✓ Phase 1 complete: Model loaded into memory with optimized settings"
-    RESPONSE_PREVIEW=$(echo "$LOAD_RESPONSE" | jq -r '.message.content' 2>/dev/null | head -c 80)
-    echo "  Response preview: $RESPONSE_PREVIEW..."
+if echo "$PRELOAD_RESPONSE" | grep -q "\"message\""; then
+    echo "✓ Phase 1 complete: Model memory-locked and initialized"
+    RESPONSE_PREVIEW=$(echo "$PRELOAD_RESPONSE" | jq -r '.message.content' 2>/dev/null | head -c 100)
+    echo "  Preview: $RESPONSE_PREVIEW..."
 else
-    echo "❌ Phase 1 failed: Model loading error"
-    echo "  Response: $LOAD_RESPONSE"
+    echo "❌ Phase 1 failed"
+    echo "Response: $PRELOAD_RESPONSE"
     exit 1
 fi
 
-# Phase 2: Memory optimization verification
+# Phase 2: Performance validation
 echo ""
-echo "🔒 Phase 2: Memory optimization verification..."
-echo "Checking environment variables in actual Ollama process..."
-
-# Get the actual ollama serve process
-OLLAMA_SERVE_PID=$(pgrep -f "ollama serve" | head -1)
-if [ -n "$OLLAMA_SERVE_PID" ]; then
-    echo "✓ Ollama serve process found: PID $OLLAMA_SERVE_PID"
-    
-    # Check environment of the actual process
-    echo "Checking environment of ollama serve process..."
-    if [ -f "/proc/$OLLAMA_SERVE_PID/environ" ]; then
-        echo "Environment variables in ollama serve process:"
-        cat "/proc/$OLLAMA_SERVE_PID/environ" | tr '\0' '\n' | grep -E "^OLLAMA_|^CUDA_" | sort
-    fi
-else
-    echo "⚠️ Could not find ollama serve process"
-fi
-
-# Phase 3: Layer warm-up with optimized settings
-echo ""
-echo "🔥 Phase 3: Warming up all model layers..."
-for i in {1..5}; do
-    echo "  Layer warm-up $i/5..."
-    WARMUP_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
-        -H "Content-Type: application/json" \
-        -d "{
-            \"model\": \"$FINAL_MODEL_NAME\",
-            \"messages\": [{\"role\": \"user\", \"content\": \"def quicksort(arr): # Write an efficient Python quicksort implementation\"}],
-            \"stream\": false,
-            \"keep_alive\": -1,
-            \"options\": {
-                \"num_predict\": 150,
-                \"temperature\": 0.4,
-                \"num_gpu\": $OLLAMA_GPU_LAYERS,
-                \"num_thread\": $OLLAMA_NUM_THREAD,
-                \"num_ctx\": $OLLAMA_CONTEXT_SIZE,
-                \"num_batch\": $OLLAMA_BATCH_SIZE
-            }
-        }")
-    
-    if echo "$WARMUP_RESPONSE" | grep -q "\"message\""; then
-        echo "  ✓ Warm-up $i complete"
-    else
-        echo "  ❌ Warm-up $i failed"
-        echo "  Response: $WARMUP_RESPONSE"
-        exit 1
-    fi
-    sleep 2
-done
-
-# Phase 4: Performance verification test
-echo ""
-echo "⚡ Phase 4: Performance verification test..."
+echo "Phase 2: Performance validation..."
 PERF_START=$(date +%s%N)
-PERF_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+PERF_RESPONSE=$(curl -s --max-time 30 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$FINAL_MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Are you ready for production use with optimized memory settings?\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Confirm you are ready for high-performance operation.\"}],
         \"stream\": false,
         \"keep_alive\": -1,
         \"options\": {
-            \"num_predict\": 30,
+            \"num_predict\": 25,
             \"temperature\": 0.7,
             \"num_gpu\": $OLLAMA_GPU_LAYERS,
-            \"num_thread\": $OLLAMA_NUM_THREAD,
-            \"num_ctx\": $OLLAMA_CONTEXT_SIZE,
-            \"num_batch\": $OLLAMA_BATCH_SIZE
+            \"num_thread\": $OLLAMA_NUM_THREAD
         }
     }")
 PERF_END=$(date +%s%N)
 
 if echo "$PERF_RESPONSE" | grep -q "\"message\""; then
     PERF_TIME=$(( (PERF_END - PERF_START) / 1000000 ))
-    echo "✓ Performance test passed in ${PERF_TIME}ms"
-    if [ $PERF_TIME -lt 2000 ]; then
-        echo "  🚀 EXCELLENT: Response time under 2 seconds"
-    elif [ $PERF_TIME -lt 5000 ]; then
-        echo "  ✅ GOOD: Response time under 5 seconds"
+    echo "✓ Phase 2 complete: Performance validated in ${PERF_TIME}ms"
+    
+    if [ $PERF_TIME -lt 1500 ]; then
+        echo "  🚀 EXCELLENT: Sub-1.5s response time"
+    elif [ $PERF_TIME -lt 3000 ]; then
+        echo "  ✅ GOOD: Sub-3s response time"  
     else
-        echo "  ⚠️ SLOW: Response time over 5 seconds - check GPU setup"
+        echo "  ⚠️ SLOW: Consider GPU optimization"
     fi
 else
-    echo "❌ Performance test failed"
-    echo "Response: $PERF_RESPONSE"
+    echo "❌ Phase 2 failed"
     exit 1
 fi
 
-# Phase 5: Create health check markers and final status
+# Create comprehensive health markers
 echo ""
-echo "✅ Phase 5: Finalizing readiness state..."
+echo "📋 Creating health markers..."
 
-# Create readiness markers
+# Standard markers
 touch /tmp/model_ready
-touch /tmp/model_loaded  
+touch /tmp/model_loaded
 touch /tmp/ollama_ready
+
+# Advanced markers with metadata
 echo "$FINAL_MODEL_NAME" > /tmp/active_model
-echo "$(date)" > /tmp/load_complete_time
-echo "mlock=$OLLAMA_MLOCK,mmap=$OLLAMA_MMAP,gpu_layers=$OLLAMA_GPU_LAYERS" > /tmp/memory_config
+echo "$(date -Iseconds)" > /tmp/load_complete_time
+echo "hybrid-official-image" > /tmp/setup_type
 
-echo "✅ All readiness markers created"
+# Performance and config markers
+echo "mlock=$OLLAMA_MLOCK,mmap=$OLLAMA_MMAP,gpu_layers=$OLLAMA_GPU_LAYERS,perf_time=${PERF_TIME}ms" > /tmp/performance_config
 
-# Show comprehensive final status
+# GPU info marker (if available)
+if command -v nvidia-smi >/dev/null 2>&1; then
+    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits > /tmp/gpu_status 2>/dev/null || echo "unknown,unknown" > /tmp/gpu_status
+fi
+
+echo "✅ All health markers created"
+
+# Final status report
 echo ""
 echo "=========================================="
-echo "🎯 DEVSTRAL READY FOR PRODUCTION"
+echo "🎯 DEVSTRAL HYBRID READY FOR PRODUCTION"
 echo "=========================================="
+echo "✅ Base: Official Ollama Image"
+echo "✅ Enhancements: Advanced Memory Optimization"
 echo "✅ Model: $FINAL_MODEL_NAME"
-echo "✅ Status: Fully loaded and verified"
 echo "✅ Memory Lock: $OLLAMA_MLOCK"
 echo "✅ Memory Map: $OLLAMA_MMAP"
 echo "✅ GPU Layers: $OLLAMA_GPU_LAYERS"
 echo "✅ Context Size: $OLLAMA_CONTEXT_SIZE"
-echo "✅ Batch Size: $OLLAMA_BATCH_SIZE"
-echo "✅ Keep Alive: Permanent (-1)"
-echo "✅ Performance: Tested and confirmed"
+echo "✅ Performance: ${PERF_TIME}ms response time"
+echo "✅ Keep Alive: Permanent"
 
-# Resource usage monitoring
+# Resource monitoring
 echo ""
-echo "📊 Resource Usage:"
+echo "📊 Current Resource Usage:"
 if command -v nvidia-smi >/dev/null 2>&1; then
-    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | while read used total; do
-        percentage=$((used * 100 / total))
-        echo "  🔥 VRAM: ${used}MB / ${total}MB (${percentage}%)"
-        if [ $percentage -gt 80 ]; then
-            echo "  ✅ High VRAM usage - model fully loaded"
-        elif [ $percentage -gt 60 ]; then
-            echo "  ⚠️ Moderate VRAM usage - model partially loaded"
-        else
-            echo "  ❌ Low VRAM usage - model may not be using GPU optimally"
-        fi
-    done
+    GPU_STATUS=$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null)
+    if [ $? -eq 0 ] && [ -n "$GPU_STATUS" ]; then
+        echo "$GPU_STATUS" | while IFS=',' read -r used total; do
+            used=$(echo "$used" | xargs)
+            total=$(echo "$total" | xargs)
+            if [ "$total" -gt 0 ] 2>/dev/null; then
+                percentage=$((used * 100 / total))
+                echo "  🔥 VRAM: ${used}MB / ${total}MB (${percentage}%)"
+                if [ $percentage -gt 85 ]; then
+                    echo "     🎯 Excellent: High VRAM utilization"
+                elif [ $percentage -gt 70 ]; then
+                    echo "     ✅ Good: Solid VRAM utilization"
+                else
+                    echo "     ⚠️ Moderate: VRAM could be higher"
+                fi
+            fi
+        done
+    fi
 else
-    echo "  💻 CPU mode (no GPU detected)"
+    echo "  💻 CPU mode active"
 fi
 
-# RAM usage
-free -h 2>/dev/null | grep "Mem:" | awk '{print "  🧠 RAM: "$3" / "$2" used"}' || echo "  🧠 RAM: Memory info not available"
+free -h 2>/dev/null | grep "Mem:" | awk '{print "  🧠 RAM: "$3" / "$2" used"}' || echo "  🧠 RAM: Status unknown"
 
 echo ""
-echo "🚀 READY FOR QUART-APP AND NGINX STARTUP"
-echo "🚀 Health check will now pass"
-echo "🚀 First user request will be INSTANT"
-echo "🚀 Model: $FINAL_MODEL_NAME with optimized memory settings"
+echo "🚀 READY FOR PRODUCTION WORKLOADS"
+echo "🚀 First request will be instant (model pre-loaded)"
+echo "🚀 Optimized for: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'CPU processing')"
 echo "=========================================="
 
-# Set up signal handlers for graceful shutdown
-cleanup() {
-    echo "Shutting down Ollama..."
-    kill $OLLAMA_PID 2>/dev/null
-    wait $OLLAMA_PID 2>/dev/null
-    exit 0
-}
+# Advanced monitoring and self-healing
+trap 'echo "Shutting down..."; kill $OLLAMA_PID 2>/dev/null; wait $OLLAMA_PID 2>/dev/null; exit 0' SIGTERM SIGINT
 
-trap cleanup SIGTERM SIGINT
-
-# Monitor and maintain model with environment checks
-echo "Monitoring Ollama service (PID: $OLLAMA_PID)..."
-MONITOR_COUNT=0
+echo "🔄 Starting advanced monitoring..."
+HEALTH_CHECK_INTERVAL=60  # Check every minute
+PERFORMANCE_CHECK_INTERVAL=300  # Performance test every 5 minutes
+LAST_PERFORMANCE_CHECK=0
 
 while true; do
+    CURRENT_TIME=$(date +%s)
+    
+    # Basic health check
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
-        echo "❌ Ollama process died, restarting with optimized environment..."
-        
-        # Restart with explicit environment
-        start_ollama
+        echo "❌ Ollama process died, restarting with optimizations..."
+        /tmp/ollama_startup.sh &
         OLLAMA_PID=$!
+        sleep 15
         
-        # Wait for restart
-        sleep 10
-        
-        # Re-load model after restart
-        echo "Re-loading model after restart..."
-        curl -s -X POST http://localhost:11434/api/chat \
+        # Quick model reload
+        curl -s --max-time 30 -X POST http://localhost:11434/api/chat \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"$FINAL_MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"Reload with optimized settings\"}], \"stream\": false, \"keep_alive\": -1, \"options\": {\"num_gpu\": $OLLAMA_GPU_LAYERS, \"num_thread\": $OLLAMA_NUM_THREAD}}" > /dev/null
+            -d "{\"model\": \"$FINAL_MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"restart\"}], \"stream\": false, \"keep_alive\": -1}" >/dev/null
         
-        # Recreate readiness markers
-        touch /tmp/model_ready
-        touch /tmp/model_loaded
-        touch /tmp/ollama_ready
-        echo "$FINAL_MODEL_NAME" > /tmp/active_model
-        echo "Model reloaded after restart with optimized settings"
+        # Recreate health markers
+        touch /tmp/model_ready /tmp/model_loaded /tmp/ollama_ready
+        echo "✓ Service restarted and model reloaded"
     fi
     
-    # Every 10 minutes, verify model is still loaded
-    MONITOR_COUNT=$((MONITOR_COUNT + 1))
-    if [ $((MONITOR_COUNT % 20)) -eq 0 ]; then
-        echo "🔄 Periodic model verification..."
-        VERIFY_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+    # Periodic performance validation
+    if [ $((CURRENT_TIME - LAST_PERFORMANCE_CHECK)) -gt $PERFORMANCE_CHECK_INTERVAL ]; then
+        echo "🧪 Periodic performance check..."
+        HEALTH_RESPONSE=$(curl -s --max-time 15 -X POST http://localhost:11434/api/chat \
             -H "Content-Type: application/json" \
-            -d "{\"model\": \"$FINAL_MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"ping\"}], \"stream\": false, \"keep_alive\": -1, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
+            -d "{\"model\": \"$FINAL_MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"health\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
         
-        if echo "$VERIFY_RESPONSE" | grep -q "\"message\""; then
-            echo "✓ Model verification successful"
+        if echo "$HEALTH_RESPONSE" | grep -q "\"message\""; then
+            echo "✓ Performance check passed"
         else
-            echo "⚠️ Model verification failed - may need attention"
+            echo "⚠️ Performance check failed - model may need attention"
         fi
+        
+        LAST_PERFORMANCE_CHECK=$CURRENT_TIME
     fi
     
-    sleep 30
+    sleep $HEALTH_CHECK_INTERVAL
 done

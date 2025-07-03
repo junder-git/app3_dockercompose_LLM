@@ -1,70 +1,39 @@
 version: '3.8'
 
 services:
-  # Ollama CUDA Server with PRIVILEGED MODE for mlock support
+  # Hybrid Ollama: Official image + Custom optimizations
   ollama:
     build:
       context: ./ollama
       dockerfile: Dockerfile
-      args:
-        - CACHEBUST=${CACHEBUST:-1}
     container_name: devstral-ollama
-    # CRITICAL: Privileged mode enables mlock functionality
+    # Keep privileged mode for advanced memory management
     privileged: true
-    # CRITICAL: Enable shared memory for better performance
-    shm_size: 2gb
-    # CRITICAL: Unlimited memory locks for mlock
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    # CRITICAL: Add capabilities for memory locking
-    cap_add:
-      - IPC_LOCK
-      - SYS_NICE
     volumes:
-      - ollama_models:/root/.ollama
-      - ./ollama/scripts:/scripts:ro
-      - ./ollama/Modelfile:/root/Modelfile:ro
-      # Mount /dev/shm for shared memory (improves performance)
+      - ollama_models:/home/ollama/.ollama  # Official image uses /home/ollama
       - /dev/shm:/dev/shm
     environment:
-      # GPU Settings
+      # Core Ollama settings (inherited by Dockerfile ENV)
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
       - NVIDIA_VISIBLE_DEVICES=all
       - CUDA_VISIBLE_DEVICES=0
       
-      # Ollama Core Settings
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
-      - OLLAMA_KEEP_ALIVE=-1              # PERMANENT: Never unload model
-      - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_LOAD_TIMEOUT=15m           # Allow 15 minutes for full model loading
-      - OLLAMA_NOPRUNE=true               # Never auto-unload models
-      
-      # GPU Optimization Settings
+      # Advanced settings (can override Dockerfile defaults)
       - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
-      - OLLAMA_MAIN_GPU=0
       - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
       - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE:-16384}
       - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE:-256}
       
-      # CRITICAL: Memory optimization settings
-      - OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}                 # ENABLED: Lock model in RAM/VRAM
-      - OLLAMA_MMAP=${OLLAMA_MMAP:-false}                  # DISABLED: Force full RAM loading
-      - OLLAMA_NUMA=${OLLAMA_NUMA:-false}                  # Disable NUMA for single-GPU
+      # Memory optimization (these are the critical ones)
+      - OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}
+      - OLLAMA_MMAP=${OLLAMA_MMAP:-false}
+      - OLLAMA_NUMA=${OLLAMA_NUMA:-false}
       
-      # Additional Performance Settings
-      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-true}
-      - OLLAMA_LOW_VRAM=${OLLAMA_LOW_VRAM:-false}
-      
-      # System Settings
-      - MALLOC_MMAP_THRESHOLD_=65536
-      - MALLOC_TRIM_THRESHOLD_=65536
-      
+      # Keep alive and caching
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE:-true}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+      - OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-15m}
     ports:
       - "11434:11434"
     networks:
@@ -83,55 +52,33 @@ services:
               capabilities: [gpu]
     runtime: nvidia
     restart: unless-stopped
-    
-    # ENHANCED HEALTHCHECK: More comprehensive model verification (silent)
+    # Enhanced healthcheck for hybrid setup
     healthcheck:
       test: |
         bash -c '
-        # Check 1: Ollama API responding (silent)
-        curl -sf http://localhost:11434/api/tags >/dev/null 2>&1 || exit 1
+        # Check 1: API responding
+        curl -f http://localhost:11434/api/tags > /dev/null 2>&1 || exit 1
         
-        # Check 2: Model readiness markers exist
+        # Check 2: Health markers exist
         [ -f /tmp/model_ready ] || exit 1
-        [ -f /tmp/model_loaded ] || exit 1
         [ -f /tmp/ollama_ready ] || exit 1
         
-        # Check 3: Active model file exists and has content
-        [ -s /tmp/active_model ] || exit 1
-        ACTIVE_MODEL=$(cat /tmp/active_model 2>/dev/null)
-        
-        # Check 4: Memory configuration exists
-        [ -f /tmp/memory_config ] || exit 1
-        
-        # Check 5: Quick model response test with active model (silent)
-        response=$(timeout 30 curl -sf -X POST http://localhost:11434/api/chat \
+        # Check 3: Model actually loaded and responsive
+        response=$$(timeout 20 curl -s -X POST http://localhost:11434/api/chat \
           -H "Content-Type: application/json" \
-          -d "{\"model\": \"$ACTIVE_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"test\"}], \"stream\": false, \"keep_alive\": -1, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
+          -d "{\"model\": \"$$(cat /tmp/active_model 2>/dev/null || echo devstral:24b)\", \"messages\": [{\"role\": \"user\", \"content\": \"ping\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
         
-        # Check 6: Verify we got a proper JSON response with message content
-        echo "$response" | grep -q "\"message\"" && echo "$response" | grep -q "\"content\"" || exit 1
+        # Check 4: Valid response received
+        echo "$$response" | grep -q "\"message\"" || exit 1
         
-        # Check 7: Verify model is still loaded (keep_alive working)
-        echo "$response" | grep -q "\"done\":true" || exit 1
-        
-        # Check 8: GPU memory usage check (if nvidia-smi available) - silent
-        if command -v nvidia-smi >/dev/null 2>&1; then
-          GPU_MEM=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)
-          if [ -n "$GPU_MEM" ] && [ "$GPU_MEM" -lt 4000 ]; then
-            # Only log warning to a file, not stdout
-            echo "$(date): Warning: GPU memory usage seems low ($GPU_MEM MB)" >> /tmp/healthcheck.log 2>/dev/null || true
-          fi
-        fi
-        
-        # All checks passed - model is fully ready and optimized
         exit 0
         '
       interval: 45s
-      timeout: 60s
-      retries: 30                         # Allow 30 retries = ~25 minutes for initial load
-      start_period: 1500s                 # 25 minutes startup period for complete loading
+      timeout: 30s
+      retries: 20
+      start_period: 900s  # 15 minutes for initial model loading
 
-  # Redis Database - starts independently
+  # Redis Database
   redis:
     build: ./redis
     container_name: devstral-redis
@@ -158,7 +105,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Quart Web Application - WAITS for model to be fully loaded
+  # Quart Web Application
   quart-app:
     build:
       context: ./quart-app
@@ -174,8 +121,8 @@ services:
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
       - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
       - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-2048}
-      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-120}
-      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-80}
+      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-0}
+      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-10000}
       - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-7200}
       - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-25}
       - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
@@ -183,20 +130,15 @@ services:
       - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL:-30}
       - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-1000}
       - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
-      # Pass through Ollama optimization settings for display
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
-      - OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}
-      - OLLAMA_MMAP=${OLLAMA_MMAP:-false}
     volumes:
       - app_data:/app/data
       - app_logs:/app/logs
       - ./quart-app:/app
     depends_on:
-      # CRITICAL: Now waits for BOTH services to be truly ready
       ollama:
-        condition: service_healthy        # Waits for model to be loaded and responding
+        condition: service_healthy
       redis:
-        condition: service_healthy        # Waits for Redis to be ready
+        condition: service_healthy
     networks:
       - devstral-network
     deploy:
@@ -214,7 +156,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # Nginx Reverse Proxy - WAITS for quart-app to be ready
+  # Nginx Reverse Proxy
   nginx:
     build: ./nginx
     container_name: devstral-nginx
@@ -226,7 +168,6 @@ services:
       - nginx_cache:/var/cache/nginx
       - nginx_logs:/var/log/nginx
     depends_on:
-      # CRITICAL: Only starts after quart-app is healthy (which waits for ollama)
       quart-app:
         condition: service_healthy
     networks:
