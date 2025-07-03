@@ -1,5 +1,7 @@
 ## Useful commands   
-docker-compose up --build --no-cache
+### Force rebuild with cache bust - kinda un-needed
+```docker-compose build --build-arg CACHEBUST=$(date +%s) ollama```
+```docker-compose up --build -d```
   
 # Devstral AI Chat - High Performance Docker Stack
 
