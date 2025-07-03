@@ -1,3 +1,15 @@
+## Useful commands  
+### Stop everything  
+docker-compose down  
+### Remove the cached Ollama image to force rebuild  
+docker image rm app3_dockercompose_llm-ollama:latest  
+### Clean up any cached layers  
+docker system prune -f  
+### Rebuild with no cache  
+docker-compose build --no-cache ollama  
+### Start everything fresh  
+docker-compose up --build  
+  
 # Devstral AI Chat - High Performance Docker Stack
 
 A complete AI chat application featuring **Devstral 24B** with advanced memory optimization, permanent RAM/VRAM loading, and enterprise-grade security. Built for maximum performance and zero-latency responses.

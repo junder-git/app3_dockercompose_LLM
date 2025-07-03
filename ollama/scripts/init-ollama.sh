@@ -1,5 +1,5 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - Complete model preloading with mlock
+# ollama/scripts/init-ollama.sh - Fixed environment variable handling
 
 MODEL_NAME=${OLLAMA_MODEL:-"devstral:24b"}
 
@@ -12,9 +12,33 @@ echo "Strategy: COMPLETE model preload with memory lock"
 echo "Timeline: 10-15 minutes for full loading"
 echo "======================================="
 
-# Start Ollama service in the background
-echo "Starting Ollama service..."
-OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 ollama serve &
+# CRITICAL: Export environment variables to ensure they're passed to ollama serve
+export OLLAMA_HOST=0.0.0.0
+export OLLAMA_KEEP_ALIVE=-1
+export OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}
+export OLLAMA_MMAP=${OLLAMA_MMAP:-false}
+export OLLAMA_NUMA=${OLLAMA_NUMA:-false}
+export OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
+export OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
+export OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE:-16384}
+export OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE:-256}
+export OLLAMA_MAIN_GPU=${OLLAMA_MAIN_GPU:-0}
+export OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+export OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-15m}
+export OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE:-true}
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+
+# Show final environment settings
+echo "Final environment settings:"
+echo "OLLAMA_MLOCK=$OLLAMA_MLOCK"
+echo "OLLAMA_MMAP=$OLLAMA_MMAP"
+echo "OLLAMA_NUMA=$OLLAMA_NUMA"
+echo "OLLAMA_GPU_LAYERS=$OLLAMA_GPU_LAYERS"
+echo "OLLAMA_NUM_THREAD=$OLLAMA_NUM_THREAD"
+
+# Start Ollama service in the background with explicit environment
+echo "Starting Ollama service with memory optimization..."
+ollama serve &
 OLLAMA_PID=$!
 
 # Wait for Ollama API to be ready
@@ -109,9 +133,10 @@ fi
 echo ""
 echo "💾 Phase 2: Loading model completely into VRAM/RAM..."
 echo "This ensures ZERO delays for first user request"
+echo "Environment check: OLLAMA_MLOCK=$OLLAMA_MLOCK, OLLAMA_MMAP=$OLLAMA_MMAP"
 
-# First load - gets model into memory
-LOAD_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+# CRITICAL: Force load the model with explicit environment variables
+LOAD_RESPONSE=$(OLLAMA_MLOCK=$OLLAMA_MLOCK OLLAMA_MMAP=$OLLAMA_MMAP curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
@@ -140,6 +165,9 @@ fi
 # Phase 3: Memory locking verification
 echo ""
 echo "🔒 Phase 3: Memory management verification..."
+echo "OLLAMA_MLOCK setting: $OLLAMA_MLOCK"
+echo "OLLAMA_MMAP setting: $OLLAMA_MMAP"
+
 if [ "${OLLAMA_MLOCK:-false}" = "true" ]; then
     echo "mlock ENABLED - Model will be locked in RAM/VRAM"
     # Check if we can actually use mlock
@@ -163,7 +191,7 @@ echo ""
 echo "🔥 Phase 4: Warming up all model layers..."
 for i in {1..5}; do
     echo "  Layer warm-up $i/5..."
-    WARMUP_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+    WARMUP_RESPONSE=$(OLLAMA_MLOCK=$OLLAMA_MLOCK OLLAMA_MMAP=$OLLAMA_MMAP curl -s -X POST http://localhost:11434/api/chat \
         -H "Content-Type: application/json" \
         -d "{
             \"model\": \"$MODEL_NAME\",
@@ -191,7 +219,7 @@ done
 echo ""
 echo "⚡ Performance verification test..."
 PERF_START=$(date +%s%N)
-PERF_RESPONSE=$(curl -s -X POST http://localhost:11434/api/chat \
+PERF_RESPONSE=$(OLLAMA_MLOCK=$OLLAMA_MLOCK OLLAMA_MMAP=$OLLAMA_MMAP curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$MODEL_NAME\",
@@ -287,13 +315,15 @@ echo "Monitoring Ollama service (PID: $OLLAMA_PID)..."
 while true; do
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
         echo "❌ Ollama process died, restarting..."
-        OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 ollama serve &
+        
+        # Restart with explicit environment
+        OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 OLLAMA_MLOCK=$OLLAMA_MLOCK OLLAMA_MMAP=$OLLAMA_MMAP ollama serve &
         OLLAMA_PID=$!
         
         # Re-load model after restart
         sleep 10
         echo "Re-loading model after restart..."
-        curl -s -X POST http://localhost:11434/api/chat \
+        OLLAMA_MLOCK=$OLLAMA_MLOCK OLLAMA_MMAP=$OLLAMA_MMAP curl -s -X POST http://localhost:11434/api/chat \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"$MODEL_NAME\", \"messages\": [{\"role\": \"user\", \"content\": \"Reload\"}], \"stream\": false, \"keep_alive\": -1}" > /dev/null
         touch /tmp/model_ready
