@@ -1,10 +1,21 @@
 ## Useful commands   
 ### Force rebuild with cache bust - kinda un-needed
-```docker-compose build --build-arg CACHEBUST=$(date +%s) ollama```
-```docker-compose up --build -d```
+```  
+docker-compose down  
   
-# Devstral AI Chat - High Performance Docker Stack
-
+docker image rm app3_dockercompose_llm-ollama:latest -f  
+  
+docker system prune -f  
+  
+docker-compose build --no-cache ollama  
+  
+docker-compose up --build  
+```  
+  
+```docker-compose up --build -d```  
+  
+# Devstral AI Chat - High Performance Docker Stack  
+  
 A complete AI chat application featuring **Devstral 24B** with advanced memory optimization, permanent RAM/VRAM loading, and enterprise-grade security. Built for maximum performance and zero-latency responses.
 
 ## 🚀 Quick Start
