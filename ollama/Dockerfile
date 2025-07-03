@@ -11,6 +11,8 @@ RUN apt-get update && \
     bash \
     ca-certificates \
     gpg \
+    jq \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ollama (CACHED - very expensive operation)
@@ -22,18 +24,17 @@ WORKDIR /root
 # Build argument to force rebuild ONLY for file copies
 ARG CACHEBUST=1
 
-# CRITICAL: Copy files that change frequently AFTER the cache bust
-# This ensures Docker will rebuild these layers when files change
-# but keeps all the expensive install operations cached
-
-# Copy initialization script first
+# Copy files and set permissions in one layer
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
-
-# Copy Modelfile 
 COPY Modelfile /root/Modelfile
-
-# Set permissions (this will also be invalidated when files change)
 RUN chmod +x /scripts/init-ollama.sh
+
+# CRITICAL: Set environment variables that Ollama will inherit
+ENV OLLAMA_MLOCK=true
+ENV OLLAMA_MMAP=false
+ENV OLLAMA_KEEP_ALIVE=-1
+ENV OLLAMA_NOPRUNE=true
+ENV OLLAMA_MAX_LOADED_MODELS=1
 
 # Expose Ollama port
 EXPOSE 11434
