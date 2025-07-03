@@ -5,8 +5,8 @@ MODEL_NAME=${OLLAMA_MODEL:-"devstral:24b"}
 
 echo "=== Devstral Ollama Initialization ==="
 echo "Target model: $MODEL_NAME"
-echo "Memory Lock (mlock): ${OLLAMA_MLOCK:-false}"
-echo "Memory Map (mmap): ${OLLAMA_MMAP:-true}"
+echo "Memory Lock (mlock): ${OLLAMA_MLOCK:-true}"
+echo "Memory Map (mmap): ${OLLAMA_MMAP:-false}"
 echo "GPU Layers: ${OLLAMA_GPU_LAYERS:-22}"
 echo "Strategy: COMPLETE model preload with memory lock"
 echo "Timeline: 10-15 minutes for full loading"
