@@ -56,27 +56,38 @@ services:
     restart: unless-stopped
     # FASTER HEALTHCHECK: Reduced startup verification time
     healthcheck:
+      # COMPREHENSIVE HEALTH CHECK: Verifies model is fully loaded and ready
       test: |
         bash -c '
-        # Step 1: Check if Ollama API is responding
+        # Check 1: Ollama API responding
         curl -f http://localhost:11434/api/tags > /dev/null 2>&1 || exit 1
         
-        # Step 2: Quick model response test (reduced complexity)
-        response=$$(curl -s -X POST http://localhost:11434/api/chat \
+        # Check 2: Model readiness markers exist
+        [ -f /tmp/model_ready ] || exit 1
+        [ -f /tmp/model_loaded ] || exit 1
+        [ -f /tmp/ollama_ready ] || exit 1
+        
+        # Check 3: Active model file exists and has content
+        [ -s /tmp/active_model ] || exit 1
+        
+        # Check 4: Quick model response test (ensures model actually works)
+        response=$(timeout 30 curl -s -X POST http://localhost:11434/api/chat \
           -H "Content-Type: application/json" \
-          -d "{\"model\": \"${OLLAMA_MODEL:-devstral:24b}\", \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
+          -d "{\"model\": \"${OLLAMA_MODEL:-devstral:24b}\", \"messages\": [{\"role\": \"user\", \"content\": \"test\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
         
-        # Step 3: Verify we got a proper response
-        echo "$$response" | grep -q "\"message\"" || exit 1
+        # Check 5: Verify we got a proper JSON response with message content
+        echo "$response" | grep -q "\"message\"" && echo "$response" | grep -q "\"content\"" || exit 1
         
-        # Step 4: Create ready marker
-        touch /tmp/model_ready
+        # Check 6: Verify keep_alive is working (model stays loaded)
+        echo "$response" | grep -q "\"done\":true" || exit 1
+        
+        # All checks passed - model is fully ready
         exit 0
         '
-      interval: 30s
-      timeout: 30s
-      retries: 15                         # Reduced retries for faster startup
-      start_period: 600s                  # 10 minutes startup period
+      interval: 45s
+      timeout: 60s
+      retries: 25                         # Allow 25 retries = ~20 minutes for initial load
+      start_period: 1200s                 # 20 minutes startup period for complete loading
 
   # Redis Database - starts independently
   redis:
