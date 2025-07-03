@@ -27,6 +27,6 @@ PARAMETER top_p 0.9
 PARAMETER num_ctx 16384
 PARAMETER repeat_penalty 1.1
 PARAMETER top_k 40
-PARAMETER num_gpu 22
-PARAMETER num_thread 8
+PARAMETER num_gpu 12
+PARAMETER num_thread 4
 PARAMETER num_batch 256

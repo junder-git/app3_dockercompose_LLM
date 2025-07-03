@@ -26,8 +26,8 @@ MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '2048'))
 MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '120'))
 
 # Hardware settings
-OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '22'))
-OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD', '8'))
+OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '12'))
+OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD', '4'))
 
 def get_active_model():
     """Get the active model name from the init script"""
