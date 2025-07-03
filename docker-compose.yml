@@ -1,16 +1,20 @@
 version: '3.8'
 
 services:
-  # Ollama CUDA Server with PERMANENT RAM/VRAM loading
+  # Ollama CUDA Server with PRIVILEGED MODE for mlock support
   ollama:
     build:
       context: ./ollama
       dockerfile: Dockerfile
     container_name: devstral-ollama
+    # CRITICAL: Privileged mode enables mlock functionality
+    privileged: true
     volumes:
       - ollama_models:/root/.ollama
       - ./ollama/scripts:/scripts:ro
       - ./ollama/Modelfile:/root/Modelfile:ro
+      # Mount /dev/shm for shared memory (improves performance)
+      - /dev/shm:/dev/shm
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - OLLAMA_HOST=0.0.0.0
@@ -25,24 +29,17 @@ services:
       - OLLAMA_LOAD_TIMEOUT=15m           # Allow 15 minutes for full model loading
       - OLLAMA_CONTEXT_SIZE=16384
       - OLLAMA_BATCH_SIZE=256
-      # CRITICAL: Permanent RAM/VRAM loading
-      - OLLAMA_MLOCK=true                 # Lock model in RAM/VRAM
-      - OLLAMA_MMAP=false                 # Disable memory mapping - force full RAM load
+      # CRITICAL: Permanent RAM/VRAM loading with privileged mlock
+      - OLLAMA_MLOCK=true                 # ENABLED: Lock model in RAM/VRAM (privileged mode)
+      - OLLAMA_MMAP=false                 # DISABLED: Force full RAM loading
       - OLLAMA_NUMA=false                 # Disable NUMA for single-GPU
       - OLLAMA_NOPRUNE=true               # Never auto-unload models
     ports:
       - "11434:11434"
     networks:
       - devstral-network
-    # IMPORTANT: Add IPC and memory capabilities for mlock
-    ipc: host
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    # Enable mlock capability
-    cap_add:
-      - IPC_LOCK
+    # PRIVILEGED: Full system access including memory locking
+    # Note: This gives the container full access to host resources
     deploy:
       resources:
         limits:
@@ -57,29 +54,29 @@ services:
               capabilities: [gpu]
     runtime: nvidia
     restart: unless-stopped
+    # FASTER HEALTHCHECK: Reduced startup verification time
     healthcheck:
-      # CRITICAL: This health check now verifies MODEL IS LOADED AND READY
       test: |
         bash -c '
         # Step 1: Check if Ollama API is responding
         curl -f http://localhost:11434/api/tags > /dev/null 2>&1 || exit 1
         
-        # Step 2: Check if model is actually loaded and responding
+        # Step 2: Quick model response test (reduced complexity)
         response=$$(curl -s -X POST http://localhost:11434/api/chat \
           -H "Content-Type: application/json" \
-          -d "{\"model\": \"${OLLAMA_MODEL:-devstral:24b}\", \"messages\": [{\"role\": \"user\", \"content\": \"test\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
+          -d "{\"model\": \"${OLLAMA_MODEL:-devstral:24b}\", \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
         
-        # Step 3: Verify we got a proper response (not an error)
+        # Step 3: Verify we got a proper response
         echo "$$response" | grep -q "\"message\"" || exit 1
         
-        # Step 4: Create ready marker file
+        # Step 4: Create ready marker
         touch /tmp/model_ready
         exit 0
         '
       interval: 30s
-      timeout: 60s
-      retries: 20                         # Allow many retries during loading
-      start_period: 900s                  # 15 minutes startup period for full model loading
+      timeout: 30s
+      retries: 15                         # Reduced retries for faster startup
+      start_period: 600s                  # 10 minutes startup period
 
   # Redis Database - starts independently
   redis:
