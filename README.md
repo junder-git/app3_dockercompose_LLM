@@ -1,14 +1,5 @@
-## Useful commands  
-### Stop everything  
-docker-compose down  
-### Remove the cached Ollama image to force rebuild  
-docker image rm app3_dockercompose_llm-ollama:latest  
-### Clean up any cached layers  
-docker system prune -f  
-### Rebuild with no cache  
-docker-compose build --no-cache ollama  
-### Start everything fresh  
-docker-compose up --build  
+## Useful commands   
+docker-compose up --build --no-cache ollama
   
 # Devstral AI Chat - High Performance Docker Stack
 
