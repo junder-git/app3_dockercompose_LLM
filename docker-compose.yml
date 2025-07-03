@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Ollama CUDA Server with PROPER model loading verification
+  # Ollama CUDA Server with PERMANENT RAM/VRAM loading
   ollama:
     build:
       context: ./ollama
@@ -25,10 +25,24 @@ services:
       - OLLAMA_LOAD_TIMEOUT=15m           # Allow 15 minutes for full model loading
       - OLLAMA_CONTEXT_SIZE=16384
       - OLLAMA_BATCH_SIZE=256
+      # CRITICAL: Permanent RAM/VRAM loading
+      - OLLAMA_MLOCK=true                 # Lock model in RAM/VRAM
+      - OLLAMA_MMAP=false                 # Disable memory mapping - force full RAM load
+      - OLLAMA_NUMA=false                 # Disable NUMA for single-GPU
+      - OLLAMA_NOPRUNE=true               # Never auto-unload models
     ports:
       - "11434:11434"
     networks:
       - devstral-network
+    # IMPORTANT: Add IPC and memory capabilities for mlock
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    # Enable mlock capability
+    cap_add:
+      - IPC_LOCK
     deploy:
       resources:
         limits:
