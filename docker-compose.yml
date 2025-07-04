@@ -35,7 +35,7 @@ services:
       retries: 3
       start_period: 300s  # Allow time for model download
     networks:
-      - ollama-network
+      - devstral-network
 
   # Redis Database
   redis:
