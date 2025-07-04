@@ -17,9 +17,6 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /root
 
-# Build argument to force rebuild ONLY for file copies
-ARG CACHEBUST=1
-
 # Copy our custom initialization script and Modelfile
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY Modelfile /root/Modelfile
