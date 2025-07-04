@@ -135,11 +135,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1G
+          cpus: ${NGINX_CPU}
+          memory: ${NGINX_MEMORY}
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: ${NGINX_CPU}
+          memory: ${NGINX_MEMORY}
     restart: unless-stopped
 
 networks:
