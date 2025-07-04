@@ -47,19 +47,19 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "/tmp/health_check.sh"]
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 300s  # Allow time for model download
+      retries: 5
+      start_period: 120s
     networks:
       - devstral-network
+
   # Redis Database
   redis:
     build: ./redis
     container_name: devstral-redis
     volumes:
-      # Bind mounts to local volumes directory
       - ./volumes/redis_data:/data
       - ./volumes/redis_logs:/var/log/redis
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -107,10 +107,8 @@ services:
       - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS}
       - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT}
     volumes:
-      # Bind mounts to local volumes directory
       - ./volumes/app_data:/app/data
       - ./volumes/app_logs:/app/logs
-      # Don't mount source code in production for proper volume persistence
     depends_on:
       ollama:
         condition: service_healthy
@@ -129,9 +127,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
   # Nginx Reverse Proxy
   nginx:
@@ -157,6 +156,12 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
 
 networks:
   devstral-network:

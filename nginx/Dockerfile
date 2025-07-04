@@ -5,6 +5,11 @@ FROM nginx:alpine
 # Set working directory
 WORKDIR /usr/share/nginx/html
 
+# Remove default NGINX configuration and content
+RUN rm /etc/nginx/conf.d/default.conf && \
+    rm /etc/nginx/nginx.conf && \
+    rm -rf /usr/share/nginx/html/*
+
 # Copy NGINX configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
