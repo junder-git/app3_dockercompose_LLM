@@ -1,57 +1,32 @@
-# Hybrid Approach: Official Ollama + Custom Optimizations
+# Simplified Ollama Dockerfile - Official image compatibility
 FROM ollama/ollama:latest
 
-# Switch to root for customization
-USER root
-
-# Install additional tools for our advanced initialization
+# Install curl for health checks
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    curl \
-    jq \
-    procps \
-    htop \
-    bc \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /root
-
-# Copy our custom initialization script and Modelfile
+# Copy scripts and configs
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY Modelfile /root/Modelfile
 
-# Set permissions and prepare directories (run as root)
-RUN chmod +x /scripts/init-ollama.sh && \
-    mkdir -p /tmp/ollama-health && \
-    mkdir -p /home/ollama/.ollama && \
-    chmod 755 /home/ollama/.ollama
+# Set permissions
+RUN chmod +x /scripts/init-ollama.sh
 
-# CRITICAL: Set environment variables that will be inherited by Ollama
-# These are the KEY optimizations for memory management
+# Environment variables for optimization
 ENV OLLAMA_HOST=0.0.0.0
 ENV OLLAMA_MLOCK=true
 ENV OLLAMA_MMAP=false
 ENV OLLAMA_KEEP_ALIVE=-1
 ENV OLLAMA_NOPRUNE=true
 ENV OLLAMA_MAX_LOADED_MODELS=1
-ENV OLLAMA_NUM_PARALLEL=1
-ENV OLLAMA_LOAD_TIMEOUT=15m
-
-# GPU and performance settings
 ENV OLLAMA_GPU_LAYERS=22
-ENV OLLAMA_NUM_THREAD=8
+ENV OLLAMA_NUM_THREAD=4
 ENV OLLAMA_CONTEXT_SIZE=16384
 ENV OLLAMA_BATCH_SIZE=256
-ENV CUDA_VISIBLE_DEVICES=0
 
-# Advanced memory settings (if supported)
-ENV OLLAMA_NUMA=false
-ENV OLLAMA_MAIN_GPU=0
-
-# Expose Ollama port
+# Expose port
 EXPOSE 11434
 
-# Stay as root for privileged operations (mlock requires this)
-# Use our custom initialization script
+# Use the simplified initialization script
 ENTRYPOINT ["/scripts/init-ollama.sh"]

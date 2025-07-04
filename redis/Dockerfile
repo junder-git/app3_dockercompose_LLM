@@ -1,20 +1,17 @@
 FROM redis/redis-stack-server
 
-# Create redis user and set up directories with proper permissions
+# Stay as root to set up directories
 USER root
 
-# Create necessary directories and set permissions
+# Check what user exists and create directories with broad permissions
 RUN mkdir -p /data /var/log/redis /var/run && \
-    chown -R redis:redis /data /var/log/redis /var/run && \
-    chmod -R 755 /data /var/log/redis /var/run
+    chmod -R 777 /data /var/log/redis /var/run
 
-# Copy configuration
+# Copy configuration 
 COPY redis.conf /usr/local/etc/redis/redis.conf
-RUN chown redis:redis /usr/local/etc/redis/redis.conf
+RUN chmod 644 /usr/local/etc/redis/redis.conf
 
-# Switch to redis user
-USER redis
-
+# Don't switch users - let the base image handle it
 # Set working directory
 WORKDIR /data
 
