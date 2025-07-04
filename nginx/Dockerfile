@@ -1,24 +1,19 @@
-# nginx/Dockerfile - Fixed to match nginx.conf expectations
+# nginx/Dockerfile - Clean NGINX container with static files
 
 FROM nginx:alpine
 
 # Set working directory
 WORKDIR /usr/share/nginx/html
 
-# Remove default NGINX configuration and content
-RUN rm -f /etc/nginx/conf.d/default.conf && \
-    rm -f /etc/nginx/nginx.conf && \
-    rm -rf /usr/share/nginx/html/*
-
 # Copy NGINX configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy static HTML error pages to root
-COPY html/ /usr/share/nginx/html/
+# Copy static HTML error pages
+COPY html/unauthorized.html /usr/share/nginx/html/
+COPY html/rate_limited.html /usr/share/nginx/html/
 
-# Create static directory structure and copy CSS
-RUN mkdir -p /usr/share/nginx/html/static/css
-COPY css/ /usr/share/nginx/html/static/css/
+# Copy static assets (CSS, JS, etc.)
+COPY static/ /usr/share/nginx/html/static/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/ && \

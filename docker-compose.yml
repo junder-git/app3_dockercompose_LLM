@@ -1,83 +1,42 @@
-version: '3.8'
-
 services:
-  # Hybrid Ollama: Official image + Custom optimizations
-  ollama:
+  devstral-ollama:
     build:
       context: ./ollama
       dockerfile: Dockerfile
     container_name: devstral-ollama
-    # Keep privileged mode for advanced memory management
-    privileged: true
-    volumes:
-      # Bind mount to local volumes directory
-      - ./volumes/ollama_models:/home/ollama/.ollama
-      - /dev/shm:/dev/shm
-    environment:
-      # Core Ollama settings (inherited by Dockerfile ENV)
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-      
-      # Advanced settings (can override Dockerfile defaults)
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS:-22}
-      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD:-8}
-      - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE:-16384}
-      - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE:-256}
-      
-      # Memory optimization (these are the critical ones)
-      - OLLAMA_MLOCK=${OLLAMA_MLOCK:-true}
-      - OLLAMA_MMAP=${OLLAMA_MMAP:-false}
-      - OLLAMA_NUMA=${OLLAMA_NUMA:-false}
-      
-      # Keep alive and caching
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
-      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE:-true}
-      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
-      - OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-15m}
+    restart: unless-stopped
     ports:
       - "11434:11434"
-    networks:
-      - devstral-network
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_MLOCK=true
+      - OLLAMA_MMAP=false
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_NOPRUNE=true
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_GPU_LAYERS=12  # Adjust based on your GPU
+      - OLLAMA_NUM_THREAD=4   # Adjust based on your CPU
+      - OLLAMA_CONTEXT_SIZE=16384
+      - OLLAMA_BATCH_SIZE=256
+      - OLLAMA_MODEL=devstral:24b
+    volumes:
+      - ollama_data:/home/ollama/.ollama
+      - ./ollama/models:/home/ollama/.ollama/models  # Optional: local models
     deploy:
       resources:
-        limits:
-          cpus: '8.0'
-          memory: ${OLLAMA_MEMORY_LIMIT:-24G}
         reservations:
-          cpus: '4.0'
-          memory: ${OLLAMA_MEMORY_RESERVATION:-12G}
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
-    runtime: nvidia
-    restart: unless-stopped
-    # Enhanced healthcheck for hybrid setup
     healthcheck:
-      test: |
-        bash -c '
-        # Check 1: API responding
-        curl -f http://localhost:11434/api/tags > /dev/null 2>&1 || exit 1
-        
-        # Check 2: Health markers exist
-        [ -f /tmp/model_ready ] || exit 1
-        [ -f /tmp/ollama_ready ] || exit 1
-        
-        # Check 3: Model actually loaded and responsive
-        response=$$(timeout 20 curl -s -X POST http://localhost:11434/api/chat \
-          -H "Content-Type: application/json" \
-          -d "{\"model\": \"$$(cat /tmp/active_model 2>/dev/null || echo devstral:24b)\", \"messages\": [{\"role\": \"user\", \"content\": \"ping\"}], \"stream\": false, \"options\": {\"num_predict\": 1}}" 2>/dev/null)
-        
-        # Check 4: Valid response received
-        echo "$$response" | grep -q "\"message\"" || exit 1
-        
-        exit 0
-        '
-      interval: 45s
-      timeout: 30s
-      retries: 20
-      start_period: 900s  # 15 minutes for initial model loading
+      test: ["/tmp/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s  # Allow time for model download
+    networks:
+      - ollama-network
 
   # Redis Database
   redis:
