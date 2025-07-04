@@ -4,6 +4,7 @@ services:
       context: ./ollama
       dockerfile: Dockerfile
     container_name: devstral-ollama
+    privileged: true
     restart: unless-stopped
     ports:
       - "11434:11434"
