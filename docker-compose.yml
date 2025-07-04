@@ -84,7 +84,7 @@ services:
     build: ./redis
     container_name: devstral-redis
     volumes:
-      # FIXED: Ensure Redis data persists with proper permissions
+      # Volume mapping with proper permissions
       - redis_data:/data
       - redis_logs:/var/log/redis
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -101,8 +101,6 @@ services:
           cpus: '0.25'
           memory: 256M
     restart: unless-stopped
-    # FIXED: Add user mapping to ensure proper permissions
-    user: "999:999"  # Redis user in container
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -135,11 +133,10 @@ services:
       - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-1000}
       - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
     volumes:
-      # FIXED: Ensure proper volume mapping for app data
+      # Persistent app data
       - app_data:/app/data
       - app_logs:/app/logs
-      # REMOVED: Don't mount source code in production
-      # - ./quart-app:/app
+      # Don't mount source code in production for proper volume persistence
     depends_on:
       ollama:
         condition: service_healthy
@@ -196,46 +193,18 @@ networks:
         - subnet: 172.21.0.0/16
 
 volumes:
-  # FIXED: Explicit volume configuration with proper drivers
+  # Simple named volumes - Docker will handle persistence automatically
   nginx_cache:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/nginx_cache
   nginx_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/nginx_logs
   ollama_models:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/ollama_models
   app_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/app_data
   app_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/app_logs
   redis_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/redis_data
   redis_logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/volumes/redis_logs
