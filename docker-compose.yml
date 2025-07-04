@@ -139,7 +139,6 @@ services:
     container_name: devstral-nginx
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static:ro
       - ./volumes/nginx_cache:/var/cache/nginx
