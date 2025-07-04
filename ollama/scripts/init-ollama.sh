@@ -1,5 +1,5 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - Environment-Driven Configuration
+# ollama/scripts/init-ollama.sh - COMPLETE FIXED VERSION with proper 0/1 handling
 
 echo "=== Environment-Driven Ollama Initialization ==="
 echo "Base: Ubuntu 22.04 + Ollama Install Script"
@@ -57,27 +57,52 @@ fi
 mkdir -p "$OLLAMA_MODELS"
 echo "📁 Models directory: $OLLAMA_MODELS"
 
-# Pre-start validation
+# FIXED: Pre-start validation with proper 0/1 checking
 echo ""
 echo "🔧 Configuration validation..."
 echo "  • Model: $OLLAMA_MODEL"
-echo "  • MMAP disabled: $([ "$OLLAMA_MMAP" = "false" ] && echo "✅ YES" || echo "❌ NO")"
-echo "  • MLOCK enabled: $([ "$OLLAMA_MLOCK" = "true" ] && echo "✅ YES" || echo "❌ NO")"
-echo "  • No pruning: $([ "$OLLAMA_NOPRUNE" = "true" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • MMAP disabled: $([ "$OLLAMA_MMAP" = "0" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • MLOCK enabled: $([ "$OLLAMA_MLOCK" = "1" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • No pruning: $([ "$OLLAMA_NOPRUNE" = "1" ] && echo "✅ YES" || echo "❌ NO")"
 echo "  • GPU layers: $OLLAMA_GPU_LAYERS"
 echo "  • Context size: $OLLAMA_CONTEXT_SIZE"
 
 # Generate expanded Modelfile with environment variables
 echo ""
 echo "🔧 Generating Modelfile with environment variables..."
-envsubst < /root/Modelfile > /tmp/expanded_modelfile
+if [ -f "/home/ollama/Modelfile" ]; then
+    envsubst < /home/ollama/Modelfile > /tmp/expanded_modelfile
+    echo "✅ Modelfile expanded with current environment variables"
+    echo "📄 Modelfile contents:"
+    cat /tmp/expanded_modelfile
+else
+    echo "⚠️ /home/ollama/Modelfile not found, will use base model only"
+fi
 
-echo "✅ Modelfile expanded with current environment variables"
-
-# Start Ollama service
+# CRITICAL: Start Ollama service with EXPLICIT environment variables
 echo ""
-echo "🚀 Starting Ollama service..."
+echo "🚀 Starting Ollama service with explicit environment..."
+echo "Environment variables being set:"
+echo "  OLLAMA_MMAP=$OLLAMA_MMAP"
+echo "  OLLAMA_MLOCK=$OLLAMA_MLOCK"
+echo "  OLLAMA_NOPRUNE=$OLLAMA_NOPRUNE"
+echo "  OLLAMA_KEEP_ALIVE=$OLLAMA_KEEP_ALIVE"
+echo "  OLLAMA_GPU_LAYERS=$OLLAMA_GPU_LAYERS"
+
+# Start Ollama with explicit environment
+OLLAMA_MMAP="$OLLAMA_MMAP" \
+OLLAMA_MLOCK="$OLLAMA_MLOCK" \
+OLLAMA_NOPRUNE="$OLLAMA_NOPRUNE" \
+OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE" \
+OLLAMA_GPU_LAYERS="$OLLAMA_GPU_LAYERS" \
+OLLAMA_NUM_THREAD="$OLLAMA_NUM_THREAD" \
+OLLAMA_CONTEXT_SIZE="$OLLAMA_CONTEXT_SIZE" \
+OLLAMA_BATCH_SIZE="$OLLAMA_BATCH_SIZE" \
+OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS" \
+OLLAMA_HOST="$OLLAMA_HOST" \
+OLLAMA_MODELS="$OLLAMA_MODELS" \
 ollama serve &
+
 OLLAMA_PID=$!
 echo "  📝 Ollama PID: $OLLAMA_PID"
 
@@ -137,11 +162,16 @@ echo "🔧 Creating environment-optimized model: $OPTIMIZED_MODEL_NAME"
 if ollama list 2>/dev/null | grep -q "$OPTIMIZED_MODEL_NAME"; then
     echo "✅ Environment-optimized model already exists: $OPTIMIZED_MODEL_NAME"
 else
-    echo "📄 Creating optimized model from environment-driven Modelfile..."
-    if ollama create "$OPTIMIZED_MODEL_NAME" -f /tmp/expanded_modelfile; then
-        echo "✅ Created environment-optimized model: $OPTIMIZED_MODEL_NAME"
+    if [ -f "/tmp/expanded_modelfile" ]; then
+        echo "📄 Creating optimized model from environment-driven Modelfile..."
+        if ollama create "$OPTIMIZED_MODEL_NAME" -f /tmp/expanded_modelfile; then
+            echo "✅ Created environment-optimized model: $OPTIMIZED_MODEL_NAME"
+        else
+            echo "⚠️ Failed to create optimized model, using base model"
+            OPTIMIZED_MODEL_NAME="$OLLAMA_MODEL"
+        fi
     else
-        echo "⚠️ Failed to create optimized model, using base model"
+        echo "⚠️ No expanded Modelfile found, using base model"
         OPTIMIZED_MODEL_NAME="$OLLAMA_MODEL"
     fi
 fi
@@ -165,11 +195,11 @@ TEST_RESPONSE=$(curl -s --max-time 30 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
         \"model\": \"$OPTIMIZED_MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Confirm your configuration: $MODEL_DISPLAY_NAME\"}],
+        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Test response.\"}],
         \"stream\": false,
         \"options\": {
-            \"temperature\": $MODEL_TEMPERATURE,
-            \"top_p\": $MODEL_TOP_P,
+            \"temperature\": ${MODEL_TEMPERATURE:-0.7},
+            \"top_p\": ${MODEL_TOP_P:-0.9},
             \"num_predict\": 20
         }
     }")
@@ -183,6 +213,16 @@ else
     echo "🔍 Response: $TEST_RESPONSE"
 fi
 
+# CRITICAL: Verify MMAP setting in running process
+echo ""
+echo "🔍 Verifying MMAP setting in running Ollama process..."
+if [ -f "/proc/$OLLAMA_PID/environ" ]; then
+    echo "Process environment for PID $OLLAMA_PID:"
+    cat "/proc/$OLLAMA_PID/environ" | tr '\0' '\n' | grep OLLAMA_ | sort
+else
+    echo "Could not read process environment"
+fi
+
 # Create health markers
 echo ""
 echo "📋 Creating health markers..."
@@ -192,6 +232,8 @@ touch /tmp/ollama_ready
 echo "$OPTIMIZED_MODEL_NAME" > /tmp/active_model
 
 # Health check script
+echo ""
+echo "🏥 Setting up health check..."
 cat > /tmp/health_check.sh << 'EOF'
 #!/bin/bash
 if [ -f /tmp/ollama_ready ] && curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
@@ -204,7 +246,7 @@ fi
 EOF
 chmod +x /tmp/health_check.sh
 
-# Final status
+# FIXED: Final status with proper 0/1 checking
 echo ""
 echo "================================================="
 echo "🎯 ENVIRONMENT-DRIVEN OLLAMA READY"
@@ -216,10 +258,12 @@ echo "✅ API: http://localhost:11434"
 echo "✅ GPU Layers: $OLLAMA_GPU_LAYERS"
 echo "✅ Context Size: $OLLAMA_CONTEXT_SIZE"
 echo "✅ Batch Size: $OLLAMA_BATCH_SIZE"
-echo "✅ MMAP: $([ "$OLLAMA_MMAP" = "false" ] && echo "DISABLED" || echo "ENABLED")"
-echo "✅ MLOCK: $([ "$OLLAMA_MLOCK" = "true" ] && echo "ENABLED" || echo "DISABLED")"
-echo "✅ Temperature: $MODEL_TEMPERATURE"
-echo "✅ Top P: $MODEL_TOP_P"
+echo "✅ MMAP: $([ "$OLLAMA_MMAP" = "0" ] && echo "DISABLED ✅" || echo "ENABLED ❌")"
+echo "✅ MLOCK: $([ "$OLLAMA_MLOCK" = "1" ] && echo "ENABLED ✅" || echo "DISABLED ❌")"
+echo "✅ No Pruning: $([ "$OLLAMA_NOPRUNE" = "1" ] && echo "ENABLED ✅" || echo "DISABLED ❌")"
+echo "✅ Keep Alive: $OLLAMA_KEEP_ALIVE"
+echo "✅ Temperature: ${MODEL_TEMPERATURE:-0.7}"
+echo "✅ Top P: ${MODEL_TOP_P:-0.9}"
 echo "🚀 All parameters controlled by .env file"
 echo "================================================="
 
@@ -235,15 +279,29 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Keep container running
+# Keep container running with enhanced monitoring
 echo "🔄 Monitoring Ollama service..."
 while true; do
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
-        echo "❌ Ollama process died, restarting..."
+        echo "❌ Ollama process died, restarting with same environment..."
+        
+        # Restart with same explicit environment
+        OLLAMA_MMAP="$OLLAMA_MMAP" \
+        OLLAMA_MLOCK="$OLLAMA_MLOCK" \
+        OLLAMA_NOPRUNE="$OLLAMA_NOPRUNE" \
+        OLLAMA_KEEP_ALIVE="$OLLAMA_KEEP_ALIVE" \
+        OLLAMA_GPU_LAYERS="$OLLAMA_GPU_LAYERS" \
+        OLLAMA_NUM_THREAD="$OLLAMA_NUM_THREAD" \
+        OLLAMA_CONTEXT_SIZE="$OLLAMA_CONTEXT_SIZE" \
+        OLLAMA_BATCH_SIZE="$OLLAMA_BATCH_SIZE" \
+        OLLAMA_MAX_LOADED_MODELS="$OLLAMA_MAX_LOADED_MODELS" \
+        OLLAMA_HOST="$OLLAMA_HOST" \
+        OLLAMA_MODELS="$OLLAMA_MODELS" \
         ollama serve &
+        
         OLLAMA_PID=$!
         sleep 10
-        echo "✅ Service restarted"
+        echo "✅ Service restarted with PID: $OLLAMA_PID"
     fi
     
     if ! /tmp/health_check.sh >/dev/null 2>&1; then

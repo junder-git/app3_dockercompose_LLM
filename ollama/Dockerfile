@@ -12,6 +12,7 @@ RUN apt-get update && \
     ca-certificates \
     gnupg \
     lsb-release \
+    gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
 # Create ollama user and directories
@@ -22,12 +23,14 @@ RUN useradd -m -s /bin/bash ollama && \
 # Install Ollama using official install script
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
-# Copy scripts and configs
+# Copy scripts and configs with proper permissions
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
-COPY Modelfile /root/Modelfile
+COPY Modelfile /home/ollama/Modelfile
 
-# Set permissions
-RUN chmod +x /scripts/init-ollama.sh
+# Set permissions - make sure ollama user can access everything
+RUN chmod +x /scripts/init-ollama.sh && \
+    chown ollama:ollama /home/ollama/Modelfile && \
+    chmod 644 /home/ollama/Modelfile
 
 # Set Ollama data directory
 ENV OLLAMA_MODELS=/home/ollama/.ollama/models

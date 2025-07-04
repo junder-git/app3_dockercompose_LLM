@@ -9,6 +9,7 @@ services:
     ports:
       - "11434:11434"
     environment:
+      # Existing Ollama environment variables
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_MLOCK=${OLLAMA_MLOCK}
       - OLLAMA_MMAP=${OLLAMA_MMAP}
@@ -20,6 +21,22 @@ services:
       - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
       - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
       - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - MODEL_DISPLAY_NAME=${MODEL_DISPLAY_NAME}
+      - MODEL_DESCRIPTION=${MODEL_DESCRIPTION}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
+      - MODEL_TOP_P=${MODEL_TOP_P}
+      - MODEL_TOP_K=${MODEL_TOP_K}
+      - MODEL_REPEAT_PENALTY=${MODEL_REPEAT_PENALTY}
+      - MODEL_MIROSTAT=${MODEL_MIROSTAT}
+      - MODEL_MIROSTAT_ETA=${MODEL_MIROSTAT_ETA}
+      - MODEL_MIROSTAT_TAU=${MODEL_MIROSTAT_TAU}
+      - MODEL_USE_MMAP=${MODEL_USE_MMAP}
+      - MODEL_USE_MLOCK=${MODEL_USE_MLOCK}
+      - MODEL_STOP_SEQUENCES=${MODEL_STOP_SEQUENCES}
+      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS}
+      - MODEL_TIMEOUT=${MODEL_TIMEOUT}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
     volumes:
       - ./volumes/ollama:/home/ollama/.ollama
     deploy:
@@ -37,7 +54,6 @@ services:
       start_period: 300s  # Allow time for model download
     networks:
       - devstral-network
-
   # Redis Database
   redis:
     build: ./redis
