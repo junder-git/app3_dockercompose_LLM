@@ -8,20 +8,19 @@ services:
     ports:
       - "11434:11434"
     environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_MLOCK=true
-      - OLLAMA_MMAP=false
-      - OLLAMA_KEEP_ALIVE=-1
-      - OLLAMA_NOPRUNE=true
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_GPU_LAYERS=12  # Adjust based on your GPU
-      - OLLAMA_NUM_THREAD=4   # Adjust based on your CPU
-      - OLLAMA_CONTEXT_SIZE=16384
-      - OLLAMA_BATCH_SIZE=256
-      - OLLAMA_MODEL=devstral:24b
+      - OLLAMA_HOST=${OLLAMA_HOST}
+      - OLLAMA_MLOCK=${OLLAMA_MLOCK}
+      - OLLAMA_MMAP=${OLLAMA_MMAP}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
+      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
+      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS}
+      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD}
+      - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
+      - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
     volumes:
-      - ollama_data:/home/ollama/.ollama
-      - ./ollama/models:/home/ollama/.ollama/models  # Optional: local models
+      - ./volumes/ollama:/home/ollama/.ollama
     deploy:
       resources:
         reservations:
