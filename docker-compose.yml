@@ -191,3 +191,12 @@ networks:
     ipam:
       config:
         - subnet: 172.21.0.0/16
+
+# Remove the volumes section since we're using bind mounts
+# volumes:
+#   nginx_cache:
+#     driver: local
+#   nginx_logs:
+#     driver: local
+#   ollama_models:
+#     driver: local
