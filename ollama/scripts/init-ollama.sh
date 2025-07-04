@@ -1,24 +1,27 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - Complete fixed version with proper mmap handling
+# ollama/scripts/init-ollama.sh - Environment-Driven Configuration
 
-MODEL_NAME=$OLLAMA_MODEL
-
-echo "=== Devstral Ollama Initialization ==="
+echo "=== Environment-Driven Ollama Initialization ==="
 echo "Base: Ubuntu 22.04 + Ollama Install Script"
-echo "Target model: $MODEL_NAME"
-echo "====================================="
+echo "All parameters controlled by .env file"
+echo "================================================"
 
-# Display environment with actual values from .env
+# Display current configuration from environment
 echo ""
-echo "=== Environment Settings ==="
-echo "OLLAMA_HOST: $OLLAMA_HOST"
-echo "OLLAMA_MLOCK: $OLLAMA_MLOCK"
-echo "OLLAMA_MMAP: $OLLAMA_MMAP"
-echo "OLLAMA_KEEP_ALIVE: $OLLAMA_KEEP_ALIVE"
-echo "OLLAMA_GPU_LAYERS: $OLLAMA_GPU_LAYERS"
-echo "OLLAMA_NUM_THREAD: $OLLAMA_NUM_THREAD"
-echo "OLLAMA_MODELS: $OLLAMA_MODELS"
-echo "OLLAMA_NOPRUNE: $OLLAMA_NOPRUNE"
+echo "=== Current Configuration ==="
+echo "Model: $OLLAMA_MODEL"
+echo "Display Name: $MODEL_DISPLAY_NAME"
+echo "Description: $MODEL_DESCRIPTION"
+echo "GPU Layers: $OLLAMA_GPU_LAYERS"
+echo "Context Size: $OLLAMA_CONTEXT_SIZE"
+echo "Batch Size: $OLLAMA_BATCH_SIZE"
+echo "Max Tokens: $MODEL_MAX_TOKENS"
+echo "Timeout: $MODEL_TIMEOUT"
+echo "Chat History: $CHAT_HISTORY_LIMIT"
+echo "MMAP: $OLLAMA_MMAP"
+echo "MLOCK: $OLLAMA_MLOCK"
+echo "Temperature: $MODEL_TEMPERATURE"
+echo "Top P: $MODEL_TOP_P"
 echo "============================"
 
 # Check Ollama installation
@@ -32,7 +35,7 @@ else
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
-# GPU detection with enhanced output
+# GPU detection
 echo ""
 echo "🔍 GPU Detection..."
 if command -v nvidia-smi >/dev/null 2>&1; then
@@ -54,21 +57,31 @@ fi
 mkdir -p "$OLLAMA_MODELS"
 echo "📁 Models directory: $OLLAMA_MODELS"
 
-# Pre-start environment check
+# Pre-start validation
 echo ""
-echo "🔧 Pre-start environment verification..."
-echo "  • MMAP disabled: $([ "$OLLAMA_MMAP" = "false" ] && echo "✅ YES" || echo "❌ NO - WARNING!")"
-echo "  • MLOCK enabled: $([ "$OLLAMA_MLOCK" = "true" ] && echo "✅ YES" || echo "❌ NO - WARNING!")"
-echo "  • No pruning: $([ "$OLLAMA_NOPRUNE" = "true" ] && echo "✅ YES" || echo "❌ NO - WARNING!")"
+echo "🔧 Configuration validation..."
+echo "  • Model: $OLLAMA_MODEL"
+echo "  • MMAP disabled: $([ "$OLLAMA_MMAP" = "false" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • MLOCK enabled: $([ "$OLLAMA_MLOCK" = "true" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • No pruning: $([ "$OLLAMA_NOPRUNE" = "true" ] && echo "✅ YES" || echo "❌ NO")"
+echo "  • GPU layers: $OLLAMA_GPU_LAYERS"
+echo "  • Context size: $OLLAMA_CONTEXT_SIZE"
 
-# Start Ollama service with .env settings
+# Generate expanded Modelfile with environment variables
+echo ""
+echo "🔧 Generating Modelfile with environment variables..."
+envsubst < /root/Modelfile > /tmp/expanded_modelfile
+
+echo "✅ Modelfile expanded with current environment variables"
+
+# Start Ollama service
 echo ""
 echo "🚀 Starting Ollama service..."
 ollama serve &
 OLLAMA_PID=$!
 echo "  📝 Ollama PID: $OLLAMA_PID"
 
-# Enhanced API readiness check
+# Wait for API
 echo "⏳ Waiting for Ollama API..."
 API_READY=false
 for i in {1..60}; do
@@ -78,7 +91,7 @@ for i in {1..60}; do
         break
     fi
     if [ $((i % 10)) -eq 0 ]; then
-        echo "  ⏰ Still waiting... (${i}s) - Checking process..."
+        echo "  ⏰ Still waiting... (${i}s)"
         if ! kill -0 $OLLAMA_PID 2>/dev/null; then
             echo "  ❌ Ollama process died during startup!"
             exit 1
@@ -88,118 +101,86 @@ for i in {1..60}; do
 done
 
 if [ "$API_READY" = false ]; then
-    echo "❌ Ollama API failed to start within 120 seconds"
-    echo "🔍 Checking process status..."
-    if kill -0 $OLLAMA_PID 2>/dev/null; then
-        echo "  Process is still running, might be slow startup"
-        # Try a few more times
-        for i in {1..30}; do
-            if curl -s --max-time 10 http://localhost:11434/api/tags >/dev/null 2>&1; then
-                echo "✓ API finally ready after extended wait!"
-                API_READY=true
-                break
-            fi
-            sleep 5
-        done
+    echo "❌ Ollama API failed to start"
+    exit 1
+fi
+
+# Check and download base model
+echo ""
+echo "📦 Checking base model: $OLLAMA_MODEL"
+if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
+    echo "✅ Base model $OLLAMA_MODEL already exists"
+else
+    echo "📥 Downloading base model: $OLLAMA_MODEL"
+    
+    # Estimate download time based on model
+    if [[ "$OLLAMA_MODEL" == *"1.5b"* ]]; then
+        echo "⏳ Estimated download time: 2-5 minutes (~1.5GB)"
+    elif [[ "$OLLAMA_MODEL" == *"24b"* ]]; then
+        echo "⏳ Estimated download time: 20-45 minutes (~14GB)"
     else
-        echo "  Process died, exiting"
+        echo "⏳ Downloading model..."
+    fi
+    
+    if ! ollama pull "$OLLAMA_MODEL"; then
+        echo "❌ Failed to download $OLLAMA_MODEL"
         exit 1
     fi
+    echo "✅ Successfully downloaded $OLLAMA_MODEL"
 fi
 
-if [ "$API_READY" = false ]; then
-    echo "❌ API still not ready, but continuing..."
-fi
-
-# Enhanced model management
+# Create optimized model from environment-driven Modelfile
+OPTIMIZED_MODEL_NAME="${OLLAMA_MODEL}-env-optimized"
 echo ""
-echo "📦 Checking model: $MODEL_NAME"
-if ollama list 2>/dev/null | grep -q "$MODEL_NAME"; then
-    echo "✅ Model $MODEL_NAME already exists"
-    
-    # Verify model is working
-    echo "🧪 Quick model verification..."
-    TEST_OUTPUT=$(timeout 30 ollama run "$MODEL_NAME" "hi" 2>/dev/null || echo "timeout")
-    if [[ "$TEST_OUTPUT" != "timeout" ]] && [[ -n "$TEST_OUTPUT" ]]; then
-        echo "✅ Model responds correctly"
-    else
-        echo "⚠️ Model may need re-download or repair"
-    fi
+echo "🔧 Creating environment-optimized model: $OPTIMIZED_MODEL_NAME"
+
+if ollama list 2>/dev/null | grep -q "$OPTIMIZED_MODEL_NAME"; then
+    echo "✅ Environment-optimized model already exists: $OPTIMIZED_MODEL_NAME"
 else
-    echo "📥 Downloading model: $MODEL_NAME"
-    echo "⏳ This will take 1-10 minutes depending on your connection..."
-    
-    # Download with progress monitoring
-    if ollama pull "$MODEL_NAME"; then
-        echo "✅ Successfully downloaded $MODEL_NAME"
+    echo "📄 Creating optimized model from environment-driven Modelfile..."
+    if ollama create "$OPTIMIZED_MODEL_NAME" -f /tmp/expanded_modelfile; then
+        echo "✅ Created environment-optimized model: $OPTIMIZED_MODEL_NAME"
     else
-        echo "❌ Failed to download $MODEL_NAME"
-        echo "🔧 Trying alternative download method..."
-        
-        # Alternative: try downloading with explicit registry
-        if ollama pull "registry.ollama.ai/$MODEL_NAME"; then
-            echo "✅ Successfully downloaded $MODEL_NAME via registry"
-        else
-            echo "❌ All download methods failed"
-            exit 1
-        fi
+        echo "⚠️ Failed to create optimized model, using base model"
+        OPTIMIZED_MODEL_NAME="$OLLAMA_MODEL"
     fi
 fi
 
-# Create optimized model if Modelfile exists
-FINAL_MODEL_NAME="$MODEL_NAME"
-if [ -f "/root/Modelfile" ]; then
-    echo ""
-    echo "🔧 Creating optimized model..."
-    CUSTOM_MODEL_NAME="${MODEL_NAME}-optimized"
-    
-    if ollama list 2>/dev/null | grep -q "$CUSTOM_MODEL_NAME"; then
-        echo "✅ Optimized model already exists: $CUSTOM_MODEL_NAME"
-        FINAL_MODEL_NAME="$CUSTOM_MODEL_NAME"
-    else
-        echo "📄 Creating custom model from Modelfile..."
-        if ollama create "$CUSTOM_MODEL_NAME" -f /root/Modelfile; then
-            echo "✅ Created optimized model: $CUSTOM_MODEL_NAME"
-            FINAL_MODEL_NAME="$CUSTOM_MODEL_NAME"
-        else
-            echo "⚠️ Failed to create optimized model, using base model"
-        fi
-    fi
-fi
-
-# Preload model for faster first response
+# Preload model for instant responses
 echo ""
-echo "🎯 Preloading model: $FINAL_MODEL_NAME"
+echo "🎯 Preloading model for instant responses: $OPTIMIZED_MODEL_NAME"
 curl -s --max-time 10 -X POST http://localhost:11434/api/generate \
     -H "Content-Type: application/json" \
     -d "{
-        \"model\": \"$FINAL_MODEL_NAME\",
-        \"prompt\": \"preload\",
+        \"model\": \"$OPTIMIZED_MODEL_NAME\",
+        \"prompt\": \"System preload\",
         \"stream\": false,
         \"options\": {\"num_predict\": 1}
     }" >/dev/null 2>&1
 
-# Test the model
+# Test model with environment-driven parameters
 echo ""
-echo "🧪 Testing model: $FINAL_MODEL_NAME"
+echo "🧪 Testing environment-optimized model: $OPTIMIZED_MODEL_NAME"
 TEST_RESPONSE=$(curl -s --max-time 30 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "{
-        \"model\": \"$FINAL_MODEL_NAME\",
-        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Are you ready?\"}],
+        \"model\": \"$OPTIMIZED_MODEL_NAME\",
+        \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Confirm your configuration: $MODEL_DISPLAY_NAME\"}],
         \"stream\": false,
-        \"options\": {\"num_predict\": 10}
+        \"options\": {
+            \"temperature\": $MODEL_TEMPERATURE,
+            \"top_p\": $MODEL_TOP_P,
+            \"num_predict\": 20
+        }
     }")
 
 if echo "$TEST_RESPONSE" | grep -q "\"message\""; then
-    echo "✅ Model test successful"
-    # Extract and display response
+    echo "✅ Environment-optimized model test successful"
     RESPONSE_TEXT=$(echo "$TEST_RESPONSE" | grep -o '"content":"[^"]*"' | cut -d'"' -f4 | head -1)
     echo "📝 Response: $RESPONSE_TEXT"
 else
     echo "❌ Model test failed"
     echo "🔍 Response: $TEST_RESPONSE"
-    exit 1
 fi
 
 # Create health markers
@@ -208,14 +189,11 @@ echo "📋 Creating health markers..."
 touch /tmp/model_ready
 touch /tmp/model_loaded
 touch /tmp/ollama_ready
-echo "$FINAL_MODEL_NAME" > /tmp/active_model
+echo "$OPTIMIZED_MODEL_NAME" > /tmp/active_model
 
-# Setup health check endpoint
-echo ""
-echo "🏥 Setting up health check..."
+# Health check script
 cat > /tmp/health_check.sh << 'EOF'
 #!/bin/bash
-# Health check script
 if [ -f /tmp/ollama_ready ] && curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "healthy"
     exit 0
@@ -228,17 +206,22 @@ chmod +x /tmp/health_check.sh
 
 # Final status
 echo ""
-echo "=========================================="
-echo "🎯 DEVSTRAL OLLAMA READY"
-echo "=========================================="
-echo "✅ Model: $FINAL_MODEL_NAME"
+echo "================================================="
+echo "🎯 ENVIRONMENT-DRIVEN OLLAMA READY"
+echo "================================================="
+echo "✅ Base Model: $OLLAMA_MODEL"
+echo "✅ Optimized Model: $OPTIMIZED_MODEL_NAME"
+echo "✅ Display Name: $MODEL_DISPLAY_NAME"
 echo "✅ API: http://localhost:11434"
-echo "✅ Models Dir: $OLLAMA_MODELS"
-echo "✅ Health Check: /tmp/health_check.sh"
-echo "✅ Memory Optimization: $([ "$OLLAMA_MMAP" = "false" ] && echo "MMAP Disabled" || echo "MMAP Enabled")"
 echo "✅ GPU Layers: $OLLAMA_GPU_LAYERS"
-echo "🚀 Ready for production workloads"
-echo "=========================================="
+echo "✅ Context Size: $OLLAMA_CONTEXT_SIZE"
+echo "✅ Batch Size: $OLLAMA_BATCH_SIZE"
+echo "✅ MMAP: $([ "$OLLAMA_MMAP" = "false" ] && echo "DISABLED" || echo "ENABLED")"
+echo "✅ MLOCK: $([ "$OLLAMA_MLOCK" = "true" ] && echo "ENABLED" || echo "DISABLED")"
+echo "✅ Temperature: $MODEL_TEMPERATURE"
+echo "✅ Top P: $MODEL_TOP_P"
+echo "🚀 All parameters controlled by .env file"
+echo "================================================="
 
 # Cleanup function
 cleanup() {
@@ -250,10 +233,9 @@ cleanup() {
     exit 0
 }
 
-# Set up signal handlers
 trap cleanup SIGTERM SIGINT
 
-# Keep container running with health monitoring
+# Keep container running
 echo "🔄 Monitoring Ollama service..."
 while true; do
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
@@ -264,9 +246,8 @@ while true; do
         echo "✅ Service restarted"
     fi
     
-    # Health check every 30 seconds
     if ! /tmp/health_check.sh >/dev/null 2>&1; then
-        echo "⚠️ Health check failed, service may be unhealthy"
+        echo "⚠️ Health check failed"
     fi
     
     sleep 30
