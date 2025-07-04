@@ -29,7 +29,7 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["/tmp/health_check.sh"]
+      test: ["CMD", "/tmp/health_check.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
