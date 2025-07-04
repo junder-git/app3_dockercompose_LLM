@@ -53,11 +53,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: ${REDIS_MEMORY_LIMIT:-1G}
+          cpus: ${REDIS_CPU}
+          memory: ${REDIS_MEMORY}
         reservations:
-          cpus: '0.25'
-          memory: 256M
+          cpus: ${REDIS_CPU}
+          memory: ${REDIS_MEMORY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -72,24 +72,23 @@ services:
       dockerfile: Dockerfile
     container_name: devstral-quart-app
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-devstral:24b}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE:-0.7}
-      - MODEL_TOP_P=${MODEL_TOP_P:-0.9}
-      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS:-2048}
-      - MODEL_TIMEOUT=${MODEL_TIMEOUT:-0}
-      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE:-10000}
-      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS:-7200}
-      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT:-25}
-      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS:-7}
-      - SECURE_COOKIES=${SECURE_COOKIES:-false}
-      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL:-30}
-      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-1000}
-      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
+      - REDIS_URL=${REDIS_URL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
+      - MODEL_TOP_P=${MODEL_TOP_P}
+      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS}
+      - MODEL_TIMEOUT=${MODEL_TIMEOUT}
+      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS}
+      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
+      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS}
+      - SECURE_COOKIES=${SECURE_COOKIES}
+      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL}
+      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS}
+      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT}
     volumes:
       # Bind mounts to local volumes directory
       - ./volumes/app_data:/app/data
@@ -105,11 +104,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: ${QUART_APP_MEMORY_LIMIT:-3G}
+          cpus: ${QUART_APP_CPU}
+          memory: ${QUART_APP_MEMORY}
         reservations:
-          cpus: '1.0'
-          memory: ${QUART_APP_MEMORY_RESERVATION:-1G}
+          cpus: ${QUART_APP_CPU}
+          memory: ${QUART_APP_MEMORY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

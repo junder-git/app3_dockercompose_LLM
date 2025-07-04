@@ -29,18 +29,6 @@ COPY Modelfile /root/Modelfile
 # Set permissions
 RUN chmod +x /scripts/init-ollama.sh
 
-# Environment variables for optimization
-ENV OLLAMA_HOST=0.0.0.0
-ENV OLLAMA_MLOCK=true
-ENV OLLAMA_MMAP=false
-ENV OLLAMA_KEEP_ALIVE=-1
-ENV OLLAMA_NOPRUNE=true
-ENV OLLAMA_MAX_LOADED_MODELS=1
-ENV OLLAMA_GPU_LAYERS=22
-ENV OLLAMA_NUM_THREAD=4
-ENV OLLAMA_CONTEXT_SIZE=16384
-ENV OLLAMA_BATCH_SIZE=256
-
 # Set Ollama data directory
 ENV OLLAMA_MODELS=/home/ollama/.ollama/models
 
