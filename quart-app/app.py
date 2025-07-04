@@ -1,24 +1,40 @@
-# quart-app/app.py - Fixed with Proper User Context Loading
+# quart-app/app.py - Debug version with better error handling
 import os
+import sys
 import secrets
+import asyncio
 from datetime import timedelta
 from dotenv import load_dotenv
 
-from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
-from quart_auth import AuthUser, QuartAuth, current_user
-from werkzeug.security import generate_password_hash
+print("🔍 Starting Quart app initialization...")
 
-# Import only essential blueprints
-from blueprints import auth_bp, chat_bp, admin_bp
-from blueprints.database import get_user_by_username, save_user, get_current_user_data
-from blueprints.models import User
-from blueprints.utils import generate_csrf_token, validate_csrf_token
+try:
+    from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
+    from quart_auth import AuthUser, QuartAuth, current_user
+    from werkzeug.security import generate_password_hash
+    print("✅ Core imports successful")
+except Exception as e:
+    print(f"❌ Core import failed: {e}")
+    sys.exit(1)
+
+try:
+    # Import only essential blueprints
+    from blueprints import auth_bp, chat_bp, admin_bp
+    from blueprints.database import get_user_by_username, save_user, get_current_user_data
+    from blueprints.models import User
+    from blueprints.utils import generate_csrf_token, validate_csrf_token
+    print("✅ Blueprint imports successful")
+except Exception as e:
+    print(f"❌ Blueprint import failed: {e}")
+    sys.exit(1)
 
 # Load environment variables
 load_dotenv()
+print("✅ Environment loaded")
 
 # Initialize Quart app
 app = Quart(__name__)
+print("✅ Quart app created")
 
 # Configure Quart
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -30,12 +46,22 @@ app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 
 # Initialize extensions
-auth = QuartAuth(app)
+try:
+    auth = QuartAuth(app)
+    print("✅ QuartAuth initialized")
+except Exception as e:
+    print(f"❌ QuartAuth initialization failed: {e}")
+    sys.exit(1)
 
 # Register essential blueprints only
-app.register_blueprint(auth_bp)
-app.register_blueprint(chat_bp)
-app.register_blueprint(admin_bp)
+try:
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(chat_bp)
+    app.register_blueprint(admin_bp)
+    print("✅ Blueprints registered")
+except Exception as e:
+    print(f"❌ Blueprint registration failed: {e}")
+    sys.exit(1)
 
 # Make sessions permanent by default
 @app.before_request
@@ -48,8 +74,12 @@ async def make_session_permanent():
 async def load_user_data():
     """Load current user data for template context"""
     g.current_user_data = None
-    if await current_user.is_authenticated:
-        g.current_user_data = await get_current_user_data(current_user.auth_id)
+    try:
+        if await current_user.is_authenticated:
+            g.current_user_data = await get_current_user_data(current_user.auth_id)
+    except Exception as e:
+        print(f"⚠️ Error loading user data: {e}")
+        g.current_user_data = None
 
 # CSRF Protection for POST requests
 @app.before_request
@@ -60,33 +90,43 @@ async def csrf_protect():
         if request.path == '/health':
             return
             
-        token = (await request.form).get('csrf_token') or request.headers.get('X-CSRF-Token')
-        if not await validate_csrf_token(token):
-            return jsonify({'error': 'Invalid CSRF token'}), 403
+        try:
+            token = (await request.form).get('csrf_token') or request.headers.get('X-CSRF-Token')
+            if not await validate_csrf_token(token):
+                return jsonify({'error': 'Invalid CSRF token'}), 403
+        except Exception as e:
+            print(f"⚠️ CSRF validation error: {e}")
+            return jsonify({'error': 'CSRF validation failed'}), 403
 
 # Security Headers Middleware
 @app.after_request
 async def add_security_headers(response):
     """Add security headers to all responses"""
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-    
-    # Strict CSP - NO JavaScript allowed except Bootstrap
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "font-src 'self' https://cdn.jsdelivr.net; "
-        "img-src 'self' data:; "
-        "script-src https://cdn.jsdelivr.net; "  # Only Bootstrap JS
-        "connect-src 'none'"  # No AJAX/WebSocket allowed
-    )
-    
-    # Add CSRF token to all HTML responses
-    if response.content_type and 'text/html' in response.content_type:
-        response.headers['X-CSRF-Token'] = await generate_csrf_token()
+    try:
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        
+        # Simplified CSP - NO JavaScript
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "img-src 'self' data:; "
+            "script-src 'none'; "
+            "connect-src 'none'"
+        )
+        
+        # Add CSRF token to all HTML responses
+        if response.content_type and 'text/html' in response.content_type:
+            try:
+                response.headers['X-CSRF-Token'] = await generate_csrf_token()
+            except:
+                pass  # Don't fail the request if CSRF token generation fails
+    except Exception as e:
+        print(f"⚠️ Error adding security headers: {e}")
     
     return response
 
@@ -94,49 +134,89 @@ async def add_security_headers(response):
 @app.context_processor
 async def inject_template_globals():
     """Inject global variables into all templates"""
-    return {
-        'csrf_token': await generate_csrf_token(),
-        'current_user_data': g.get('current_user_data')
-    }
+    try:
+        return {
+            'csrf_token': await generate_csrf_token(),
+            'current_user_data': g.get('current_user_data')
+        }
+    except Exception as e:
+        print(f"⚠️ Error injecting template globals: {e}")
+        return {
+            'csrf_token': '',
+            'current_user_data': None
+        }
 
 # Initialize admin user
 async def init_admin():
     """Create default admin user if not exists"""
-    ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
-    
-    admin = await get_user_by_username(ADMIN_USERNAME)
-    if not admin:
-        admin_user = User(
-            user_id='admin',  # Fixed ID for admin
-            username=ADMIN_USERNAME,
-            password_hash=generate_password_hash(ADMIN_PASSWORD),
-            is_admin=True
-        )
-        await save_user(admin_user)
-        app.logger.info(f"Created default admin user: {ADMIN_USERNAME}")
-    else:
-        # Ensure existing admin has correct admin status
-        if not admin.is_admin:
-            admin.is_admin = True
-            await save_user(admin)
-            app.logger.info(f"Fixed admin status for user: {ADMIN_USERNAME}")
+    try:
+        print("🔧 Initializing admin user...")
+        ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
+        ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+        
+        admin = await get_user_by_username(ADMIN_USERNAME)
+        if not admin:
+            admin_user = User(
+                user_id='admin',  # Fixed ID for admin
+                username=ADMIN_USERNAME,
+                password_hash=generate_password_hash(ADMIN_PASSWORD),
+                is_admin=True
+            )
+            await save_user(admin_user)
+            print(f"✅ Created default admin user: {ADMIN_USERNAME}")
+        else:
+            # Ensure existing admin has correct admin status
+            if not admin.is_admin:
+                admin.is_admin = True
+                await save_user(admin)
+                print(f"✅ Fixed admin status for user: {ADMIN_USERNAME}")
+            else:
+                print(f"✅ Admin user already exists: {ADMIN_USERNAME}")
+    except Exception as e:
+        print(f"❌ Error initializing admin user: {e}")
+        # Don't exit - let the app start anyway
 
 @app.before_serving
 async def startup():
-    await init_admin()
+    try:
+        print("🚀 Running startup tasks...")
+        await init_admin()
+        print("✅ Startup tasks completed")
+    except Exception as e:
+        print(f"⚠️ Startup task error: {e}")
 
 # Health check endpoint
 @app.route('/health')
 async def health():
-    return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
+    try:
+        return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
+    except Exception as e:
+        print(f"❌ Health check error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 # Routes
 @app.route('/')
 async def index():
-    if await current_user.is_authenticated:
-        return redirect(url_for('chat.chat'))
-    return redirect(url_for('auth.login'))
+    try:
+        if await current_user.is_authenticated:
+            return redirect(url_for('chat.chat'))
+        return redirect(url_for('auth.login'))
+    except Exception as e:
+        print(f"❌ Index route error: {e}")
+        return f"Error: {e}", 500
+
+# Error handlers
+@app.errorhandler(500)
+async def internal_error(error):
+    print(f"❌ Internal server error: {error}")
+    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
+
+@app.errorhandler(404)
+async def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+print("✅ Quart app configuration complete")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    print("🚀 Starting Quart app...")
+    app.run(debug=True, host='0.0.0.0', port=8000)

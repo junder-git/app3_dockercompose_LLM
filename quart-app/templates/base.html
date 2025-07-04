@@ -25,56 +25,34 @@
             <a class="navbar-brand" href="/">
                 <i class="bi bi-robot"></i> Devstral AI
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    {% if current_user.is_authenticated %}
-                        <li class="nav-item">
-                            <a class="nav-link {{ 'active' if request.endpoint == 'chat.chat' else '' }}" href="{{ url_for('chat.chat') }}">
-                                <i class="bi bi-chat"></i> Chat
-                            </a>
-                        </li>
-                        {% if current_user_data and current_user_data.is_admin %}
-                        <li class="nav-item">
-                            <a class="nav-link {{ 'active' if request.endpoint == 'admin.admin' else '' }}" href="{{ url_for('admin.admin') }}">
-                                <i class="bi bi-shield-lock"></i> Admin
-                            </a>
-                        </li>
-                        {% endif %}
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-person-circle"></i> 
-                                {% if current_user_data %}{{ current_user_data.username }}{% else %}User{% endif %}
-                                {% if current_user_data and current_user_data.is_admin %}
-                                <span class="badge bg-warning text-dark ms-1">Admin</span>
-                                {% endif %}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><span class="dropdown-item-text">
-                                    <i class="bi bi-info-circle"></i> 
-                                    User ID: {{ current_user.auth_id if current_user else 'Unknown' }}
-                                </span></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">
-                                    <i class="bi bi-box-arrow-right"></i> Logout
-                                </a></li>
-                            </ul>
-                        </li>
-                    {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link {{ 'active' if request.endpoint == 'auth.login' else '' }}" href="{{ url_for('auth.login') }}">
-                                <i class="bi bi-box-arrow-in-right"></i> Login
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {{ 'active' if request.endpoint == 'auth.register' else '' }}" href="{{ url_for('auth.register') }}">
-                                <i class="bi bi-person-plus"></i> Register
-                            </a>
-                        </li>
+            <div class="navbar-nav ms-auto">
+                {% if current_user.is_authenticated %}
+                    <a class="nav-link {{ 'active' if request.endpoint == 'chat.chat' else '' }}" href="{{ url_for('chat.chat') }}">
+                        <i class="bi bi-chat"></i> Chat
+                    </a>
+                    {% if current_user_data and current_user_data.is_admin %}
+                    <a class="nav-link {{ 'active' if request.endpoint == 'admin.admin' else '' }}" href="{{ url_for('admin.admin') }}">
+                        <i class="bi bi-shield-lock"></i> Admin
+                    </a>
                     {% endif %}
-                </ul>
+                    <span class="nav-link">
+                        <i class="bi bi-person-circle"></i> 
+                        {% if current_user_data %}{{ current_user_data.username }}{% else %}User{% endif %}
+                        {% if current_user_data and current_user_data.is_admin %}
+                        <span class="badge bg-warning text-dark ms-1">Admin</span>
+                        {% endif %}
+                    </span>
+                    <a class="nav-link" href="{{ url_for('auth.logout') }}">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
+                {% else %}
+                    <a class="nav-link {{ 'active' if request.endpoint == 'auth.login' else '' }}" href="{{ url_for('auth.login') }}">
+                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    </a>
+                    <a class="nav-link {{ 'active' if request.endpoint == 'auth.register' else '' }}" href="{{ url_for('auth.register') }}">
+                        <i class="bi bi-person-plus"></i> Register
+                    </a>
+                {% endif %}
             </div>
         </div>
     </nav>
@@ -87,7 +65,7 @@
                 <div class="alert alert-{{ 'danger' if category == 'error' else 'success' if category == 'success' else 'info' }} alert-dismissible fade show">
                     <i class="bi bi-{{ 'exclamation-triangle' if category == 'error' else 'check-circle' if category == 'success' else 'info-circle' }}"></i>
                     {{ message|e }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    <span class="btn-close" aria-label="Close" onclick="this.parentElement.style.display='none'">&times;</span>
                 </div>
                 {% endfor %}
             {% endif %}
@@ -95,5 +73,7 @@
         
         {% block content %}{% endblock %}
     </main>
+    
+    <!-- NO JAVASCRIPT - Pure HTML forms only -->
 </body>
 </html>
