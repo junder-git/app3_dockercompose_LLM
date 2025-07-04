@@ -10,8 +10,8 @@ services:
     # Keep privileged mode for advanced memory management
     privileged: true
     volumes:
-      # FIXED: Use explicit volume path and ensure proper permissions
-      - ollama_models:/home/ollama/.ollama
+      # Bind mount to local volumes directory
+      - ./volumes/ollama_models:/home/ollama/.ollama
       - /dev/shm:/dev/shm
     environment:
       # Core Ollama settings (inherited by Dockerfile ENV)
@@ -84,9 +84,9 @@ services:
     build: ./redis
     container_name: devstral-redis
     volumes:
-      # Volume mapping with proper permissions
-      - redis_data:/data
-      - redis_logs:/var/log/redis
+      # Bind mounts to local volumes directory
+      - ./volumes/redis_data:/data
+      - ./volumes/redis_logs:/var/log/redis
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
@@ -133,9 +133,9 @@ services:
       - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS:-1000}
       - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT:-5000}
     volumes:
-      # Persistent app data
-      - app_data:/app/data
-      - app_logs:/app/logs
+      # Bind mounts to local volumes directory
+      - ./volumes/app_data:/app/data
+      - ./volumes/app_logs:/app/logs
       # Don't mount source code in production for proper volume persistence
     depends_on:
       ollama:
@@ -168,8 +168,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static:ro
-      - nginx_cache:/var/cache/nginx
-      - nginx_logs:/var/log/nginx
+      - ./volumes/nginx_cache:/var/cache/nginx
+      - ./volumes/nginx_logs:/var/log/nginx
     depends_on:
       quart-app:
         condition: service_healthy
@@ -191,20 +191,3 @@ networks:
     ipam:
       config:
         - subnet: 172.21.0.0/16
-
-volumes:
-  # Simple named volumes - Docker will handle persistence automatically
-  nginx_cache:
-    driver: local
-  nginx_logs:
-    driver: local
-  ollama_models:
-    driver: local
-  app_data:
-    driver: local
-  app_logs:
-    driver: local
-  redis_data:
-    driver: local
-  redis_logs:
-    driver: local
