@@ -216,14 +216,14 @@ async def save_message(user_id: str, role: str, content: str, session_id: str):
         await r.hset(f"session:{session_id}", mapping=session_obj.to_dict())
 
 async def get_session_messages(session_id: str, limit: int = None) -> List[Dict]:
-    """Get messages for a specific chat session"""
+    """Get messages for a specific chat session in chronological order"""
     if limit is None:
-        limit = int(os.environ.get('CHAT_HISTORY_LIMIT', '100'))
+        limit = int(os.environ.get('CHAT_HISTORY_LIMIT'))
     
     r = await get_redis()
     
-    # Get message IDs sorted by timestamp (newest first)
-    message_ids = await r.zrevrange(f"session_messages:{session_id}", 0, limit - 1)
+    # Get message IDs sorted by timestamp (oldest first for chronological order)
+    message_ids = await r.zrange(f"session_messages:{session_id}", -limit, -1)
     
     messages = []
     for msg_id in message_ids:
@@ -231,7 +231,7 @@ async def get_session_messages(session_id: str, limit: int = None) -> List[Dict]
         if msg_data:
             messages.append(msg_data)
     
-    return messages[::-1]  # Reverse to get oldest first
+    return messages  # Return in chronological order (oldest first)
 
 async def get_user_messages(user_id: str, limit: int = None) -> List[Dict]:
     """Get ALL messages for a user across all sessions (for admin view)"""

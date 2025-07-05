@@ -4,7 +4,41 @@
 
 {% block content %}
 <div class="row">
-    <div class="col-12">
+    <div class="col-md-3">
+        <!-- Chat Sessions Sidebar -->
+        <div class="card border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-chat-square"></i> Chat Sessions
+                </h6>
+                <button class="btn btn-sm btn-outline-primary" id="new-chat-btn">
+                    <i class="bi bi-plus"></i> New
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="chat-sessions">
+                    {% for session in chat_sessions %}
+                    <a href="/chat?session={{ session.id }}" 
+                       class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if session.id == current_session_id %}active{% endif %}">
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">{{ session.title }}</div>
+                            <small class="text-muted">{{ session.updated_at[:10] if session.updated_at else 'Unknown' }}</small>
+                        </div>
+                        {% if session.id != current_session_id %}
+                        <button class="btn btn-sm btn-outline-danger delete-session-btn" 
+                                data-session-id="{{ session.id }}" 
+                                onclick="event.preventDefault(); deleteSession('{{ session.id }}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>
                 <i class="bi bi-chat-dots" aria-hidden="true"></i> Chat with AI
@@ -16,7 +50,7 @@
         
         <div class="chat-container">
             <div class="chat-messages" id="chat-messages">
-                <!-- Display existing messages -->
+                <!-- Display existing messages in chronological order -->
                 {% if messages %}
                     {% for message in messages %}
                     <article class="message {{ 'user-message' if message.role == 'user' else 'assistant-message' }}" {% if loop.last %}id="latest"{% endif %}>
@@ -77,6 +111,21 @@
                         </small>
                     </div>
                 {% endif %}
+                
+                <!-- Streaming response area -->
+                <div id="streaming-response" class="message assistant-message" style="display: none;">
+                    <div class="message-content">
+                        <div class="ai-response" id="streaming-text"></div>
+                    </div>
+                    <div class="streaming-controls mt-2">
+                        <button id="interrupt-btn" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-stop-circle"></i> Stop Generation
+                        </button>
+                        <span class="text-muted ms-2">
+                            <i class="bi bi-cpu"></i> Generating...
+                        </span>
+                    </div>
+                </div>
             </div>
             
             <!-- Message input form -->
@@ -96,7 +145,7 @@
                             autofocus
                             aria-describedby="message-help"
                         ></textarea>
-                        <button class="btn btn-primary" type="submit">
+                        <button class="btn btn-primary" type="submit" id="send-btn">
                             <i class="bi bi-send" aria-hidden="true"></i> Send
                         </button>
                     </div>
@@ -113,24 +162,262 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script>
 $(document).ready(function() {
+    let eventSource = null;
+    let streamId = null;
+    let currentSessionId = '{{ current_session_id }}';
+    let isStreaming = false;
+    let streamedResponse = '';
+    let currentUserMessage = '';
+    
+    // Get session ID from page if not provided
+    if (!currentSessionId) {
+        currentSessionId = 'default_session';
+    }
+    
     // Enter key submission
     $("#message").keydown(function (e) {     
-        if(e.which === 13 && !e.shiftKey) {         
+        if(e.which === 13 && !e.shiftKey && !isStreaming) {         
             e.preventDefault();              
-            $(this).closest("form").submit();     
+            handleMessageSubmit();
         } 
     });
     
-    // Auto-scroll to latest message on page load
-    if (window.location.hash === '#latest' || $('.message').length > 0) {
-        const latestMessage = $('#latest');
-        if (latestMessage.length > 0) {
-            // Scroll so the latest message is at the top of the viewport
-            $('html, body').animate({
-                scrollTop: latestMessage.offset().top - 20
-            }, 500);
+    // Form submission
+    $("#chatForm").on('submit', function(e) {
+        e.preventDefault(); // Always prevent default form submission
+        if (!isStreaming) {
+            handleMessageSubmit();
+        }
+    });
+    
+    // Interrupt button
+    $("#interrupt-btn").on('click', function() {
+        interruptStream();
+    });
+    
+    // New chat button
+    $("#new-chat-btn").on('click', function() {
+        window.location.href = '/chat/new';
+    });
+    
+    function handleMessageSubmit() {
+        const message = $("#message").val().trim();
+        if (!message) return;
+        
+        currentUserMessage = message;
+        
+        // Add user message to chat immediately
+        addUserMessage(message);
+        
+        // Clear input
+        $("#message").val('');
+        
+        // Start streaming
+        startStreaming(message);
+    }
+    
+    function addUserMessage(message) {
+        const messageHtml = `
+            <article class="message user-message">
+                <div class="message-content">
+                    <pre>${escapeHtml(message)}</pre>
+                </div>
+                <small class="text-muted message-timestamp">
+                    <time datetime="${new Date().toISOString()}">
+                        ${new Date().toLocaleString()}
+                    </time>
+                </small>
+            </article>
+        `;
+        $("#chat-messages").append(messageHtml);
+        scrollToBottom();
+    }
+    
+    function startStreaming(message) {
+        if (isStreaming) return;
+        
+        isStreaming = true;
+        streamId = 'stream_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        streamedResponse = '';
+        
+        // Show streaming response area
+        $("#streaming-response").show();
+        $("#streaming-text").html('');
+        
+        // Disable form
+        $("#send-btn").prop('disabled', true);
+        $("#message").prop('disabled', true);
+        
+        // Create EventSource
+        const params = new URLSearchParams({
+            message: message,
+            session_id: currentSessionId,
+            stream_id: streamId
+        });
+        
+        eventSource = new EventSource(`/chat/stream?${params}`);
+        
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.error) {
+                    handleStreamError(data.error);
+                } else if (data.interrupted) {
+                    handleStreamInterrupted();
+                } else if (data.done) {
+                    handleStreamComplete();
+                } else if (data.content) {
+                    streamedResponse += data.content;
+                    updateStreamingText(streamedResponse);
+                    if (data.cached) {
+                        // Show cached indicator
+                        $("#streaming-response .streaming-controls").prepend(
+                            '<span class="badge bg-success me-2"><i class="bi bi-lightning-fill"></i> Cached</span>'
+                        );
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing stream data:', e);
+            }
+        };
+        
+        eventSource.onerror = function(event) {
+            console.error('EventSource error:', event);
+            handleStreamError('Connection error');
+        };
+        
+        scrollToBottom();
+    }
+    
+    function updateStreamingText(text) {
+        // Convert markdown to HTML (basic implementation)
+        const html = convertMarkdownToHtml(text);
+        $("#streaming-text").html(html);
+        scrollToBottom();
+    }
+    
+    function handleStreamComplete() {
+        finishStreaming();
+        
+        // No need to save response - it's already saved in the stream
+        // Convert to permanent message
+        convertStreamingToPermanent();
+    }
+    
+    function handleStreamError(error) {
+        finishStreaming();
+        $("#streaming-text").html(`<div class="alert alert-danger">Error: ${error}</div>`);
+        setTimeout(() => {
+            $("#streaming-response").hide();
+        }, 3000);
+    }
+    
+    function handleStreamInterrupted() {
+        finishStreaming();
+        $("#streaming-text").append('<div class="text-muted mt-2"><i class="bi bi-stop-circle"></i> Generation interrupted</div>');
+        
+        // Response is already saved in the stream, just convert to permanent
+        if (streamedResponse.trim()) {
+            convertStreamingToPermanent();
+        } else {
+            setTimeout(() => {
+                $("#streaming-response").hide();
+            }, 2000);
         }
     }
+    
+    function finishStreaming() {
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+        
+        isStreaming = false;
+        
+        // Re-enable form
+        $("#send-btn").prop('disabled', false);
+        $("#message").prop('disabled', false);
+        $("#message").focus();
+    }
+    
+    function convertStreamingToPermanent() {
+        const html = $("#streaming-text").html();
+        const messageHtml = `
+            <article class="message assistant-message" id="latest">
+                <div class="message-content">
+                    <div class="ai-response">${html}</div>
+                </div>
+                <small class="text-muted message-timestamp">
+                    <time datetime="${new Date().toISOString()}">
+                        ${new Date().toLocaleString()}
+                    </time>
+                </small>
+            </article>
+        `;
+        
+        $("#streaming-response").before(messageHtml);
+        $("#streaming-response").hide();
+        scrollToBottom();
+    }
+    
+    function interruptStream() {
+        if (!isStreaming || !streamId) return;
+        
+        $.ajax({
+            url: '/chat/interrupt',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                stream_id: streamId
+            })
+        });
+    }
+    
+    function scrollToBottom() {
+        $("#chat-messages").scrollTop($("#chat-messages")[0].scrollHeight);
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    function convertMarkdownToHtml(text) {
+        // Basic markdown conversion for streaming
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+    }
+    
+    // Auto-scroll to bottom on page load
+    if ($('.message').length > 0) {
+        scrollToBottom();
+    }
 });
+
+// Delete session function
+function deleteSession(sessionId) {
+    if (confirm('Are you sure you want to delete this chat session?')) {
+        $.ajax({
+            url: '/chat/delete_session',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                session_id: sessionId
+            }),
+            success: function(response) {
+                if (response.success) {
+                    location.reload();
+                } else {
+                    alert('Error deleting session: ' + response.message);
+                }
+            }
+        });
+    }
+}
 </script>
 {% endblock %}

@@ -1,12 +1,13 @@
-# quart-app/blueprints/chat.py - ALL ISSUES FIXED
+# quart-app/blueprints/chat.py - Complete streaming implementation
 import os
 import hashlib
 import aiohttp
 import asyncio
 import json
 import time
-from typing import List, Dict
-from quart import Blueprint, render_template, request, redirect, url_for, flash, session
+import uuid
+from typing import List, Dict, AsyncGenerator
+from quart import Blueprint, render_template, request, redirect, url_for, flash, Response
 from quart_auth import login_required, current_user
 
 from .database import (
@@ -18,30 +19,33 @@ from .utils import escape_html
 
 chat_bp = Blueprint('chat', __name__)
 
-# AI Model configuration - ONLY from environment variables
+# AI Model configuration - ONLY from environment variables, NO DEFAULTS
 OLLAMA_URL = os.environ.get('OLLAMA_URL')
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL')
 
-# All parameters from environment - no fallbacks
-MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE', '0.7'))
-MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
-MODEL_TOP_K = int(os.environ.get('MODEL_TOP_K', '40'))
-MODEL_REPEAT_PENALTY = float(os.environ.get('MODEL_REPEAT_PENALTY', '1.1'))
-MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '1024'))
-MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '120'))
+# All parameters from environment - NO DEFAULTS
+MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE'))
+MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P'))
+MODEL_TOP_K = int(os.environ.get('MODEL_TOP_K'))
+MODEL_REPEAT_PENALTY = float(os.environ.get('MODEL_REPEAT_PENALTY'))
+MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS'))
+MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT'))
 
 # Hardware settings from environment
-OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '29'))
-OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD', '4'))
-OLLAMA_CONTEXT_SIZE = int(os.environ.get('OLLAMA_CONTEXT_SIZE', '8192'))
-OLLAMA_BATCH_SIZE = int(os.environ.get('OLLAMA_BATCH_SIZE', '128'))
+OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS'))
+OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD'))
+OLLAMA_CONTEXT_SIZE = int(os.environ.get('OLLAMA_CONTEXT_SIZE'))
+OLLAMA_BATCH_SIZE = int(os.environ.get('OLLAMA_BATCH_SIZE'))
 
 # CRITICAL: Memory management - proper boolean conversion
-MODEL_USE_MMAP = os.environ.get('MODEL_USE_MMAP', 'false').lower() == 'true'
-MODEL_USE_MLOCK = os.environ.get('MODEL_USE_MLOCK', 'true').lower() == 'true'
+MODEL_USE_MMAP = os.environ.get('MODEL_USE_MMAP').lower() == 'true'
+MODEL_USE_MLOCK = os.environ.get('MODEL_USE_MLOCK').lower() == 'true'
 
-# Keep alive setting
-OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '-1')
+# Other settings from environment
+OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE')
+# Convert keep_alive to proper format for Ollama
+if OLLAMA_KEEP_ALIVE == '-1':
+    OLLAMA_KEEP_ALIVE = -1  # Convert to integer
 MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
 
 def get_active_model():
@@ -54,20 +58,11 @@ def get_active_model():
 
 ACTIVE_MODEL = get_active_model()
 
-print(f"🔧 Chat Blueprint Config:")
-print(f"  Active Model: {ACTIVE_MODEL}")
-print(f"  OLLAMA_URL: {OLLAMA_URL}")
-print(f"  MMAP: {MODEL_USE_MMAP}")
-print(f"  MLOCK: {MODEL_USE_MLOCK}")
-print(f"  Context Size: {OLLAMA_CONTEXT_SIZE}")
-print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
-print(f"  Temperature: {MODEL_TEMPERATURE}")
-print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
-print(f"  Timeout: {MODEL_TIMEOUT}")
-print(f"  Keep Alive: {OLLAMA_KEEP_ALIVE}")
+# Global dictionary to track active streams
+active_streams = {}
 
-async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
-    """Get AI response - server-side only, no streaming"""
+async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
+    """Stream AI response with interruption capability"""
     
     try:
         # Build messages array
@@ -97,11 +92,12 @@ async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
             'content': user_prompt
         })
         
-        # FIXED: Build payload with only valid options
+        # Build payload with ALL environment settings
         payload = {
             'model': ACTIVE_MODEL,
             'messages': messages,
-            'stream': False,  # Server-side only
+            'stream': True,  # Enable streaming
+            'keep_alive': OLLAMA_KEEP_ALIVE,
             'options': {
                 'temperature': MODEL_TEMPERATURE,
                 'top_p': MODEL_TOP_P,
@@ -113,24 +109,10 @@ async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
                 'num_gpu': OLLAMA_GPU_LAYERS,
                 'num_thread': OLLAMA_NUM_THREAD,
                 'use_mmap': MODEL_USE_MMAP,
-                # REMOVED: use_mlock - not supported in API calls
+                'use_mlock': MODEL_USE_MLOCK,
                 'stop': MODEL_STOP_SEQUENCES
             }
         }
-        
-        # Add keep_alive properly
-        if OLLAMA_KEEP_ALIVE == '-1':
-            payload['keep_alive'] = -1  # Integer for permanent
-        elif OLLAMA_KEEP_ALIVE:
-            payload['keep_alive'] = OLLAMA_KEEP_ALIVE
-        
-        print(f"🔧 AI Request:")
-        print(f"  Model: {ACTIVE_MODEL}")
-        print(f"  MMAP: {MODEL_USE_MMAP}")
-        print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
-        print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
-        print(f"  Temperature: {MODEL_TEMPERATURE}")
-        print(f"  Keep Alive: {payload.get('keep_alive', 'Not set')}")
         
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         
@@ -143,40 +125,69 @@ async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
                 
                 if response.status != 200:
                     error_text = await response.text()
-                    return f"API Error {response.status}: {error_text}"
+                    yield f"data: {json.dumps({'error': f'API Error {response.status}: {error_text}'})}\n\n"
+                    return
                 
-                # Get response
-                data = await response.json()
-                
-                if 'message' in data and 'content' in data['message']:
-                    return data['message']['content']
-                else:
-                    return "Error: Invalid response format"
+                # Stream the response
+                async for line in response.content:
+                    # Check if stream should be interrupted
+                    if stream_id and stream_id in active_streams and active_streams[stream_id].get('interrupt'):
+                        yield f"data: {json.dumps({'interrupted': True})}\n\n"
+                        break
+                    
+                    line = line.decode('utf-8').strip()
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            if 'message' in data and 'content' in data['message']:
+                                content = data['message']['content']
+                                if content:
+                                    yield f"data: {json.dumps({'content': content})}\n\n"
+                            
+                            # Check if done
+                            if data.get('done', False):
+                                yield f"data: {json.dumps({'done': True})}\n\n"
+                                break
+                        except json.JSONDecodeError:
+                            continue
     
     except asyncio.TimeoutError:
-        return f"Timeout: Response took longer than {MODEL_TIMEOUT}s."
-    except aiohttp.ClientError as e:
-        return f"Connection Error: {str(e)}"
+        yield f"data: {json.dumps({'error': f'Timeout: Response took longer than {MODEL_TIMEOUT}s.'})}\n\n"
     except Exception as e:
-        print(f"AI error: {e}")
-        return f"Error: AI service unavailable. ({str(e)})"
+        yield f"data: {json.dumps({'error': f'Error: {str(e)}'})}\n\n"
+    finally:
+        # Clean up stream tracking
+        if stream_id and stream_id in active_streams:
+            del active_streams[stream_id]
 
-@chat_bp.route('/chat', methods=['GET', 'POST'])
+@chat_bp.route('/chat', methods=['GET'])
+@chat_bp.route('/chat/new', methods=['GET'])
 @login_required
 async def chat():
-    """Main chat interface - pure server-side processing"""
+    """Main chat interface with session management"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
     
-    current_session_id = await get_or_create_current_session(user_data.id)
+    # Get session ID from query parameter or create new
+    requested_session_id = request.args.get('session')
     
-    if request.method == 'POST':
-        # Handle message submission
-        return await handle_chat_message(user_data.id, current_session_id, user_data.username)
+    if request.path == '/chat/new' or not requested_session_id:
+        # Create new session
+        current_session_id = await get_or_create_current_session(user_data.id)
+    else:
+        # Use requested session or fallback to default
+        current_session_id = requested_session_id
+        # Verify session exists and belongs to user
+        session_obj = await get_chat_session(current_session_id)
+        if not session_obj or session_obj.user_id != user_data.id:
+            current_session_id = await get_or_create_current_session(user_data.id)
     
-    # GET request - show chat page with messages
-    messages = await get_session_messages(current_session_id, 25)
+    # Get all user sessions for sidebar (limited to 5)
+    chat_sessions = await get_user_chat_sessions(user_data.id)
+    
+    # Get messages for current session
+    messages = await get_session_messages(current_session_id, 50)
     
     formatted_messages = []
     for msg in messages:
@@ -189,77 +200,140 @@ async def chat():
     
     return await render_template('chat/index.html', 
                                username=user_data.username,
-                               messages=formatted_messages)
+                               messages=formatted_messages,
+                               current_session_id=current_session_id,
+                               chat_sessions=chat_sessions)
 
-async def handle_chat_message(user_id: str, session_id: str, username: str):
-    """Handle chat message submission - server-side processing only"""
+@chat_bp.route('/chat/stream')
+@login_required
+async def chat_stream():
+    """Server-Sent Events endpoint for streaming responses with real-time DB updates"""
+    user_data = await get_current_user_data(current_user.auth_id)
+    if not user_data:
+        return redirect(url_for('auth.login'))
+    
+    # Get parameters from query string
+    message = request.args.get('message', '')
+    session_id = request.args.get('session_id', '')
+    stream_id = request.args.get('stream_id', '')
+    
+    if not message or not session_id:
+        async def error_stream():
+            yield f"data: {json.dumps({'error': 'Missing message or session_id'})}\n\n"
+        return Response(error_stream(), mimetype='text/event-stream')
     
     # Check rate limit
-    if not await check_rate_limit(user_id):
-        flash('Rate limit exceeded. Please wait before sending another message.', 'error')
-        return redirect(url_for('chat.chat'))
+    if not await check_rate_limit(user_data.id):
+        async def rate_limit_stream():
+            yield f"data: {json.dumps({'error': 'Rate limit exceeded'})}\n\n"
+        return Response(rate_limit_stream(), mimetype='text/event-stream')
     
-    # Get user message
-    form_data = await request.form
-    user_message = form_data.get('message', '').strip()
-    
-    if not user_message:
-        flash('Message cannot be empty.', 'error')
-        return redirect(url_for('chat.chat'))
-    
-    # Message length validation
-    if len(user_message) > 10000:
-        flash('Message too long. Maximum 10,000 characters.', 'error')
-        return redirect(url_for('chat.chat'))
-    
-    # Check for recent duplicates
-    recent_messages = await get_session_messages(session_id, 3)
-    for msg in recent_messages:
-        if (msg.get('role') == 'user' and 
-            msg.get('content') == user_message and 
-            msg.get('timestamp')):
-            try:
-                from datetime import datetime
-                msg_time = datetime.fromisoformat(msg.get('timestamp').replace('Z', '+00:00'))
-                if (time.time() - msg_time.timestamp()) < 10:
-                    flash('Duplicate message detected. Please wait before sending the same message again.', 'error')
-                    return redirect(url_for('chat.chat'))
-            except:
-                pass
-    
-    # Save user message
-    await save_message(user_id, 'user', user_message, session_id)
-    
-    # Check cache
-    prompt_hash = hashlib.md5(user_message.encode()).hexdigest()
-    cached_response = await get_cached_response(prompt_hash)
-    
-    if cached_response:
-        await save_message(user_id, 'assistant', cached_response, session_id)
-        # REMOVED: flash('Response retrieved from cache.', 'success')
-        return redirect(url_for('chat.chat') + '#latest')
+    # Save user message immediately to database
+    await save_message(user_data.id, 'user', message, session_id)
     
     # Get chat history for context
     chat_history = await get_session_messages(session_id, 8)
     
-    # Generate AI response
-    try:
-        ai_response = await get_ai_response(user_message, chat_history)
+    # Check cache first
+    prompt_hash = hashlib.md5(message.encode()).hexdigest()
+    cached_response = await get_cached_response(prompt_hash)
+    
+    if cached_response:
+        # Save cached response immediately to database
+        await save_message(user_data.id, 'assistant', cached_response, session_id)
         
-        if ai_response and ai_response.strip():
-            # Save AI response
-            await save_message(user_id, 'assistant', ai_response.strip(), session_id)
-            await cache_response(prompt_hash, ai_response.strip())
-            # REMOVED: flash('AI response generated successfully.', 'success')
-        else:
-            flash('No response from AI. Please try again.', 'error')
+        # Return cached response as if it was streamed
+        async def cached_stream():
+            yield f"data: {json.dumps({'content': cached_response, 'cached': True})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        return Response(cached_stream(), mimetype='text/event-stream')
     
-    except Exception as e:
-        print(f"Error generating AI response: {e}")
-        flash('Error generating AI response. Please try again.', 'error')
+    # Track this stream
+    active_streams[stream_id] = {'interrupt': False}
     
-    # Redirect with anchor to scroll to latest message
-    return redirect(url_for('chat.chat') + '#latest')
+    # Stream the AI response with real-time DB updates
+    async def streaming_with_db_updates():
+        full_response = ''
+        
+        async for chunk in stream_ai_response(message, chat_history, stream_id):
+            yield chunk
+            
+            # Parse the chunk to get content
+            if chunk.startswith('data: '):
+                try:
+                    data = json.loads(chunk[6:].strip())
+                    if 'content' in data:
+                        full_response += data['content']
+                    elif data.get('done'):
+                        # Save complete response to database immediately
+                        if full_response.strip():
+                            await save_message(user_data.id, 'assistant', full_response, session_id)
+                            # Cache the response
+                            await cache_response(prompt_hash, full_response)
+                    elif data.get('interrupted'):
+                        # Save partial response if interrupted
+                        if full_response.strip():
+                            interrupted_response = full_response + '\n\n[Generation interrupted]'
+                            await save_message(user_data.id, 'assistant', interrupted_response, session_id)
+                except (json.JSONDecodeError, KeyError):
+                    pass
+    
+    return Response(
+        streaming_with_db_updates(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+        }
+    )
+
+@chat_bp.route('/chat/interrupt', methods=['POST'])
+@login_required
+async def interrupt_stream():
+    """Interrupt an active stream"""
+    data = await request.json
+    stream_id = data.get('stream_id')
+    
+    if stream_id and stream_id in active_streams:
+        active_streams[stream_id]['interrupt'] = True
+        return {'success': True}
+    
+    return {'success': False}, 404
+
+@chat_bp.route('/chat/delete_session', methods=['POST'])
+@login_required
+async def delete_session():
+    """Delete a chat session"""
+    data = await request.json
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return {'success': False, 'message': 'Session ID required'}, 400
+    
+    user_data = await get_current_user_data(current_user.auth_id)
+    if not user_data:
+        return {'success': False, 'message': 'Unauthorized'}, 401
+    
+    # Verify session belongs to user
+    session_obj = await get_chat_session(session_id)
+    if not session_obj or session_obj.user_id != user_data.id:
+        return {'success': False, 'message': 'Session not found'}, 404
+    
+    # Don't allow deleting if it's the only session
+    user_sessions = await get_user_chat_sessions(user_data.id)
+    if len(user_sessions) <= 1:
+        return {'success': False, 'message': 'Cannot delete the last session'}, 400
+    
+    # Delete the session
+    await delete_chat_session(user_data.id, session_id)
+    
+    return {'success': True, 'message': 'Session deleted successfully'}
+
+async def handle_chat_message(user_id: str, session_id: str, username: str):
+    """Legacy handler - no longer used with streaming"""
+    # This is kept for backward compatibility but streaming handles everything now
+    return redirect(url_for('chat.chat', session=session_id))
 
 @chat_bp.route('/chat/health')
 @login_required
