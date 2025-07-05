@@ -16,7 +16,7 @@ def admin_required(f):
     async def decorated_function(*args, **kwargs):
         user_data = await get_current_user_data(current_user.auth_id)
         if not user_data or not user_data.is_admin:
-            flash('Admin access required', 'error')
+            await flash('Admin access required', 'error')
             return redirect(url_for('chat.chat'))
         return await f(*args, **kwargs)
     return decorated_function
@@ -42,21 +42,21 @@ async def admin_database_cleanup():
     cleanup_type = form_data.get('type')
     
     if not cleanup_type:
-        flash('Cleanup type is required', 'error')
+        await flash('Cleanup type is required', 'error')
         return redirect(url_for('admin.admin'))
     
     valid_types = ['complete_reset', 'fix_users', 'recreate_admin', 'clear_cache', 'fix_sessions']
     if cleanup_type not in valid_types:
-        flash('Invalid cleanup type', 'error')
+        await flash('Invalid cleanup type', 'error')
         return redirect(url_for('admin.admin'))
     
     # Perform cleanup
     result = await cleanup_database(cleanup_type, current_user.auth_id)
     
     if result['success']:
-        flash(result['message'], 'success')
+        await flash(result['message'], 'success')
     else:
-        flash(result['message'], 'error')
+        await flash(result['message'], 'error')
     
     return redirect(url_for('admin.admin'))
 
@@ -68,15 +68,15 @@ async def admin_approve_user():
     user_id = form_data.get('user_id')
     
     if not user_id:
-        flash('User ID is required', 'error')
+        await flash('User ID is required', 'error')
         return redirect(url_for('admin.admin'))
     
     result = await approve_user(user_id)
     
     if result['success']:
-        flash(result['message'], 'success')
+        await flash(result['message'], 'success')
     else:
-        flash(result['message'], 'error')
+        await flash(result['message'], 'error')
     
     return redirect(url_for('admin.admin'))
 
@@ -88,15 +88,15 @@ async def admin_reject_user():
     user_id = form_data.get('user_id')
     
     if not user_id:
-        flash('User ID is required', 'error')
+        await flash('User ID is required', 'error')
         return redirect(url_for('admin.admin'))
     
     result = await reject_user(user_id)
     
     if result['success']:
-        flash(result['message'], 'success')
+        await flash(result['message'], 'success')
     else:
-        flash(result['message'], 'error')
+        await flash(result['message'], 'error')
     
     return redirect(url_for('admin.admin'))
 
@@ -112,7 +112,7 @@ async def admin_user_detail(user_id):
     user_info = next((u for u in users if u.id == user_id), None)
     
     if not user_info:
-        flash('User not found', 'error')
+        await flash('User not found', 'error')
         return redirect(url_for('admin.admin'))
     
     # Format messages for display
@@ -132,14 +132,14 @@ async def admin_delete_user(user_id):
     """Delete a user via form submission"""
     # Check if trying to delete self
     if user_id == current_user.auth_id:
-        flash('Cannot delete your own account', 'error')
+        await flash('Cannot delete your own account', 'error')
         return redirect(url_for('admin.admin'))
     
     result = await delete_user(user_id)
     
     if result['success']:
-        flash(result['message'], 'success')
+        await flash(result['message'], 'success')
     else:
-        flash(result['message'], 'error')
+        await flash(result['message'], 'error')
     
     return redirect(url_for('admin.admin'))

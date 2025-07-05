@@ -64,7 +64,7 @@
                 <!-- Display existing messages in chronological order -->
                 {% if messages %}
                     {% for message in messages %}
-                    <article class="message {{ 'user-message' if message.role == 'user' else 'assistant-message' }}" {% if loop.last %}id="latest"{% endif %}>
+                    <article class="message {{ 'user-message' if message.role == 'user' else 'assistant-message' }}">
                         <div class="message-content">
                             {% if message.role == 'user' %}
                                 <!-- User messages as plain text -->
@@ -123,20 +123,8 @@
                     </div>
                 {% endif %}
                 
-                <!-- Streaming response area -->
-                <div id="streaming-response" class="message assistant-message" style="display: none;">
-                    <div class="message-content">
-                        <div class="ai-response" id="streaming-text"></div>
-                    </div>
-                    <div class="streaming-controls mt-2">
-                        <button id="interrupt-btn" class="btn btn-sm btn-outline-danger">
-                            <i class="bi bi-stop-circle"></i> Stop Generation
-                        </button>
-                        <span class="text-muted ms-2">
-                            <i class="bi bi-cpu"></i> Generating...
-                        </span>
-                    </div>
-                </div>
+                <!-- Streaming responses will be inserted here dynamically by JavaScript -->
+                <!-- No static streaming response div - it will be created as needed -->
             </div>
             
             <!-- Message input form -->
@@ -173,6 +161,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 <script>
+// Insert the fixed JavaScript here
 $(document).ready(function() {
     let eventSource = null;
     let streamId = null;
@@ -180,7 +169,7 @@ $(document).ready(function() {
     let isStreaming = false;
     let streamedResponse = '';
     let currentUserMessage = '';
-    let refreshNeeded = false;
+    let currentUserMessageElement = null;
     
     // Configure marked.js for better markdown support
     marked.setOptions({
@@ -236,11 +225,6 @@ $(document).ready(function() {
         }
     });
     
-    // Interrupt button
-    $("#interrupt-btn").on('click', function() {
-        interruptStream();
-    });
-    
     // New chat button
     $("#new-chat-btn").on('click', function() {
         $.ajax({
@@ -291,31 +275,40 @@ $(document).ready(function() {
         
         currentUserMessage = message;
         
-        // Add user message to chat immediately
-        addUserMessage(message);
+        // Add user message to chat immediately and store reference
+        currentUserMessageElement = addUserMessage(message);
         
         // Clear input
         $("#message").val('');
         
-        // Start streaming
+        // Start streaming - this will add the AI response right after the user message
         startStreaming(message);
     }
     
     function addUserMessage(message) {
+        const timestamp = new Date().toISOString();
         const messageHtml = `
             <article class="message user-message">
                 <div class="message-content">
                     <pre class="user-text">${escapeHtml(message)}</pre>
                 </div>
                 <small class="text-muted message-timestamp">
-                    <time datetime="${new Date().toISOString()}">
+                    <time datetime="${timestamp}">
                         ${new Date().toLocaleString()}
                     </time>
                 </small>
             </article>
         `;
-        $("#chat-messages").append(messageHtml);
+        
+        // Remove any existing streaming response
+        $("#streaming-response").remove();
+        
+        // Add user message to chat
+        const messageElement = $(messageHtml);
+        $("#chat-messages").append(messageElement);
         scrollToBottom();
+        
+        return messageElement;
     }
     
     function startStreaming(message) {
@@ -324,11 +317,35 @@ $(document).ready(function() {
         isStreaming = true;
         streamId = 'stream_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         streamedResponse = '';
-        refreshNeeded = false;
         
-        // Show streaming response area
-        $("#streaming-response").show();
-        $("#streaming-text").html('');
+        // Create streaming response element RIGHT AFTER the user message
+        const streamingHtml = `
+            <div id="streaming-response" class="message assistant-message">
+                <div class="message-content">
+                    <div class="ai-response" id="streaming-text"></div>
+                </div>
+                <div class="streaming-controls mt-2">
+                    <button id="interrupt-btn" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-stop-circle"></i> Stop Generation
+                    </button>
+                    <span class="text-muted ms-2">
+                        <i class="bi bi-cpu"></i> Generating...
+                    </span>
+                </div>
+            </div>
+        `;
+        
+        // Insert streaming response right after the user message
+        if (currentUserMessageElement) {
+            currentUserMessageElement.after(streamingHtml);
+        } else {
+            $("#chat-messages").append(streamingHtml);
+        }
+        
+        // Re-bind interrupt button since it was recreated
+        $("#interrupt-btn").off('click').on('click', function() {
+            interruptStream();
+        });
         
         // Disable form
         $("#send-btn").prop('disabled', true);
@@ -353,8 +370,6 @@ $(document).ready(function() {
                     handleStreamInterrupted();
                 } else if (data.done) {
                     handleStreamComplete();
-                } else if (data.refresh_needed) {
-                    refreshNeeded = true;
                 } else if (data.content) {
                     streamedResponse += data.content;
                     updateStreamingText(streamedResponse);
@@ -420,23 +435,14 @@ $(document).ready(function() {
     
     function handleStreamComplete() {
         finishStreaming();
-        
-        // No need to save response - it's already saved in the stream
-        // Convert to permanent message or refresh if needed
-        if (refreshNeeded) {
-            setTimeout(() => {
-                location.reload();
-            }, 500);
-        } else {
-            convertStreamingToPermanent();
-        }
+        convertStreamingToPermanent();
     }
     
     function handleStreamError(error) {
         finishStreaming();
         $("#streaming-text").html(`<div class="alert alert-danger">Error: ${error}</div>`);
         setTimeout(() => {
-            $("#streaming-response").hide();
+            $("#streaming-response").remove();
         }, 3000);
     }
     
@@ -444,16 +450,11 @@ $(document).ready(function() {
         finishStreaming();
         $("#streaming-text").append('<div class="text-muted mt-2"><i class="bi bi-stop-circle"></i> Generation interrupted</div>');
         
-        // Response is already saved in the stream, just refresh if needed
-        if (refreshNeeded) {
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
-        } else if (streamedResponse.trim()) {
+        if (streamedResponse.trim()) {
             convertStreamingToPermanent();
         } else {
             setTimeout(() => {
-                $("#streaming-response").hide();
+                $("#streaming-response").remove();
             }, 2000);
         }
     }
@@ -474,21 +475,24 @@ $(document).ready(function() {
     
     function convertStreamingToPermanent() {
         const html = $("#streaming-text").html();
-        const messageHtml = `
-            <article class="message assistant-message" id="latest">
-                <div class="message-content">
-                    ${html}
-                </div>
-                <small class="text-muted message-timestamp">
-                    <time datetime="${new Date().toISOString()}">
-                        ${new Date().toLocaleString()}
-                    </time>
-                </small>
-            </article>
+        const timestamp = new Date().toISOString();
+        
+        // Create permanent message HTML
+        const permanentHtml = `
+            <div class="message-content">
+                ${html}
+            </div>
+            <small class="text-muted message-timestamp">
+                <time datetime="${timestamp}">
+                    ${new Date().toLocaleString()}
+                </time>
+            </small>
         `;
         
-        $("#streaming-response").before(messageHtml);
-        $("#streaming-response").hide();
+        // Replace the streaming response content with permanent content
+        $("#streaming-response").removeClass('streaming-response').html(permanentHtml);
+        $("#streaming-response").removeAttr('id');
+        
         scrollToBottom();
     }
     
@@ -515,7 +519,7 @@ $(document).ready(function() {
         return div.innerHTML;
     }
     
-    // Auto-scroll to bottom on page load
+    // Auto-scroll to bottom on page load (but don't reorder messages)
     if ($('.message').length > 0) {
         scrollToBottom();
     }

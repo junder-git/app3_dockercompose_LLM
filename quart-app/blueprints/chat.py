@@ -301,7 +301,7 @@ async def chat_stream():
     await save_message(user_data.id, 'user', message, session_id)
     
     # Get chat history for context
-    chat_history = await get_session_messages(session_id, CHAT_HISTORY_LIMIT // 3)  # Use 1/3 of limit for context
+    chat_history = await get_session_messages(session_id, CHAT_HISTORY_LIMIT // 3)
     
     # Check cache first
     prompt_hash = hashlib.md5(message.encode()).hexdigest()
@@ -339,15 +339,14 @@ async def chat_stream():
                             await save_message(user_data.id, 'assistant', full_response, session_id)
                             # Cache the response
                             await cache_response(prompt_hash, full_response)
-                        # Signal refresh needed
-                        yield f"data: {json.dumps({'refresh_needed': True})}\n\n"
+                        # No refresh needed - just mark as done
+                        break
                     elif data.get('interrupted'):
                         # Save partial response if interrupted
                         if full_response.strip():
                             interrupted_response = full_response + '\n\n[Generation interrupted]'
                             await save_message(user_data.id, 'assistant', interrupted_response, session_id)
-                        # Signal refresh needed
-                        yield f"data: {json.dumps({'refresh_needed': True})}\n\n"
+                        break
                 except (json.JSONDecodeError, KeyError):
                     pass
     
