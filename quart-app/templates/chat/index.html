@@ -5,7 +5,7 @@
 {% block content %}
 <div class="row">
     <!-- Chat Sessions Sidebar -->
-    <div class="col-md-3" id="sidebar">
+    <div class="col-md-3 d-none" id="sidebar">
         <div class="card border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">
@@ -41,7 +41,7 @@
     </div>
     
     <!-- Main Chat Area -->
-    <div class="col-md-9" id="main-chat">
+    <div class="col-12" id="main-chat">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="d-flex align-items-center">
                 <button class="btn btn-outline-secondary btn-sm me-3" id="toggle-sidebar">
@@ -67,9 +67,29 @@
                                 <!-- User messages as plain text -->
                                 <pre class="user-text">{{ message.content }}</pre>
                             {% else %}
-                                <div class="ai-response">
-                                    <pre class="ai-text">{{ message.content }}</pre>
-                                </div>                            
+                                <!-- AI messages WITH markdown formatting on page load -->
+                                {% if message.content.startswith('<think>') %}
+                                    {% set think_end = message.content.find('</think>') %}
+                                    {% if think_end != -1 %}
+                                        <details class="thinking-dropdown mb-3">
+                                            <summary class="text-muted">💭 Thinking process</summary>
+                                            <div class="thinking-content mt-2 p-3 bg-dark rounded">
+                                                {{ message.content[7:think_end] | markdown }}
+                                            </div>
+                                        </details>
+                                        <div class="ai-response">
+                                            {{ message.content[think_end+8:] | markdown }}
+                                        </div>
+                                    {% else %}
+                                        <div class="ai-response">
+                                            {{ message.content | markdown }}
+                                        </div>
+                                    {% endif %}
+                                {% else %}
+                                    <div class="ai-response">
+                                        {{ message.content | markdown }}
+                                    </div>
+                                {% endif %}
                             {% endif %}
                         </div>
                         {% if message.timestamp %}
@@ -167,7 +187,7 @@ $(document).ready(function() {
     // Sidebar toggle functionality
     $("#toggle-sidebar").on('click', function() {
         $("#sidebar").toggleClass('d-none');
-        $("#main-chat").toggleClass('col-md-9 col-12');
+        $("#main-chat").toggleClass('col-12 col-md-9');
         
         // Update button icon
         const icon = $(this).find('i');
@@ -178,12 +198,8 @@ $(document).ready(function() {
         }
     });
     
-    // Auto-hide sidebar on mobile
-    if (window.innerWidth <= 768) {
-        $("#sidebar").addClass('d-none');
-        $("#main-chat").removeClass('col-md-9').addClass('col-12');
-        $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
-    }
+    // Sidebar closed by default - set initial icon
+    $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
     
     // Enter key submission
     $("#message").keydown(function (e) {     
@@ -505,20 +521,19 @@ $(document).ready(function() {
     
     // Auto-scroll to bottom on page load (but don't reorder messages)
     if ($('.message').length > 0) {
-        updateStreamingText($('.message').text.toString());
-        
+        scrollToBottom();
     }
     
     // Window resize handler for responsive sidebar
     $(window).resize(function() {
-        if (window.innerWidth <= 768) {
-            $("#sidebar").addClass('d-none');
-            $("#main-chat").removeClass('col-md-9').addClass('col-12');
-            $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
-        } else {
-            $("#sidebar").removeClass('d-none');
-            $("#main-chat").removeClass('col-12').addClass('col-md-9');
-            $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar-reverse').addClass('bi-layout-sidebar');
+        // Keep sidebar closed by default on all screen sizes
+        if (!$("#sidebar").hasClass('d-none')) {
+            // Only adjust if sidebar is currently open
+            if (window.innerWidth <= 768) {
+                $("#main-chat").removeClass('col-md-9').addClass('col-12');
+            } else {
+                $("#main-chat").removeClass('col-12').addClass('col-md-9');
+            }
         }
     });
 });
@@ -551,7 +566,6 @@ function deleteSession(sessionId) {
         });
     }
 }
-
 </script>
 
 <!-- Include highlight.js for syntax highlighting -->

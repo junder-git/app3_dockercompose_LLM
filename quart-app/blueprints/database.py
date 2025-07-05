@@ -1,4 +1,4 @@
-# database.py
+# database.py - Fully environment-driven configuration
 import os
 import secrets
 from datetime import datetime
@@ -8,12 +8,20 @@ from werkzeug.security import generate_password_hash
 
 from .models import User, ChatSession
 
-# Redis configuration - NO DEFAULTS
+# Redis configuration - ALL from environment
 REDIS_URL = os.environ['REDIS_URL']
 CHAT_CACHE_TTL = int(os.environ['CHAT_CACHE_TTL_SECONDS'])
-RATE_LIMIT_WINDOW = 60  # Fixed 60 seconds window
+RATE_LIMIT_WINDOW = int(os.environ['RATE_LIMIT_WINDOW'])
 RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
-MAX_CHATS_PER_USER = 3  # Maximum 3 chats per user
+MAX_CHATS_PER_USER = int(os.environ['MAX_CHATS_PER_USER'])
+MAX_PENDING_USERS = int(os.environ['MAX_PENDING_USERS'])
+USER_ID_COUNTER_START = int(os.environ['USER_ID_COUNTER_START'])
+
+# Redis connection settings from environment
+REDIS_MAX_CONNECTIONS = int(os.environ['REDIS_MAX_CONNECTIONS'])
+REDIS_SOCKET_KEEPALIVE = os.environ['REDIS_SOCKET_KEEPALIVE'].lower() == 'true'
+REDIS_RETRY_ON_TIMEOUT = os.environ['REDIS_RETRY_ON_TIMEOUT'].lower() == 'true'
+REDIS_DECODE_RESPONSES = os.environ['REDIS_DECODE_RESPONSES'].lower() == 'true'
 
 # Redis connection pool
 class RedisPool:
@@ -29,10 +37,10 @@ class RedisPool:
         if self._pool is None:
             self._pool = redis.ConnectionPool.from_url(
                 REDIS_URL,
-                max_connections=50,
-                decode_responses=True,
-                socket_keepalive=True,
-                retry_on_timeout=True,
+                max_connections=REDIS_MAX_CONNECTIONS,
+                decode_responses=REDIS_DECODE_RESPONSES,
+                socket_keepalive=REDIS_SOCKET_KEEPALIVE,
+                retry_on_timeout=REDIS_RETRY_ON_TIMEOUT,
             )
         return self._pool
     
@@ -108,7 +116,7 @@ async def get_current_user_data(user_id: str) -> Optional[User]:
 
 # Chat session management
 async def create_chat_session(user_id: str, title: str = None) -> ChatSession:
-    """Create a new chat session for a user (max 3 per user)"""
+    """Create a new chat session for a user (configurable max per user)"""
     r = await get_redis()
     
     # Check if user has reached max chat limit
@@ -139,7 +147,7 @@ async def get_chat_session(session_id: str) -> Optional[ChatSession]:
     return None
 
 async def get_user_chat_sessions(user_id: str) -> List[ChatSession]:
-    """Get all chat sessions for a user (max 3, newest first)"""
+    """Get all chat sessions for a user (configurable max, newest first)"""
     r = await get_redis()
     # Get sessions in reverse order (newest first)
     session_ids = await r.zrevrange(f"user_sessions:{user_id}", 0, MAX_CHATS_PER_USER - 1)
@@ -364,10 +372,7 @@ async def reject_user(user_id: str) -> Dict[str, Any]:
         result['message'] = f'User {user.username} rejected and deleted'
         
     except Exception as e:
-        result['message'] = f'Error rejecting user: {str(e)}'
-        print(f"Error rejecting user {user_id}: {e}")
-    
-    return result
+        return result
 
 # Cache helper functions
 async def get_cached_response(prompt_hash: str) -> Optional[str]:
@@ -618,7 +623,7 @@ async def cleanup_database(cleanup_type: str, admin_user_id: str):
         elif cleanup_type == "recreate_admin":
             # Just recreate admin user
             existing_admin_id = await r.get(f"username:{os.environ['ADMIN_USERNAME']}")
-            if existing_admin_id and existing_admin_id != 'admin':
+            if existing_admin_id and existing_admin_id != os.environ['ADMIN_USER_ID']:
                 # Remove old admin
                 await r.delete(f"user:{existing_admin_id}")
                 await r.srem("users", existing_admin_id)
@@ -690,11 +695,13 @@ async def recreate_admin_user():
     """Helper function to recreate admin user with proper settings"""
     r = await get_redis()
     
+    # Get admin settings from environment
     ADMIN_USERNAME = os.environ['ADMIN_USERNAME']
     ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
+    ADMIN_USER_ID = os.environ['ADMIN_USER_ID']
     
     admin_data = {
-        'id': 'admin',
+        'id': ADMIN_USER_ID,
         'username': ADMIN_USERNAME,
         'password_hash': generate_password_hash(ADMIN_PASSWORD),
         'is_admin': 'true',
@@ -703,9 +710,9 @@ async def recreate_admin_user():
     }
     
     # Save admin user
-    await r.hset("user:admin", mapping=admin_data)
-    await r.set(f"username:{ADMIN_USERNAME}", "admin")
-    await r.sadd("users", "admin")
+    await r.hset(f"user:{ADMIN_USER_ID}", mapping=admin_data)
+    await r.set(f"username:{ADMIN_USERNAME}", ADMIN_USER_ID)
+    await r.sadd("users", ADMIN_USER_ID)
     
     # Set user ID counter for regular users
-    await r.set("user_id_counter", "1000")
+    await r.set("user_id_counter", str(USER_ID_COUNTER_START))

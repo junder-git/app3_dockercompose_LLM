@@ -1,14 +1,20 @@
-# quart-app/blueprints/auth.py - Updated with pending user approval
+# quart-app/blueprints/auth.py - Fully environment-driven configuration
 from quart import Blueprint, render_template, request, redirect, url_for, session, flash
 from quart_auth import login_user, logout_user, login_required, current_user, AuthUser
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
 from .models import User
 from .utils import sanitize_html, generate_csrf_token
 from .database import save_user, get_user_by_username, get_pending_users_count, get_all_users
 
 auth_bp = Blueprint('auth', __name__)
 
-MAX_PENDING_USERS = 10
+# Get all settings from environment
+MAX_PENDING_USERS = int(os.environ['MAX_PENDING_USERS'])
+MIN_USERNAME_LENGTH = int(os.environ['MIN_USERNAME_LENGTH'])
+MAX_USERNAME_LENGTH = int(os.environ['MAX_USERNAME_LENGTH'])
+MIN_PASSWORD_LENGTH = int(os.environ['MIN_PASSWORD_LENGTH'])
+MAX_PASSWORD_LENGTH = int(os.environ['MAX_PASSWORD_LENGTH'])
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 async def login():
@@ -34,30 +40,64 @@ async def login():
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 async def register():
+    # Check pending users limit first
+    pending_count = await get_pending_users_count()
+    if pending_count >= MAX_PENDING_USERS:
+        return await render_template('auth/register.html', 
+                                   error=f'Registration temporarily closed. Too many pending approvals ({pending_count}/{MAX_PENDING_USERS}). Please try again later.',
+                                   registration_closed=True)
+    
     if request.method == 'POST':
         data = await request.form
         username = sanitize_html(data.get('username'))
         password = data.get('password')
         confirm_password = data.get('confirm_password')
         
-        # Validate inputs
-        if len(username) < 3:
-            return await render_template('auth/register.html', error='Username must be at least 3 characters')
-        if len(password) < 6:
-            return await render_template('auth/register.html', error='Password must be at least 6 characters')
+        # Validate inputs using environment variables
+        if len(username) < MIN_USERNAME_LENGTH:
+            return await render_template('auth/register.html', 
+                                       error=f'Username must be at least {MIN_USERNAME_LENGTH} characters',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
+        
+        if len(username) > MAX_USERNAME_LENGTH:
+            return await render_template('auth/register.html', 
+                                       error=f'Username must be no more than {MAX_USERNAME_LENGTH} characters',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
+        
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return await render_template('auth/register.html', 
+                                       error=f'Password must be at least {MIN_PASSWORD_LENGTH} characters',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
+        
+        if len(password) > MAX_PASSWORD_LENGTH:
+            return await render_template('auth/register.html', 
+                                       error=f'Password must be no more than {MAX_PASSWORD_LENGTH} characters',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
+        
         if password != confirm_password:
-            return await render_template('auth/register.html', error='Passwords do not match')
+            return await render_template('auth/register.html', 
+                                       error='Passwords do not match',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
         
         # Check if user exists
         existing_user = await get_user_by_username(username)
         if existing_user:
-            return await render_template('auth/register.html', error='Username already exists')
-        
-        # Check pending users limit
-        pending_count = await get_pending_users_count()
-        if pending_count >= MAX_PENDING_USERS:
             return await render_template('auth/register.html', 
-                                       error=f'Registration temporarily closed. Too many pending approvals ({pending_count}/{MAX_PENDING_USERS})')
+                                       error='Username already exists',
+                                       pending_count=pending_count,
+                                       max_pending=MAX_PENDING_USERS)
+        
+        # Double-check pending users limit (in case it changed while form was being filled)
+        current_pending_count = await get_pending_users_count()
+        if current_pending_count >= MAX_PENDING_USERS:
+            return await render_template('auth/register.html', 
+                                       error=f'Registration temporarily closed. Too many pending approvals ({current_pending_count}/{MAX_PENDING_USERS}). Please try again later.',
+                                       registration_closed=True)
         
         # Create new user (pending approval)
         new_user = User(
@@ -69,9 +109,17 @@ async def register():
         await save_user(new_user)
         
         return await render_template('auth/register.html', 
-                                   success='Registration successful! Your account is pending admin approval. You will be notified when activated.')
+                                   success='Registration successful! Your account is pending admin approval. You will be notified when activated.',
+                                   pending_count=current_pending_count + 1,
+                                   max_pending=MAX_PENDING_USERS)
     
-    return await render_template('auth/register.html')
+    return await render_template('auth/register.html',
+                               pending_count=pending_count,
+                               max_pending=MAX_PENDING_USERS,
+                               min_username_length=MIN_USERNAME_LENGTH,
+                               max_username_length=MAX_USERNAME_LENGTH,
+                               min_password_length=MIN_PASSWORD_LENGTH,
+                               max_password_length=MAX_PASSWORD_LENGTH)
 
 @auth_bp.route('/logout')
 @login_required

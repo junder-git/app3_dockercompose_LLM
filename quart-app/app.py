@@ -1,4 +1,4 @@
-# quart-app/app.py - Updated with better markdown support
+# quart-app/app.py - Fully environment-driven configuration
 import os
 import sys
 import secrets
@@ -35,6 +35,14 @@ except Exception as e:
 # Load environment variables
 load_dotenv()
 print("✅ Environment loaded")
+
+# Get all configuration from environment
+SESSION_LIFETIME_DAYS = int(os.environ['SESSION_LIFETIME_DAYS'])
+SECURE_COOKIES = os.environ['SECURE_COOKIES'].lower() == 'true'
+ADMIN_USERNAME = os.environ['ADMIN_USERNAME']
+ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
+ADMIN_USER_ID = os.environ['ADMIN_USER_ID']
+SECRET_KEY = os.environ['SECRET_KEY']
 
 # Enhanced markdown filter with better code block support
 def markdown_filter(text):
@@ -119,12 +127,12 @@ app.jinja_env.filters['markdown'] = markdown_filter
 
 print("✅ Quart app created with enhanced markdown support")
 
-# Configure Quart - NO DEFAULTS
-app.config['SECRET_KEY'] = os.environ['SECRET_KEY']
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ['SESSION_LIFETIME_DAYS']))
+# Configure Quart - ALL from environment
+app.config['SECRET_KEY'] = SECRET_KEY
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=SESSION_LIFETIME_DAYS)
 
-# Configure auth - NO DEFAULTS
-app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ['SECURE_COOKIES'].lower() == 'true'
+# Configure auth - ALL from environment
+app.config['QUART_AUTH_COOKIE_SECURE'] = SECURE_COOKIES
 app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 
@@ -241,13 +249,11 @@ async def init_admin():
     """Create default admin user if not exists"""
     try:
         print("🔧 Initializing admin user...")
-        ADMIN_USERNAME = os.environ['ADMIN_USERNAME']
-        ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
         
         admin = await get_user_by_username(ADMIN_USERNAME)
         if not admin:
             admin_user = User(
-                user_id='admin',  # Fixed ID for admin
+                user_id=ADMIN_USER_ID,  # Use environment variable
                 username=ADMIN_USERNAME,
                 password_hash=generate_password_hash(ADMIN_PASSWORD),
                 is_admin=True,
@@ -308,6 +314,11 @@ async def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
 print("✅ Quart app configuration complete with enhanced markdown support")
+print("📝 Configuration loaded from environment:")
+print(f"  - Admin Username: {ADMIN_USERNAME}")
+print(f"  - Admin User ID: {ADMIN_USER_ID}")
+print(f"  - Session Lifetime: {SESSION_LIFETIME_DAYS} days")
+print(f"  - Secure Cookies: {SECURE_COOKIES}")
 print("📝 Markdown features enabled:")
 print("  - Syntax highlighting with line numbers")
 print("  - Tables, task lists, and footnotes")

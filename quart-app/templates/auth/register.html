@@ -18,17 +18,51 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
                 {% endif %}
+                
                 {% if success %}
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     <i class="bi bi-check-circle"></i> {{ success }}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
+                {% endif %}
+                
+                {% if registration_closed %}
+                <!-- Registration closed message -->
+                <div class="alert alert-warning" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Registration Temporarily Closed</strong><br>
+                    We currently have the maximum number of pending registrations ({{ pending_count or max_pending }}/{{ max_pending }}). 
+                    Please check back later when spots become available.
+                </div>
+                
+                <div class="text-center">
+                    <p>Already have an account? 
+                        <a href="/login" class="text-primary">
+                            <i class="bi bi-box-arrow-in-right"></i> Login here
+                        </a>
+                    </p>
+                </div>
+                
                 {% else %}
+                <!-- Registration form -->
                 <div class="alert alert-info" role="alert">
                     <i class="bi bi-info-circle"></i> 
                     <strong>Registration requires admin approval.</strong><br>
                     After registering, please wait for an administrator to approve your account before you can log in.
+                    
+                    {% if pending_count is defined and max_pending is defined %}
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-people"></i> 
+                            Current pending registrations: {{ pending_count }}/{{ max_pending }}
+                            {% if pending_count >= max_pending %}
+                            <span class="text-warning">(Registration will close after this submission)</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    {% endif %}
                 </div>
+                
                 <form method="POST" action="/register">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
@@ -36,21 +70,35 @@
                             <i class="bi bi-person"></i> Username
                         </label>
                         <input type="text" class="form-control" id="username" name="username" 
-                               placeholder="At least 3 characters" required autofocus>
+                               placeholder="{% if min_username_length and max_username_length %}{{ min_username_length }}-{{ max_username_length }} characters{% else %}At least 3 characters{% endif %}" 
+                               required autofocus 
+                               {% if min_username_length %}minlength="{{ min_username_length }}"{% endif %}
+                               {% if max_username_length %}maxlength="{{ max_username_length }}"{% endif %}>
+                        {% if min_username_length and max_username_length %}
+                        <div class="form-text">{{ min_username_length }}-{{ max_username_length }} characters, letters, numbers, underscore, and dash only</div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label for="password" class="form-label">
                             <i class="bi bi-lock"></i> Password
                         </label>
                         <input type="password" class="form-control" id="password" name="password" 
-                               placeholder="At least 6 characters" required>
+                               placeholder="{% if min_password_length and max_password_length %}{{ min_password_length }}-{{ max_password_length }} characters{% else %}At least 6 characters{% endif %}" 
+                               required
+                               {% if min_password_length %}minlength="{{ min_password_length }}"{% endif %}
+                               {% if max_password_length %}maxlength="{{ max_password_length }}"{% endif %}>
+                        {% if min_password_length and max_password_length %}
+                        <div class="form-text">{{ min_password_length }}-{{ max_password_length }} characters</div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label for="confirm_password" class="form-label">
                             <i class="bi bi-lock-fill"></i> Confirm Password
                         </label>
                         <input type="password" class="form-control" id="confirm_password" 
-                               name="confirm_password" required>
+                               name="confirm_password" required
+                               {% if min_password_length %}minlength="{{ min_password_length }}"{% endif %}
+                               {% if max_password_length %}maxlength="{{ max_password_length }}"{% endif %}>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">
@@ -58,7 +106,7 @@
                         </button>
                     </div>
                 </form>
-                {% endif %}
+                
                 <div class="mt-3 text-center">
                     <p>Already have an account? 
                         <a href="/login" class="text-primary">
@@ -66,6 +114,7 @@
                         </a>
                     </p>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -79,6 +128,18 @@ document.getElementById('confirm_password').addEventListener('input', function()
     
     if (password !== confirmPassword) {
         this.setCustomValidity('Passwords do not match');
+    } else {
+        this.setCustomValidity('');
+    }
+});
+
+// Username validation
+document.getElementById('username').addEventListener('input', function() {
+    const username = this.value;
+    const usernamePattern = /^[a-zA-Z0-9_-]+$/;
+    
+    if (username && !usernamePattern.test(username)) {
+        this.setCustomValidity('Username can only contain letters, numbers, underscore and dash');
     } else {
         this.setCustomValidity('');
     }
