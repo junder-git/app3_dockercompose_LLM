@@ -2,7 +2,7 @@
 import os
 from functools import wraps
 from quart import request, jsonify, redirect, url_for, g
-from quart_auth import current_user, login_required
+from quart_auth import current_user
 from .database import get_current_user_data
 
 # Rate limiting settings for different endpoint types
@@ -109,4 +109,4 @@ async def add_security_context():
     """Add security context to request"""
     g.endpoint_limits = get_endpoint_rate_limits(request.path)
     g.is_unlimited_endpoint = request.path.startswith('/chat') or request.path.startswith('/admin')
-    g.is_strict_endpoint = not g.is_unlimited_endpoints
+    g.is_strict_endpoint = not g.is_unlimited_endpoint  # Fixed typo here
