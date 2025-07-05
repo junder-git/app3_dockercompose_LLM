@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Updated with middleware authentication
+# quart-app/blueprints/chat.py - Updated with clean authentication
 import os
 import hashlib
 import aiohttp
@@ -18,7 +18,7 @@ from .database import (
     clear_session_messages
 )
 from .utils import escape_html
-from .auth_middleware import require_auth_for_chat  # Import the decorator
+from .auth import require_auth  # Import from auth module
 
 chat_bp = Blueprint('chat', __name__)
 
@@ -123,16 +123,6 @@ print(f"  AIOHTTP Keepalive: {AIOHTTP_KEEPALIVE_TIMEOUT}")
 
 # Global dictionary to track active streams
 active_streams = {}
-
-async def check_rate_limit_for_streaming(user_id: str, rate_limit_max: int) -> bool:
-    """Check rate limit but ignore if user is already streaming"""
-    # Check if user is currently streaming
-    for stream_info in active_streams.values():
-        if stream_info.get('user_id') == user_id:
-            return True  # Allow streaming to continue
-    
-    # Otherwise check normal rate limit
-    return await check_rate_limit(user_id, rate_limit_max)
 
 async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
     """Stream AI response with unlimited network settings and robust error handling"""
@@ -280,12 +270,12 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
             del active_streams[stream_id]
         print(f"🧹 Stream cleanup completed")
 
-# Chat routes - NOW USING MIDDLEWARE AUTHENTICATION
+# Chat routes - Using simple authentication decorators
 @chat_bp.route('/chat', methods=['GET'])
 @chat_bp.route('/chat/new', methods=['GET'])
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def chat():
-    """Main chat interface with session management - Auth via middleware"""
+    """Main chat interface with session management"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -326,9 +316,9 @@ async def chat():
                                chat_sessions=chat_sessions)
 
 @chat_bp.route('/chat/new', methods=['POST'])
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def create_new_chat():
-    """Create a new chat session - Auth via middleware"""
+    """Create a new chat session"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return {'success': False, 'message': 'Unauthorized'}, 401
@@ -339,9 +329,9 @@ async def create_new_chat():
     return {'success': True, 'session_id': new_session.id}
 
 @chat_bp.route('/chat/clear', methods=['POST'])
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def clear_current_chat():
-    """Clear all messages from current chat session - Auth via middleware"""
+    """Clear all messages from current chat session"""
     data = await request.json
     session_id = data.get('session_id')
     
@@ -363,9 +353,9 @@ async def clear_current_chat():
     return {'success': True, 'message': 'Chat cleared successfully'}
 
 @chat_bp.route('/chat/stream')
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def chat_stream():
-    """Server-Sent Events endpoint for unlimited streaming responses - Auth via middleware"""
+    """Server-Sent Events endpoint for unlimited streaming responses"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -475,9 +465,9 @@ async def chat_stream():
     )
 
 @chat_bp.route('/chat/interrupt', methods=['POST'])
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def interrupt_stream():
-    """Interrupt an active stream - Auth via middleware"""
+    """Interrupt an active stream"""
     data = await request.json
     stream_id = data.get('stream_id')
     
@@ -488,9 +478,9 @@ async def interrupt_stream():
     return {'success': False}, 404
 
 @chat_bp.route('/chat/delete_session', methods=['POST'])
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def delete_session():
-    """Delete a chat session - Auth via middleware"""
+    """Delete a chat session"""
     data = await request.json
     session_id = data.get('session_id')
     
@@ -517,9 +507,9 @@ async def delete_session():
     return {'success': True, 'message': 'Session deleted successfully'}
 
 @chat_bp.route('/chat/test_connection')
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def test_connection():
-    """Test connection to Ollama service - Auth via middleware"""
+    """Test connection to Ollama service"""
     try:
         connector = create_unlimited_connector()
         test_timeout = aiohttp.ClientTimeout(total=5)
@@ -536,9 +526,9 @@ async def test_connection():
         return {'status': 'error', 'message': f'Connection failed: {str(e)}'}
 
 @chat_bp.route('/chat/health')
-@require_auth_for_chat  # Add middleware decorator
+@require_auth
 async def chat_health():
-    """Check AI service health with unlimited network - Auth via middleware"""
+    """Check AI service health with unlimited network"""
     try:
         # Use unlimited timeout for health check - create fresh connector
         health_timeout = aiohttp.ClientTimeout(total=10)

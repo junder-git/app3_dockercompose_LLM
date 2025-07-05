@@ -1,4 +1,4 @@
-# quart-app/blueprints/admin.py - Fixed with proper authentication
+# quart-app/blueprints/admin.py - Updated with clean authentication
 from quart import Blueprint, render_template, request, redirect, url_for, flash, g, jsonify
 from quart_auth import current_user, login_required
 from .database import (
@@ -6,28 +6,14 @@ from .database import (
     get_database_stats, cleanup_database, delete_user,
     get_pending_users, approve_user, reject_user
 )
+from .auth import require_admin  # Import from auth module
 
 admin_bp = Blueprint('admin', __name__)
 
-async def check_admin_access():
-    """Check if user has admin access"""
-    if not await current_user.is_authenticated:
-        return redirect(url_for('auth.login'))
-    
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data or not user_data.is_admin:
-        return redirect(url_for('auth.login'))
-    
-    return None  # Access granted
-
 @admin_bp.route('/admin')
+@require_admin
 async def admin():
-    """Admin dashboard - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """Admin dashboard"""
     # Get database stats, users, and pending users
     stats = await get_database_stats()
     users = await get_all_users()
@@ -39,13 +25,9 @@ async def admin():
                                pending_users=pending_users)
 
 @admin_bp.route('/admin/cleanup', methods=['POST'])
+@require_admin
 async def admin_database_cleanup():
-    """Perform database cleanup operations via form - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """Perform database cleanup operations via form"""
     form_data = await request.form
     cleanup_type = form_data.get('type')
     
@@ -69,13 +51,9 @@ async def admin_database_cleanup():
     return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/approve_user', methods=['POST'])
+@require_admin
 async def admin_approve_user():
-    """Approve a pending user - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """Approve a pending user"""
     form_data = await request.form
     user_id = form_data.get('user_id')
     
@@ -93,13 +71,9 @@ async def admin_approve_user():
     return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/reject_user', methods=['POST'])
+@require_admin
 async def admin_reject_user():
-    """Reject and delete a pending user - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """Reject and delete a pending user"""
     form_data = await request.form
     user_id = form_data.get('user_id')
     
@@ -117,13 +91,9 @@ async def admin_reject_user():
     return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/user/<user_id>')
+@require_admin
 async def admin_user_detail(user_id):
-    """View detailed user information and chat history - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """View detailed user information and chat history"""
     # Get user messages
     messages = await get_user_messages(user_id)
     
@@ -147,13 +117,9 @@ async def admin_user_detail(user_id):
     return await render_template('admin/user_detail.html', user=user_info, messages=formatted_messages)
 
 @admin_bp.route('/admin/user/<user_id>/delete', methods=['POST'])
+@require_admin
 async def admin_delete_user(user_id):
-    """Delete a user via form submission - With auth check"""
-    # Check admin access
-    auth_response = await check_admin_access()
-    if auth_response:
-        return auth_response
-    
+    """Delete a user via form submission"""
     # Check if trying to delete self
     if user_id == current_user.auth_id:
         await flash('Cannot delete your own account', 'error')
@@ -169,16 +135,9 @@ async def admin_delete_user(user_id):
     return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/system_info')
+@require_admin
 async def admin_system_info():
-    """Get system information - With auth check"""
-    # Check admin access (for JSON endpoints, return JSON error)
-    if not await current_user.is_authenticated:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data or not user_data.is_admin:
-        return jsonify({'error': 'Admin privileges required'}), 403
-    
+    """Get system information"""
     try:
         # Try to import psutil, but handle gracefully if not available
         try:
@@ -219,17 +178,10 @@ async def admin_system_info():
             'error': str(e)
         })
 
-# Add auth checks to all other API endpoints too...
 @admin_bp.route('/admin/api/stats')
+@require_admin
 async def admin_api_stats():
-    """Get database stats via API - With auth check"""
-    if not await current_user.is_authenticated:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data or not user_data.is_admin:
-        return jsonify({'error': 'Admin privileges required'}), 403
-    
+    """Get database stats via API"""
     try:
         stats = await get_database_stats()
         return jsonify({
@@ -241,5 +193,3 @@ async def admin_api_stats():
             'success': False,
             'error': str(e)
         })
-
-# ... (add similar auth checks to all other admin API endpoints)
