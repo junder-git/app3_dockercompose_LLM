@@ -1,10 +1,11 @@
-# quart-app/blueprints/admin.py - Fixed template paths
-from quart import Blueprint, render_template, request, redirect, url_for, flash, g
+# quart-app/blueprints/admin.py - Updated with user approval system
+from quart import Blueprint, render_template, request, redirect, url_for, flash, g, jsonify
 from quart_auth import login_required, current_user
 from functools import wraps
 from .database import (
     get_current_user_data, get_all_users, get_user_messages,
-    get_database_stats, cleanup_database, delete_user
+    get_database_stats, cleanup_database, delete_user,
+    get_pending_users, approve_user, reject_user
 )
 
 admin_bp = Blueprint('admin', __name__)
@@ -23,11 +24,15 @@ def admin_required(f):
 @admin_bp.route('/admin')
 @admin_required
 async def admin():
-    # Get database stats and users
+    # Get database stats, users, and pending users
     stats = await get_database_stats()
     users = await get_all_users()
+    pending_users = await get_pending_users()
     
-    return await render_template('admin/index.html', stats=stats, users=users)
+    return await render_template('admin/index.html', 
+                               stats=stats, 
+                               users=users, 
+                               pending_users=pending_users)
 
 @admin_bp.route('/admin/cleanup', methods=['POST'])
 @admin_required
@@ -47,6 +52,46 @@ async def admin_database_cleanup():
     
     # Perform cleanup
     result = await cleanup_database(cleanup_type, current_user.auth_id)
+    
+    if result['success']:
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'error')
+    
+    return redirect(url_for('admin.admin'))
+
+@admin_bp.route('/admin/approve_user', methods=['POST'])
+@admin_required
+async def admin_approve_user():
+    """Approve a pending user"""
+    form_data = await request.form
+    user_id = form_data.get('user_id')
+    
+    if not user_id:
+        flash('User ID is required', 'error')
+        return redirect(url_for('admin.admin'))
+    
+    result = await approve_user(user_id)
+    
+    if result['success']:
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'error')
+    
+    return redirect(url_for('admin.admin'))
+
+@admin_bp.route('/admin/reject_user', methods=['POST'])
+@admin_required
+async def admin_reject_user():
+    """Reject and delete a pending user"""
+    form_data = await request.form
+    user_id = form_data.get('user_id')
+    
+    if not user_id:
+        flash('User ID is required', 'error')
+        return redirect(url_for('admin.admin'))
+    
+    result = await reject_user(user_id)
     
     if result['success']:
         flash(result['message'], 'success')

@@ -8,12 +8,12 @@ from werkzeug.security import generate_password_hash
 
 from .models import User, ChatSession
 
-# Redis configuration
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-CHAT_CACHE_TTL = int(os.environ.get('CHAT_CACHE_TTL_SECONDS', '3600'))
-RATE_LIMIT_WINDOW = 60
-RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MESSAGES_PER_MINUTE', '10'))
-MAX_CHATS_PER_USER = 5
+# Redis configuration - NO DEFAULTS
+REDIS_URL = os.environ['REDIS_URL']
+CHAT_CACHE_TTL = int(os.environ['CHAT_CACHE_TTL_SECONDS'])
+RATE_LIMIT_WINDOW = 60  # Fixed 60 seconds window
+RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
+MAX_CHATS_PER_USER = 3  # Maximum 3 chats per user
 
 # Redis connection pool
 class RedisPool:
@@ -108,14 +108,14 @@ async def get_current_user_data(user_id: str) -> Optional[User]:
 
 # Chat session management
 async def create_chat_session(user_id: str, title: str = None) -> ChatSession:
-    """Create a new chat session for a user"""
+    """Create a new chat session for a user (max 3 per user)"""
     r = await get_redis()
     
     # Check if user has reached max chat limit
-    user_sessions = await r.zrange(f"user_sessions:{user_id}", 0, -1)
+    user_sessions = await r.zrevrange(f"user_sessions:{user_id}", 0, -1)
     if len(user_sessions) >= MAX_CHATS_PER_USER:
-        # Remove oldest session
-        oldest_session_id = user_sessions[0]
+        # Remove oldest session (last in the list since we use zrevrange)
+        oldest_session_id = user_sessions[-1]
         await delete_chat_session(user_id, oldest_session_id)
     
     # Create new session
@@ -124,7 +124,7 @@ async def create_chat_session(user_id: str, title: str = None) -> ChatSession:
     # Save session data
     await r.hset(f"session:{session.id}", mapping=session.to_dict())
     
-    # Add to user's session list (sorted by creation time)
+    # Add to user's session list (sorted by creation time, newest first)
     await r.zadd(f"user_sessions:{user_id}", {session.id: datetime.utcnow().timestamp()})
     
     return session
@@ -139,9 +139,10 @@ async def get_chat_session(session_id: str) -> Optional[ChatSession]:
     return None
 
 async def get_user_chat_sessions(user_id: str) -> List[ChatSession]:
-    """Get all chat sessions for a user"""
+    """Get all chat sessions for a user (max 3, newest first)"""
     r = await get_redis()
-    session_ids = await r.zrevrange(f"user_sessions:{user_id}", 0, -1)
+    # Get sessions in reverse order (newest first)
+    session_ids = await r.zrevrange(f"user_sessions:{user_id}", 0, MAX_CHATS_PER_USER - 1)
     
     sessions = []
     for session_id in session_ids:
@@ -168,6 +169,26 @@ async def delete_chat_session(user_id: str, session_id: str):
     
     # Remove from user's session list
     await r.zrem(f"user_sessions:{user_id}", session_id)
+
+async def clear_session_messages(session_id: str):
+    """Clear all messages from a session but keep the session"""
+    r = await get_redis()
+    
+    # Get all message IDs for this session
+    message_ids = await r.zrange(f"session_messages:{session_id}", 0, -1)
+    
+    # Delete all messages
+    for msg_id in message_ids:
+        await r.delete(f"message:{msg_id}")
+    
+    # Clear the session messages list
+    await r.delete(f"session_messages:{session_id}")
+    
+    # Update session timestamp
+    session_obj = await get_chat_session(session_id)
+    if session_obj:
+        session_obj.updated_at = datetime.utcnow().isoformat()
+        await r.hset(f"session:{session_id}", mapping=session_obj.to_dict())
 
 async def get_or_create_current_session(user_id: str) -> str:
     """Get current session ID or create a new one"""
@@ -218,7 +239,7 @@ async def save_message(user_id: str, role: str, content: str, session_id: str):
 async def get_session_messages(session_id: str, limit: int = None) -> List[Dict]:
     """Get messages for a specific chat session in chronological order"""
     if limit is None:
-        limit = int(os.environ.get('CHAT_HISTORY_LIMIT'))
+        limit = int(os.environ['CHAT_HISTORY_LIMIT'])
     
     r = await get_redis()
     
@@ -253,7 +274,7 @@ async def get_user_messages(user_id: str, limit: int = None) -> List[Dict]:
     return all_messages
 
 # Rate limiting
-async def check_rate_limit(user_id: str) -> bool:
+async def check_rate_limit(user_id: str, rate_limit_max: int) -> bool:
     """Check if user has exceeded rate limit"""
     r = await get_redis()
     key = f"rate_limit:{user_id}"
@@ -262,7 +283,91 @@ async def check_rate_limit(user_id: str) -> bool:
     if current == 1:
         await r.expire(key, RATE_LIMIT_WINDOW)
     
-    return current <= RATE_LIMIT_MAX
+    return current <= rate_limit_max
+
+# User approval functions
+async def get_pending_users_count() -> int:
+    """Get count of pending users awaiting approval"""
+    r = await get_redis()
+    user_ids = await r.smembers("users")
+    
+    pending_count = 0
+    for user_id in user_ids:
+        user = await get_user_by_id(user_id)
+        if user and not user.is_approved and not user.is_admin:
+            pending_count += 1
+    
+    return pending_count
+
+async def get_pending_users() -> List[User]:
+    """Get all pending users awaiting approval"""
+    r = await get_redis()
+    user_ids = await r.smembers("users")
+    
+    pending_users = []
+    for user_id in user_ids:
+        user = await get_user_by_id(user_id)
+        if user and not user.is_approved and not user.is_admin:
+            pending_users.append(user)
+    
+    return pending_users
+
+async def approve_user(user_id: str) -> Dict[str, Any]:
+    """Approve a pending user"""
+    r = await get_redis()
+    result = {'success': False, 'message': ''}
+    
+    try:
+        user = await get_user_by_id(user_id)
+        if not user:
+            result['message'] = 'User not found'
+            return result
+        
+        if user.is_approved:
+            result['message'] = 'User is already approved'
+            return result
+        
+        # Approve the user
+        user.is_approved = True
+        await save_user(user)
+        
+        result['success'] = True
+        result['message'] = f'User {user.username} approved successfully'
+        
+    except Exception as e:
+        result['message'] = f'Error approving user: {str(e)}'
+        print(f"Error approving user {user_id}: {e}")
+    
+    return result
+
+async def reject_user(user_id: str) -> Dict[str, Any]:
+    """Reject and delete a pending user"""
+    r = await get_redis()
+    result = {'success': False, 'message': ''}
+    
+    try:
+        user = await get_user_by_id(user_id)
+        if not user:
+            result['message'] = 'User not found'
+            return result
+        
+        if user.is_approved:
+            result['message'] = 'Cannot reject approved user'
+            return result
+        
+        # Delete the user
+        await r.delete(f"user:{user_id}")
+        await r.delete(f"username:{user.username}")
+        await r.srem("users", user_id)
+        
+        result['success'] = True
+        result['message'] = f'User {user.username} rejected and deleted'
+        
+    except Exception as e:
+        result['message'] = f'Error rejecting user: {str(e)}'
+        print(f"Error rejecting user {user_id}: {e}")
+    
+    return result
 
 # Cache helper functions
 async def get_cached_response(prompt_hash: str) -> Optional[str]:
@@ -305,10 +410,20 @@ async def get_database_stats():
         # Get user statistics
         user_ids = await r.smembers("users")
         users_data = []
+        pending_count = 0
+        approved_count = 0
         
         for user_id in user_ids:
             user_data = await r.hgetall(f"user:{user_id}")
             if user_data:
+                is_admin = user_data.get('is_admin') == 'true'
+                is_approved = user_data.get('is_approved') == 'true'
+                
+                if not is_admin and not is_approved:
+                    pending_count += 1
+                elif is_approved or is_admin:
+                    approved_count += 1
+                
                 # Get session count for this user
                 session_count = len(await r.zrange(f"user_sessions:{user_id}", 0, -1))
                 
@@ -322,7 +437,8 @@ async def get_database_stats():
                 users_data.append({
                     'id': user_id,
                     'username': user_data.get('username'),
-                    'is_admin': user_data.get('is_admin') == 'true',
+                    'is_admin': is_admin,
+                    'is_approved': is_approved,
                     'created_at': user_data.get('created_at'),
                     'session_count': session_count,
                     'message_count': total_messages
@@ -330,6 +446,8 @@ async def get_database_stats():
         
         stats['users'] = users_data
         stats['user_count'] = len(users_data)
+        stats['pending_count'] = pending_count
+        stats['approved_count'] = approved_count
         
         # Get next user ID
         stats['next_user_id'] = await r.get("user_id_counter") or "Not set"
@@ -499,7 +617,7 @@ async def cleanup_database(cleanup_type: str, admin_user_id: str):
             
         elif cleanup_type == "recreate_admin":
             # Just recreate admin user
-            existing_admin_id = await r.get(f"username:{os.environ.get('ADMIN_USERNAME', 'admin')}")
+            existing_admin_id = await r.get(f"username:{os.environ['ADMIN_USERNAME']}")
             if existing_admin_id and existing_admin_id != 'admin':
                 # Remove old admin
                 await r.delete(f"user:{existing_admin_id}")
@@ -572,14 +690,15 @@ async def recreate_admin_user():
     """Helper function to recreate admin user with proper settings"""
     r = await get_redis()
     
-    ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    ADMIN_USERNAME = os.environ['ADMIN_USERNAME']
+    ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
     
     admin_data = {
         'id': 'admin',
         'username': ADMIN_USERNAME,
         'password_hash': generate_password_hash(ADMIN_PASSWORD),
         'is_admin': 'true',
+        'is_approved': 'true',  # Admin is always approved
         'created_at': datetime.utcnow().isoformat()
     }
     

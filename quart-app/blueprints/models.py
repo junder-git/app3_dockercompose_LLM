@@ -2,11 +2,12 @@
 from datetime import datetime
 
 class User:
-    def __init__(self, user_id=None, username=None, password_hash=None, is_admin=False, created_at=None):
+    def __init__(self, user_id=None, username=None, password_hash=None, is_admin=False, is_approved=False, created_at=None):
         self.id = str(user_id) if user_id else None
         self.username = username
         self.password_hash = password_hash
         self.is_admin = is_admin
+        self.is_approved = is_approved  # New field for admin approval
         self.created_at = created_at or datetime.utcnow().isoformat()
     
     def to_dict(self):
@@ -15,6 +16,7 @@ class User:
             'username': str(self.username),
             'password_hash': str(self.password_hash),
             'is_admin': str(self.is_admin).lower(),  # Convert boolean to string
+            'is_approved': str(self.is_approved).lower(),  # Convert boolean to string
             'created_at': str(self.created_at)
         }
     
@@ -25,6 +27,7 @@ class User:
             username=data.get('username'),
             password_hash=data.get('password_hash'),
             is_admin=data.get('is_admin', 'false').lower() == 'true',  # Convert string back to boolean
+            is_approved=data.get('is_approved', 'false').lower() == 'true',  # Convert string back to boolean
             created_at=data.get('created_at')
         )
 

@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Complete streaming implementation
+# quart-app/blueprints/chat.py - Complete streaming implementation with all features
 import os
 import hashlib
 import aiohttp
@@ -13,40 +13,51 @@ from quart_auth import login_required, current_user
 from .database import (
     get_current_user_data, get_or_create_current_session,
     save_message, get_session_messages, check_rate_limit,
-    get_cached_response, cache_response
+    get_cached_response, cache_response, get_user_chat_sessions,
+    get_chat_session, delete_chat_session, create_chat_session,
+    clear_session_messages
 )
 from .utils import escape_html
 
 chat_bp = Blueprint('chat', __name__)
 
 # AI Model configuration - ONLY from environment variables, NO DEFAULTS
-OLLAMA_URL = os.environ.get('OLLAMA_URL')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL')
+OLLAMA_URL = os.environ['OLLAMA_URL']
+OLLAMA_MODEL = os.environ['OLLAMA_MODEL']
 
 # All parameters from environment - NO DEFAULTS
-MODEL_TEMPERATURE = float(os.environ.get('MODEL_TEMPERATURE'))
-MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P'))
-MODEL_TOP_K = int(os.environ.get('MODEL_TOP_K'))
-MODEL_REPEAT_PENALTY = float(os.environ.get('MODEL_REPEAT_PENALTY'))
-MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS'))
-MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT'))
+MODEL_TEMPERATURE = float(os.environ['MODEL_TEMPERATURE'])
+MODEL_TOP_P = float(os.environ['MODEL_TOP_P'])
+MODEL_TOP_K = int(os.environ['MODEL_TOP_K'])
+MODEL_REPEAT_PENALTY = float(os.environ['MODEL_REPEAT_PENALTY'])
+MODEL_MAX_TOKENS = int(os.environ['MODEL_MAX_TOKENS'])
+MODEL_TIMEOUT = int(os.environ['MODEL_TIMEOUT'])
 
 # Hardware settings from environment
-OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS'))
-OLLAMA_NUM_THREAD = int(os.environ.get('OLLAMA_NUM_THREAD'))
-OLLAMA_CONTEXT_SIZE = int(os.environ.get('OLLAMA_CONTEXT_SIZE'))
-OLLAMA_BATCH_SIZE = int(os.environ.get('OLLAMA_BATCH_SIZE'))
+OLLAMA_GPU_LAYERS = int(os.environ['OLLAMA_GPU_LAYERS'])
+OLLAMA_NUM_THREAD = int(os.environ['OLLAMA_NUM_THREAD'])
+OLLAMA_CONTEXT_SIZE = int(os.environ['OLLAMA_CONTEXT_SIZE'])
+OLLAMA_BATCH_SIZE = int(os.environ['OLLAMA_BATCH_SIZE'])
 
 # CRITICAL: Memory management - proper boolean conversion
-MODEL_USE_MMAP = os.environ.get('MODEL_USE_MMAP').lower() == 'true'
-MODEL_USE_MLOCK = os.environ.get('MODEL_USE_MLOCK').lower() == 'true'
+MODEL_USE_MMAP = os.environ['MODEL_USE_MMAP'].lower() == 'true'
+MODEL_USE_MLOCK = os.environ['MODEL_USE_MLOCK'].lower() == 'true'
+
+# Auto-adjust MMAP when MLOCK is enabled (they conflict)
+if MODEL_USE_MLOCK and MODEL_USE_MMAP:
+    MODEL_USE_MMAP = False
+    print("🔧 Auto-disabled MMAP because MLOCK is enabled (they conflict)")
+    print("   For fully RAM/VRAM loaded models, MLOCK without MMAP is optimal")
 
 # Other settings from environment
-OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE')
+OLLAMA_KEEP_ALIVE = os.environ['OLLAMA_KEEP_ALIVE']
 # Convert keep_alive to proper format for Ollama
 if OLLAMA_KEEP_ALIVE == '-1':
     OLLAMA_KEEP_ALIVE = -1  # Convert to integer
-MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
+
+# Chat and rate limiting from environment
+CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
+RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
 
 def get_active_model():
     """Get the active optimized model name"""
@@ -57,6 +68,17 @@ def get_active_model():
         return OLLAMA_MODEL
 
 ACTIVE_MODEL = get_active_model()
+
+print(f"🔧 Chat Blueprint Config:")
+print(f"  Active Model: {ACTIVE_MODEL}")
+print(f"  OLLAMA_URL: {OLLAMA_URL}")
+print(f"  MMAP: {MODEL_USE_MMAP}")
+print(f"  MLOCK: {MODEL_USE_MLOCK}")
+print(f"  Context Size: {OLLAMA_CONTEXT_SIZE}")
+print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
+print(f"  Temperature: {MODEL_TEMPERATURE}")
+print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
+print(f"  Timeout: {MODEL_TIMEOUT}")
 
 # Global dictionary to track active streams
 active_streams = {}
@@ -113,6 +135,13 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
                 'stop': MODEL_STOP_SEQUENCES
             }
         }
+        
+        print(f"🔧 AI Request:")
+        print(f"  Model: {ACTIVE_MODEL}")
+        print(f"  MMAP: {MODEL_USE_MMAP}")
+        print(f"  MLOCK: {MODEL_USE_MLOCK}")
+        print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
+        print(f"  Temperature: {MODEL_TEMPERATURE}")
         
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         
@@ -183,11 +212,11 @@ async def chat():
         if not session_obj or session_obj.user_id != user_data.id:
             current_session_id = await get_or_create_current_session(user_data.id)
     
-    # Get all user sessions for sidebar (limited to 5)
+    # Get all user sessions for sidebar (limited to 3)
     chat_sessions = await get_user_chat_sessions(user_data.id)
     
     # Get messages for current session
-    messages = await get_session_messages(current_session_id, 50)
+    messages = await get_session_messages(current_session_id, CHAT_HISTORY_LIMIT)
     
     formatted_messages = []
     for msg in messages:
@@ -203,6 +232,43 @@ async def chat():
                                messages=formatted_messages,
                                current_session_id=current_session_id,
                                chat_sessions=chat_sessions)
+
+@chat_bp.route('/chat/new', methods=['POST'])
+@login_required
+async def create_new_chat():
+    """Create a new chat session"""
+    user_data = await get_current_user_data(current_user.auth_id)
+    if not user_data:
+        return {'success': False, 'message': 'Unauthorized'}, 401
+    
+    # Create new session
+    new_session = await create_chat_session(user_data.id)
+    
+    return {'success': True, 'session_id': new_session.id}
+
+@chat_bp.route('/chat/clear', methods=['POST'])
+@login_required
+async def clear_current_chat():
+    """Clear all messages from current chat session"""
+    data = await request.json
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return {'success': False, 'message': 'Session ID required'}, 400
+    
+    user_data = await get_current_user_data(current_user.auth_id)
+    if not user_data:
+        return {'success': False, 'message': 'Unauthorized'}, 401
+    
+    # Verify session belongs to user
+    session_obj = await get_chat_session(session_id)
+    if not session_obj or session_obj.user_id != user_data.id:
+        return {'success': False, 'message': 'Session not found'}, 404
+    
+    # Clear all messages from this session
+    await clear_session_messages(session_id)
+    
+    return {'success': True, 'message': 'Chat cleared successfully'}
 
 @chat_bp.route('/chat/stream')
 @login_required
@@ -223,7 +289,7 @@ async def chat_stream():
         return Response(error_stream(), mimetype='text/event-stream')
     
     # Check rate limit
-    if not await check_rate_limit(user_data.id):
+    if not await check_rate_limit(user_data.id, RATE_LIMIT_MAX):
         async def rate_limit_stream():
             yield f"data: {json.dumps({'error': 'Rate limit exceeded'})}\n\n"
         return Response(rate_limit_stream(), mimetype='text/event-stream')
@@ -232,7 +298,7 @@ async def chat_stream():
     await save_message(user_data.id, 'user', message, session_id)
     
     # Get chat history for context
-    chat_history = await get_session_messages(session_id, 8)
+    chat_history = await get_session_messages(session_id, CHAT_HISTORY_LIMIT // 3)  # Use 1/3 of limit for context
     
     # Check cache first
     prompt_hash = hashlib.md5(message.encode()).hexdigest()
@@ -270,11 +336,15 @@ async def chat_stream():
                             await save_message(user_data.id, 'assistant', full_response, session_id)
                             # Cache the response
                             await cache_response(prompt_hash, full_response)
+                        # Signal refresh needed
+                        yield f"data: {json.dumps({'refresh_needed': True})}\n\n"
                     elif data.get('interrupted'):
                         # Save partial response if interrupted
                         if full_response.strip():
                             interrupted_response = full_response + '\n\n[Generation interrupted]'
                             await save_message(user_data.id, 'assistant', interrupted_response, session_id)
+                        # Signal refresh needed
+                        yield f"data: {json.dumps({'refresh_needed': True})}\n\n"
                 except (json.JSONDecodeError, KeyError):
                     pass
     

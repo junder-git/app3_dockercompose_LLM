@@ -16,11 +16,63 @@
     </div>
 </div>
 
-<!-- Database Statistics -->
+<!-- Pending Users Section -->
+{% if pending_users %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card border-warning">
             <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="bi bi-person-plus"></i> Pending User Approvals
+                    <span class="badge bg-danger">{{ pending_users|length }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for user in pending_users %}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card border-secondary">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ user.username }}</h6>
+                                <p class="card-text">
+                                    <small class="text-muted">
+                                        ID: {{ user.id }}<br>
+                                        Registered: {{ user.created_at[:10] if user.created_at else 'Unknown' }}
+                                    </small>
+                                </p>
+                                <div class="btn-group w-100">
+                                    <form method="POST" action="/admin/approve_user" class="flex-fill">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                                        <button type="submit" class="btn btn-success btn-sm w-100">
+                                            <i class="bi bi-check-circle"></i> Approve
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="/admin/reject_user" class="flex-fill ms-2">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                                        <button type="submit" class="btn btn-danger btn-sm w-100"
+                                                onclick="return confirm('Reject user {{ user.username }}? This will delete their account.')">
+                                            <i class="bi bi-x-circle"></i> Reject
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Database Statistics -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-dark">
                 <h5 class="mb-0">
                     <i class="bi bi-database"></i> Database Management
                 </h5>
@@ -32,6 +84,8 @@
                         <div class="mb-3">
                             {% if stats %}
                             <p><strong>Total Users:</strong> {{ stats.user_count }}</p>
+                            <p><strong>Approved Users:</strong> {{ stats.approved_count }}</p>
+                            <p><strong>Pending Users:</strong> {{ stats.pending_count }}</p>
                             <p><strong>Total Keys:</strong> {{ stats.total_keys }}</p>
                             {% if stats.memory_usage %}
                             <p><strong>Memory Usage:</strong> {{ stats.memory_usage.used_memory }}</p>
@@ -96,20 +150,21 @@
     </div>
 </div>
 
-<!-- Users List -->
+<!-- Approved Users List -->
 <div class="row">
     <div class="col-12">
         <div class="card border-secondary">
             <div class="card-header">
                 <h5 class="mb-0">
-                    <i class="bi bi-people"></i> Users
-                    <span class="badge bg-primary">{{ users|length if users else 0 }}</span>
+                    <i class="bi bi-people"></i> Approved Users
+                    <span class="badge bg-primary">{{ users|selectattr('is_approved')|list|length if users else 0 }}</span>
                 </h5>
             </div>
             <div class="card-body">
                 {% if users %}
                     <div class="row">
                         {% for user in users %}
+                        {% if user.is_approved or user.is_admin %}
                         <div class="col-md-6 col-lg-4 mb-3">
                             <div class="user-card">
                                 <div class="d-flex justify-content-between align-items-start">
@@ -140,11 +195,12 @@
                                 </div>
                             </div>
                         </div>
+                        {% endif %}
                         {% endfor %}
                     </div>
                 {% else %}
                     <div class="text-center text-muted">
-                        <p>No users found</p>
+                        <p>No approved users found</p>
                     </div>
                 {% endif %}
             </div>

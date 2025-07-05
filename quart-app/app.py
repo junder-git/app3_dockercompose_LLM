@@ -1,4 +1,4 @@
-# quart-app/app.py - Complete fix with markdown support
+# quart-app/app.py - Updated with better markdown support
 import os
 import sys
 import secrets
@@ -7,6 +7,8 @@ import markdown
 from datetime import timedelta
 from dotenv import load_dotenv
 from markupsafe import Markup
+from markdown.extensions import codehilite, fenced_code, tables, toc
+from pymdownx import superfences, highlight
 
 print("🔍 Starting Quart app initialization...")
 
@@ -34,26 +36,71 @@ except Exception as e:
 load_dotenv()
 print("✅ Environment loaded")
 
-# Markdown filter function
+# Enhanced markdown filter with better code block support
 def markdown_filter(text):
-    """Convert markdown text to HTML"""
+    """Convert markdown text to HTML with enhanced features"""
     if not text:
         return ""
     
-    # Configure markdown with extensions
+    # Configure markdown with comprehensive extensions
     md = markdown.Markdown(
         extensions=[
             'codehilite',
             'fenced_code',
             'tables',
             'nl2br',
-            'toc'
+            'toc',
+            'attr_list',
+            'def_list',
+            'abbr',
+            'footnotes',
+            'md_in_html',
+            'pymdownx.superfences',
+            'pymdownx.highlight',
+            'pymdownx.inlinehilite',
+            'pymdownx.tasklist',
+            'pymdownx.tilde',
+            'pymdownx.caret',
+            'pymdownx.mark',
+            'pymdownx.keys',
+            'pymdownx.smartsymbols'
         ],
         extension_configs={
             'codehilite': {
                 'css_class': 'highlight',
                 'use_pygments': True,
-                'noclasses': True
+                'noclasses': True,
+                'linenos': True,
+                'linenostart': 1,
+                'linenostep': 1,
+                'linenospecial': 0,
+                'nobackground': False
+            },
+            'pymdownx.highlight': {
+                'css_class': 'highlight',
+                'use_pygments': True,
+                'pygments_style': 'github-dark',
+                'noclasses': True,
+                'linenums': True,
+                'linenums_style': 'pymdownx-inline'
+            },
+            'pymdownx.superfences': {
+                'custom_fences': [
+                    {
+                        'name': 'mermaid',
+                        'class': 'mermaid',
+                        'format': lambda source, language, css_class, options, md, **kwargs: f'<div class="{css_class}">{source}</div>'
+                    }
+                ]
+            },
+            'pymdownx.tasklist': {
+                'custom_checkbox': True,
+                'clickable_checkbox': False
+            },
+            'toc': {
+                'permalink': True,
+                'permalink_class': 'toc-permalink',
+                'permalink_title': 'Link to this section'
             }
         }
     )
@@ -67,17 +114,17 @@ def markdown_filter(text):
 # Initialize Quart app
 app = Quart(__name__)
 
-# Register the markdown filter
+# Register the enhanced markdown filter
 app.jinja_env.filters['markdown'] = markdown_filter
 
-print("✅ Quart app created")
+print("✅ Quart app created with enhanced markdown support")
 
-# Configure Quart
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_LIFETIME_DAYS', '7')))
+# Configure Quart - NO DEFAULTS
+app.config['SECRET_KEY'] = os.environ['SECRET_KEY']
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ['SESSION_LIFETIME_DAYS']))
 
-# Configure auth
-app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ.get('SECURE_COOKIES', 'false').lower() == 'true'
+# Configure auth - NO DEFAULTS
+app.config['QUART_AUTH_COOKIE_SECURE'] = os.environ['SECURE_COOKIES'].lower() == 'true'
 app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 
@@ -112,7 +159,14 @@ async def load_user_data():
     g.current_user_data = None
     try:
         if await current_user.is_authenticated:
-            g.current_user_data = await get_current_user_data(current_user.auth_id)
+            user_data = await get_current_user_data(current_user.auth_id)
+            # Check if user is approved (or admin)
+            if user_data and (user_data.is_admin or user_data.is_approved):
+                g.current_user_data = user_data
+            else:
+                # User not approved, clear session
+                session.clear()
+                g.current_user_data = None
     except Exception as e:
         print(f"⚠️ Error loading user data: {e}")
         g.current_user_data = None
@@ -134,7 +188,7 @@ async def csrf_protect():
             print(f"⚠️ CSRF validation error: {e}")
             return jsonify({'error': 'CSRF validation failed'}), 403
 
-# Security Headers Middleware - UPDATED TO ALLOW JAVASCRIPT
+# Security Headers Middleware
 @app.after_request
 async def add_security_headers(response):
     """Add security headers to all responses"""
@@ -145,7 +199,7 @@ async def add_security_headers(response):
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
         
-        # Updated CSP to allow inline scripts for Enter key handling
+        # Updated CSP to allow inline scripts and external CDN resources
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
@@ -196,14 +250,16 @@ async def init_admin():
                 user_id='admin',  # Fixed ID for admin
                 username=ADMIN_USERNAME,
                 password_hash=generate_password_hash(ADMIN_PASSWORD),
-                is_admin=True
+                is_admin=True,
+                is_approved=True  # Admin is always approved
             )
             await save_user(admin_user)
             print(f"✅ Created default admin user: {ADMIN_USERNAME}")
         else:
-            # Ensure existing admin has correct admin status
-            if not admin.is_admin:
+            # Ensure existing admin has correct admin status and approval
+            if not admin.is_admin or not admin.is_approved:
                 admin.is_admin = True
+                admin.is_approved = True
                 await save_user(admin)
                 print(f"✅ Fixed admin status for user: {ADMIN_USERNAME}")
             else:
@@ -251,7 +307,13 @@ async def internal_error(error):
 async def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
-print("✅ Quart app configuration complete")
+print("✅ Quart app configuration complete with enhanced markdown support")
+print("📝 Markdown features enabled:")
+print("  - Syntax highlighting with line numbers")
+print("  - Tables, task lists, and footnotes")
+print("  - Table of contents generation")
+print("  - Enhanced code blocks with language detection")
+print("  - GitHub-style markdown extensions")
 
 if __name__ == '__main__':
     print("🚀 Starting Quart app...")

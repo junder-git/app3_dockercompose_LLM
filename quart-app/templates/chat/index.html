@@ -4,16 +4,21 @@
 
 {% block content %}
 <div class="row">
-    <div class="col-md-3">
-        <!-- Chat Sessions Sidebar -->
+    <!-- Chat Sessions Sidebar -->
+    <div class="col-md-3" id="sidebar">
         <div class="card border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">
                     <i class="bi bi-chat-square"></i> Chat Sessions
                 </h6>
-                <button class="btn btn-sm btn-outline-primary" id="new-chat-btn">
-                    <i class="bi bi-plus"></i> New
-                </button>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-primary" id="new-chat-btn">
+                        <i class="bi bi-plus"></i> New
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" id="clear-chat-btn">
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="list-group list-group-flush" id="chat-sessions">
@@ -38,11 +43,17 @@
         </div>
     </div>
     
-    <div class="col-md-9">
+    <!-- Main Chat Area -->
+    <div class="col-md-9" id="main-chat">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>
-                <i class="bi bi-chat-dots" aria-hidden="true"></i> Chat with AI
-            </h1>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-secondary btn-sm me-3" id="toggle-sidebar">
+                    <i class="bi bi-layout-sidebar"></i>
+                </button>
+                <h1>
+                    <i class="bi bi-chat-dots" aria-hidden="true"></i> Chat with AI
+                </h1>
+            </div>
             <span class="text-muted">
                 <i class="bi bi-person" aria-hidden="true"></i> {{ username }}
             </span>
@@ -57,7 +68,7 @@
                         <div class="message-content">
                             {% if message.role == 'user' %}
                                 <!-- User messages as plain text -->
-                                <pre>{{ message.content }}</pre>
+                                <pre class="user-text">{{ message.content }}</pre>
                             {% else %}
                                 <!-- AI messages with markdown formatting -->
                                 {% if message.content.startswith('<think>') %}
@@ -160,6 +171,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 <script>
 $(document).ready(function() {
     let eventSource = null;
@@ -168,10 +180,44 @@ $(document).ready(function() {
     let isStreaming = false;
     let streamedResponse = '';
     let currentUserMessage = '';
+    let refreshNeeded = false;
+    
+    // Configure marked.js for better markdown support
+    marked.setOptions({
+        breaks: true,
+        gfm: true,
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                return hljs.highlight(code, { language: lang }).value;
+            }
+            return hljs.highlightAuto(code).value;
+        }
+    });
     
     // Get session ID from page if not provided
     if (!currentSessionId) {
         currentSessionId = 'default_session';
+    }
+    
+    // Sidebar toggle functionality
+    $("#toggle-sidebar").on('click', function() {
+        $("#sidebar").toggleClass('d-none');
+        $("#main-chat").toggleClass('col-md-9 col-12');
+        
+        // Update button icon
+        const icon = $(this).find('i');
+        if ($("#sidebar").hasClass('d-none')) {
+            icon.removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
+        } else {
+            icon.removeClass('bi-layout-sidebar-reverse').addClass('bi-layout-sidebar');
+        }
+    });
+    
+    // Auto-hide sidebar on mobile
+    if (window.innerWidth <= 768) {
+        $("#sidebar").addClass('d-none');
+        $("#main-chat").removeClass('col-md-9').addClass('col-12');
+        $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
     }
     
     // Enter key submission
@@ -197,7 +243,46 @@ $(document).ready(function() {
     
     // New chat button
     $("#new-chat-btn").on('click', function() {
-        window.location.href = '/chat/new';
+        $.ajax({
+            url: '/chat/new',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({}),
+            success: function(response) {
+                if (response.success) {
+                    window.location.href = '/chat?session=' + response.session_id;
+                } else {
+                    alert('Error creating new chat: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('Error creating new chat');
+            }
+        });
+    });
+    
+    // Clear chat button
+    $("#clear-chat-btn").on('click', function() {
+        if (confirm('Are you sure you want to clear all messages from this chat?')) {
+            $.ajax({
+                url: '/chat/clear',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    session_id: currentSessionId
+                }),
+                success: function(response) {
+                    if (response.success) {
+                        location.reload();
+                    } else {
+                        alert('Error clearing chat: ' + response.message);
+                    }
+                },
+                error: function() {
+                    alert('Error clearing chat');
+                }
+            });
+        }
     });
     
     function handleMessageSubmit() {
@@ -220,7 +305,7 @@ $(document).ready(function() {
         const messageHtml = `
             <article class="message user-message">
                 <div class="message-content">
-                    <pre>${escapeHtml(message)}</pre>
+                    <pre class="user-text">${escapeHtml(message)}</pre>
                 </div>
                 <small class="text-muted message-timestamp">
                     <time datetime="${new Date().toISOString()}">
@@ -239,6 +324,7 @@ $(document).ready(function() {
         isStreaming = true;
         streamId = 'stream_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         streamedResponse = '';
+        refreshNeeded = false;
         
         // Show streaming response area
         $("#streaming-response").show();
@@ -267,6 +353,8 @@ $(document).ready(function() {
                     handleStreamInterrupted();
                 } else if (data.done) {
                     handleStreamComplete();
+                } else if (data.refresh_needed) {
+                    refreshNeeded = true;
                 } else if (data.content) {
                     streamedResponse += data.content;
                     updateStreamingText(streamedResponse);
@@ -291,9 +379,42 @@ $(document).ready(function() {
     }
     
     function updateStreamingText(text) {
-        // Convert markdown to HTML (basic implementation)
-        const html = convertMarkdownToHtml(text);
-        $("#streaming-text").html(html);
+        // Process thinking tags
+        const thinkingPattern = /<think>([\s\S]*?)<\/think>/g;
+        let processedText = text;
+        let thinkingContent = '';
+        
+        // Extract thinking content
+        let match;
+        while ((match = thinkingPattern.exec(text)) !== null) {
+            thinkingContent += match[1];
+        }
+        
+        // Remove thinking tags from display text
+        processedText = text.replace(thinkingPattern, '');
+        
+        // Convert markdown to HTML
+        const html = marked.parse(processedText);
+        
+        // Update display
+        let displayHtml = html;
+        if (thinkingContent) {
+            displayHtml = `
+                <details class="thinking-dropdown mb-3">
+                    <summary class="text-muted">💭 Thinking process</summary>
+                    <div class="thinking-content mt-2 p-3 bg-dark rounded">
+                        ${marked.parse(thinkingContent)}
+                    </div>
+                </details>
+                <div class="ai-response">
+                    ${html}
+                </div>
+            `;
+        } else {
+            displayHtml = `<div class="ai-response">${html}</div>`;
+        }
+        
+        $("#streaming-text").html(displayHtml);
         scrollToBottom();
     }
     
@@ -301,8 +422,14 @@ $(document).ready(function() {
         finishStreaming();
         
         // No need to save response - it's already saved in the stream
-        // Convert to permanent message
-        convertStreamingToPermanent();
+        // Convert to permanent message or refresh if needed
+        if (refreshNeeded) {
+            setTimeout(() => {
+                location.reload();
+            }, 500);
+        } else {
+            convertStreamingToPermanent();
+        }
     }
     
     function handleStreamError(error) {
@@ -317,8 +444,12 @@ $(document).ready(function() {
         finishStreaming();
         $("#streaming-text").append('<div class="text-muted mt-2"><i class="bi bi-stop-circle"></i> Generation interrupted</div>');
         
-        // Response is already saved in the stream, just convert to permanent
-        if (streamedResponse.trim()) {
+        // Response is already saved in the stream, just refresh if needed
+        if (refreshNeeded) {
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else if (streamedResponse.trim()) {
             convertStreamingToPermanent();
         } else {
             setTimeout(() => {
@@ -346,7 +477,7 @@ $(document).ready(function() {
         const messageHtml = `
             <article class="message assistant-message" id="latest">
                 <div class="message-content">
-                    <div class="ai-response">${html}</div>
+                    ${html}
                 </div>
                 <small class="text-muted message-timestamp">
                     <time datetime="${new Date().toISOString()}">
@@ -384,19 +515,23 @@ $(document).ready(function() {
         return div.innerHTML;
     }
     
-    function convertMarkdownToHtml(text) {
-        // Basic markdown conversion for streaming
-        return text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`(.*?)`/g, '<code>$1</code>')
-            .replace(/\n/g, '<br>');
-    }
-    
     // Auto-scroll to bottom on page load
     if ($('.message').length > 0) {
         scrollToBottom();
     }
+    
+    // Window resize handler for responsive sidebar
+    $(window).resize(function() {
+        if (window.innerWidth <= 768) {
+            $("#sidebar").addClass('d-none');
+            $("#main-chat").removeClass('col-md-9').addClass('col-12');
+            $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar').addClass('bi-layout-sidebar-reverse');
+        } else {
+            $("#sidebar").removeClass('d-none');
+            $("#main-chat").removeClass('col-12').addClass('col-md-9');
+            $("#toggle-sidebar").find('i').removeClass('bi-layout-sidebar-reverse').addClass('bi-layout-sidebar');
+        }
+    });
 });
 
 // Delete session function
@@ -420,4 +555,10 @@ function deleteSession(sessionId) {
     }
 }
 </script>
+
+<!-- Include highlight.js for syntax highlighting -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
 {% endblock %}
