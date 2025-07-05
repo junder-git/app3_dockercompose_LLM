@@ -1,4 +1,4 @@
-# quart-app/app.py - Minimal version without error handlers
+# quart-app/app.py - FIXED version with proper routing and auth
 import os
 import sys
 import secrets
@@ -10,7 +10,7 @@ from markupsafe import Markup
 from markdown.extensions import codehilite, fenced_code, tables, toc
 from pymdownx import superfences, highlight
 
-print("🔍 Starting Quart app initialization - minimal version...")
+print("🔍 Starting Quart app initialization - FIXED version...")
 
 try:
     from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
@@ -165,22 +165,30 @@ async def startup():
 async def health():
     return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
 
-# Root route
+# FIXED: Root route with proper logic
 @app.route('/')
 async def index():
-    if await current_user.is_authenticated:
-        return redirect(url_for('chat.chat'))
-    return redirect(url_for('auth.login'))
-
-# NO ERROR HANDLERS - Let nginx handle errors
-
-print("✅ Minimal Quart app ready")
-print(f"  - Admin: {ADMIN_USERNAME} (ID: {ADMIN_USER_ID})")
-print(f"  - Sessions: {SESSION_LIFETIME_DAYS} days")
-print(f"  - Secure cookies: {SECURE_COOKIES}")
-print("🔗 Error handling: nginx only")
-print("🔗 Rate limiting: nginx only") 
-print("🔗 Auth: blueprint decorators only")
+    """Root route - redirect to appropriate page"""
+    print(f"🔗 Root route accessed")
+    
+    try:
+        # Check if user is authenticated
+        is_authenticated = await current_user.is_authenticated
+        print(f"🔗 User authenticated: {is_authenticated}")
+        
+        if is_authenticated:
+            # User is logged in, redirect to chat
+            print(f"🔗 Redirecting authenticated user to chat")
+            return redirect(url_for('chat.chat'))
+        else:
+            # User not logged in, redirect to login
+            print(f"🔗 Redirecting unauthenticated user to login")
+            return redirect(url_for('auth.login'))
+            
+    except Exception as e:
+        print(f"❌ Error in root route: {e}")
+        # Fallback to login on any error
+        return redirect(url_for('auth.login'))
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8000)

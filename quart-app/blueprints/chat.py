@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Updated with clean authentication
+# quart-app/blueprints/chat.py - FIXED with minimal essential routes
 import os
 import hashlib
 import aiohttp
@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import List, Dict, AsyncGenerator
 from quart import Blueprint, render_template, request, redirect, url_for, flash, Response
-from quart_auth import current_user
+from quart_auth import current_user, login_required
 
 from .database import (
     get_current_user_data, get_or_create_current_session,
@@ -18,555 +18,196 @@ from .database import (
     clear_session_messages
 )
 from .utils import escape_html
-from .auth import login_required  # Import from auth module
 
-chat_bp = Blueprint('chat', __name__)
+# FIXED: Create blueprint with explicit url_prefix
+chat_bp = Blueprint('chat', __name__, url_prefix='')
 
-# AI Model configuration - ALL from environment variables
-OLLAMA_URL = os.environ['OLLAMA_URL']
-OLLAMA_MODEL = os.environ['OLLAMA_MODEL']
+# AI Model configuration - Essential only
+OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'llama2')
+CHAT_HISTORY_LIMIT = int(os.environ.get('CHAT_HISTORY_LIMIT', '50'))
+RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MESSAGES_PER_MINUTE', '10'))
 
-# Model parameters from environment
-MODEL_TEMPERATURE = float(os.environ['MODEL_TEMPERATURE'])
-MODEL_TOP_P = float(os.environ['MODEL_TOP_P'])
-MODEL_TOP_K = int(os.environ['MODEL_TOP_K'])
-MODEL_REPEAT_PENALTY = float(os.environ['MODEL_REPEAT_PENALTY'])
-MODEL_MAX_TOKENS = int(os.environ['MODEL_MAX_TOKENS'])
-MODEL_TIMEOUT = int(os.environ['MODEL_TIMEOUT'])
-
-# Hardware settings from environment
-OLLAMA_GPU_LAYERS = int(os.environ['OLLAMA_GPU_LAYERS'])
-OLLAMA_NUM_THREAD = int(os.environ['OLLAMA_NUM_THREAD'])
-OLLAMA_CONTEXT_SIZE = int(os.environ['OLLAMA_CONTEXT_SIZE'])
-OLLAMA_BATCH_SIZE = int(os.environ['OLLAMA_BATCH_SIZE'])
-
-# Memory management from environment
-MODEL_USE_MMAP = os.environ['MODEL_USE_MMAP'].lower() == 'true'
-MODEL_USE_MLOCK = os.environ['MODEL_USE_MLOCK'].lower() == 'true'
-
-# Auto-adjust MMAP when MLOCK is enabled
-if MODEL_USE_MLOCK and MODEL_USE_MMAP:
-    MODEL_USE_MMAP = False
-    print("🔧 Auto-disabled MMAP because MLOCK is enabled")
-
-# Other settings from environment
-OLLAMA_KEEP_ALIVE = os.environ['OLLAMA_KEEP_ALIVE']
-if str(OLLAMA_KEEP_ALIVE) == '-1':
-    OLLAMA_KEEP_ALIVE = -1
-
-# Chat settings from environment
-CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
-RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
-
-# UNLIMITED NETWORK SETTINGS from environment (only for chat endpoints)
-UNLIMITED_TIMEOUT = int(os.environ['UNLIMITED_TIMEOUT'])
-STREAMING_TIMEOUT = int(os.environ['STREAMING_TIMEOUT'])
-AIOHTTP_TOTAL_TIMEOUT = int(os.environ['AIOHTTP_TOTAL_TIMEOUT'])
-AIOHTTP_CONNECT_TIMEOUT = int(os.environ['AIOHTTP_CONNECT_TIMEOUT'])
-AIOHTTP_READ_TIMEOUT = int(os.environ['AIOHTTP_READ_TIMEOUT'])
-AIOHTTP_LIMIT = int(os.environ['AIOHTTP_LIMIT'])
-AIOHTTP_LIMIT_PER_HOST = int(os.environ['AIOHTTP_LIMIT_PER_HOST'])
-AIOHTTP_KEEPALIVE_TIMEOUT = int(os.environ['AIOHTTP_KEEPALIVE_TIMEOUT'])
-AIOHTTP_ENABLE_CLEANUP_CLOSED = os.environ['AIOHTTP_ENABLE_CLEANUP_CLOSED'].lower() == 'true'
-AIOHTTP_FORCE_CLOSE = os.environ['AIOHTTP_FORCE_CLOSE'].lower() == 'true'
-AIOHTTP_TTL_DNS_CACHE = int(os.environ['AIOHTTP_TTL_DNS_CACHE'])
-
-# Stop sequences
-MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
-
-# UNLIMITED TIMEOUT CONFIGURATION (only for chat streaming)
-UNLIMITED_CLIENT_TIMEOUT = aiohttp.ClientTimeout(
-    total=None if AIOHTTP_TOTAL_TIMEOUT == 0 else AIOHTTP_TOTAL_TIMEOUT,
-    connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT,
-    sock_read=None if AIOHTTP_READ_TIMEOUT == 0 else AIOHTTP_READ_TIMEOUT,
-    sock_connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT
-)
-
-# UNLIMITED CONNECTOR CONFIGURATION - Create per request to avoid loop issues
-def create_unlimited_connector():
-    """Create a new connector for each request to avoid event loop issues"""
-    return aiohttp.TCPConnector(
-        limit=AIOHTTP_LIMIT if AIOHTTP_LIMIT > 0 else None,
-        limit_per_host=AIOHTTP_LIMIT_PER_HOST if AIOHTTP_LIMIT_PER_HOST > 0 else None,
-        keepalive_timeout=None if AIOHTTP_KEEPALIVE_TIMEOUT == 0 else AIOHTTP_KEEPALIVE_TIMEOUT,
-        enable_cleanup_closed=AIOHTTP_ENABLE_CLEANUP_CLOSED,
-        force_close=AIOHTTP_FORCE_CLOSE,
-        ttl_dns_cache=AIOHTTP_TTL_DNS_CACHE if AIOHTTP_TTL_DNS_CACHE > 0 else None
-    )
-
-def get_active_model():
-    """Get the active optimized model name"""
-    try:
-        with open('/tmp/active_model', 'r') as f:
-            return f.read().strip()
-    except:
-        return OLLAMA_MODEL
-
-ACTIVE_MODEL = get_active_model()
-
-print(f"🔧 Chat Blueprint Config:")
-print(f"  Active Model: {ACTIVE_MODEL}")
+print(f"🔧 Chat Blueprint FIXED Config:")
 print(f"  OLLAMA_URL: {OLLAMA_URL}")
-print(f"  MMAP: {MODEL_USE_MMAP}")
-print(f"  MLOCK: {MODEL_USE_MLOCK}")
-print(f"  Context Size: {OLLAMA_CONTEXT_SIZE}")
-print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
-print(f"  Temperature: {MODEL_TEMPERATURE}")
-print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
-print(f"  Timeout: {MODEL_TIMEOUT}")
-print(f"🌐 Network Config (Chat Only):")
-print(f"  Unlimited Timeout: {UNLIMITED_TIMEOUT}")
-print(f"  Streaming Timeout: {STREAMING_TIMEOUT}")
-print(f"  AIOHTTP Limit: {AIOHTTP_LIMIT}")
-print(f"  AIOHTTP Limit Per Host: {AIOHTTP_LIMIT_PER_HOST}")
-print(f"  AIOHTTP Keepalive: {AIOHTTP_KEEPALIVE_TIMEOUT}")
+print(f"  OLLAMA_MODEL: {OLLAMA_MODEL}")
+print(f"  CHAT_HISTORY_LIMIT: {CHAT_HISTORY_LIMIT}")
+print(f"  RATE_LIMIT_MAX: {RATE_LIMIT_MAX}")
 
-# Global dictionary to track active streams
-active_streams = {}
-
-async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
-    """Stream AI response with unlimited network settings and robust error handling"""
-    
-    connector = None
-    try:
-        print(f"🔧 Starting AI streaming for prompt: {prompt[:50]}...")
+# FIXED: Simple require_auth decorator for chat
+def require_auth(f):
+    """Simple auth decorator for chat routes"""
+    from functools import wraps
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        print(f"🔐 Chat auth check for {request.endpoint}")
         
-        # Build messages array
-        messages = []
-        
-        # Add context history (limited for speed)
-        if chat_history:
-            for msg in chat_history[-6:]:  # Only last 6 messages
-                role = msg.get('role')
-                content = msg.get('content', '').strip()
-                if role in ['user', 'assistant'] and content:
-                    # Truncate long messages
-                    if len(content) > 1500:
-                        content = content[:1500] + "..."
-                    messages.append({
-                        'role': role,
-                        'content': content
-                    })
-        
-        # Add current user message
-        user_prompt = prompt.strip()
-        if len(user_prompt) > 5000:
-            user_prompt = user_prompt[:5000] + "..."
-        
-        messages.append({
-            'role': 'user',
-            'content': user_prompt
-        })
-        
-        # Build payload with ALL environment settings
-        payload = {
-            'model': ACTIVE_MODEL,
-            'messages': messages,
-            'stream': True,
-            'keep_alive': OLLAMA_KEEP_ALIVE,
-            'options': {
-                'temperature': MODEL_TEMPERATURE,
-                'top_p': MODEL_TOP_P,
-                'top_k': MODEL_TOP_K,
-                'repeat_penalty': MODEL_REPEAT_PENALTY,
-                'num_predict': MODEL_MAX_TOKENS,
-                'num_ctx': OLLAMA_CONTEXT_SIZE,
-                'num_batch': OLLAMA_BATCH_SIZE,
-                'num_gpu': OLLAMA_GPU_LAYERS,
-                'num_thread': OLLAMA_NUM_THREAD,
-                'use_mmap': MODEL_USE_MMAP,
-                'use_mlock': MODEL_USE_MLOCK,
-                'stop': MODEL_STOP_SEQUENCES
-            }
-        }
-        
-        print(f"🔧 AI Request with unlimited network (chat only):")
-        print(f"  Model: {ACTIVE_MODEL}")
-        print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
-        print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
-        print(f"  Batch Size: {OLLAMA_BATCH_SIZE}")
-        
-        # Use unlimited timeout and connector - create fresh connector per request
-        connector = create_unlimited_connector()
-        
-        async with aiohttp.ClientSession(
-            timeout=UNLIMITED_CLIENT_TIMEOUT,
-            connector=connector
-        ) as session:
-            print(f"🌐 Connecting to {OLLAMA_URL}/api/chat...")
-            
-            async with session.post(
-                f"{OLLAMA_URL}/api/chat",
-                json=payload,
-                headers={'Content-Type': 'application/json'}
-            ) as response:
-                
-                print(f"📡 Response status: {response.status}")
-                
-                if response.status != 200:
-                    error_text = await response.text()
-                    print(f"❌ API Error {response.status}: {error_text}")
-                    yield f"data: {json.dumps({'error': f'API Error {response.status}: {error_text}'})}\n\n"
-                    return
-                
-                # Stream the response with unlimited network - improved buffering
-                buffer = ""
-                chunk_count = 0
-                
-                async for chunk in response.content.iter_chunked(8192):  # Larger chunks
-                    chunk_count += 1
-                    if chunk_count % 10 == 0:
-                        print(f"📦 Processed {chunk_count} chunks...")
-                    
-                    # Check if stream should be interrupted
-                    if stream_id and stream_id in active_streams and active_streams[stream_id].get('interrupt'):
-                        print(f"⏹️ Stream interrupted by user")
-                        yield f"data: {json.dumps({'interrupted': True})}\n\n"
-                        return
-                    
-                    try:
-                        buffer += chunk.decode('utf-8')
-                        lines = buffer.split('\n')
-                        buffer = lines[-1]  # Keep incomplete line in buffer
-                        
-                        for line in lines[:-1]:  # Process complete lines
-                            line = line.strip()
-                            if line:
-                                try:
-                                    data = json.loads(line)
-                                    if 'message' in data and 'content' in data['message']:
-                                        content = data['message']['content']
-                                        if content:
-                                            yield f"data: {json.dumps({'content': content})}\n\n"
-                                    
-                                    # Check if done
-                                    if data.get('done', False):
-                                        print(f"✅ Stream completed successfully")
-                                        yield f"data: {json.dumps({'done': True})}\n\n"
-                                        return
-                                except json.JSONDecodeError as e:
-                                    print(f"⚠️ JSON decode error: {e} for line: {line[:100]}")
-                                    continue
-                    except UnicodeDecodeError as e:
-                        print(f"⚠️ Unicode decode error: {e}")
-                        continue
-                        
-                print(f"🏁 Stream ended naturally")
-    
-    except asyncio.TimeoutError:
-        print(f"⏱️ Timeout error occurred")
-        yield f"data: {json.dumps({'error': 'Timeout error occurred'})}\n\n"
-    except aiohttp.ClientError as e:
-        print(f"🌐 Connection error: {e}")
-        yield f"data: {json.dumps({'error': f'Connection error: {str(e)}'})}\n\n"
-    except Exception as e:
-        print(f"💥 Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        yield f"data: {json.dumps({'error': f'Unexpected error: {str(e)}'})}\n\n"
-    finally:
-        # Clean up stream tracking
-        if stream_id and stream_id in active_streams:
-            del active_streams[stream_id]
-        print(f"🧹 Stream cleanup completed")
-
-# Chat routes - Using simple authentication decorators
-@chat_bp.route('/chat', methods=['GET'])
-@chat_bp.route('/chat/new', methods=['GET'])
-@login_required
-async def chat():
-    """Main chat interface with session management"""
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data:
-        return redirect(url_for('auth.login'))
-    
-    # Get session ID from query parameter or create new
-    requested_session_id = request.args.get('session')
-    
-    if request.path == '/chat/new' or not requested_session_id:
-        # Create new session
-        current_session_id = await get_or_create_current_session(user_data.id)
-    else:
-        # Use requested session or fallback to default
-        current_session_id = requested_session_id
-        # Verify session exists and belongs to user
-        session_obj = await get_chat_session(current_session_id)
-        if not session_obj or session_obj.user_id != user_data.id:
-            current_session_id = await get_or_create_current_session(user_data.id)
-    
-    # Get all user sessions for sidebar
-    chat_sessions = await get_user_chat_sessions(user_data.id)
-    
-    # Get messages for current session
-    messages = await get_session_messages(current_session_id, CHAT_HISTORY_LIMIT)
-    
-    formatted_messages = []
-    for msg in messages:
-        formatted_messages.append({
-            'role': msg.get('role'),
-            'content': msg.get('content', ''),
-            'timestamp': msg.get('timestamp'),
-            'cached': msg.get('cached', False)
-        })
-    
-    return await render_template('chat/index.html', 
-                               username=user_data.username,
-                               messages=formatted_messages,
-                               current_session_id=current_session_id,
-                               chat_sessions=chat_sessions)
-
-@chat_bp.route('/chat/new', methods=['POST'])
-@login_required
-async def create_new_chat():
-    """Create a new chat session"""
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data:
-        return {'success': False, 'message': 'Unauthorized'}, 401
-    
-    # Create new session
-    new_session = await create_chat_session(user_data.id)
-    
-    return {'success': True, 'session_id': new_session.id}
-
-@chat_bp.route('/chat/clear', methods=['POST'])
-@login_required
-async def clear_current_chat():
-    """Clear all messages from current chat session"""
-    data = await request.json
-    session_id = data.get('session_id')
-    
-    if not session_id:
-        return {'success': False, 'message': 'Session ID required'}, 400
-    
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data:
-        return {'success': False, 'message': 'Unauthorized'}, 401
-    
-    # Verify session belongs to user
-    session_obj = await get_chat_session(session_id)
-    if not session_obj or session_obj.user_id != user_data.id:
-        return {'success': False, 'message': 'Session not found'}, 404
-    
-    # Clear all messages from this session
-    await clear_session_messages(session_id)
-    
-    return {'success': True, 'message': 'Chat cleared successfully'}
-
-@chat_bp.route('/chat/stream')
-@login_required
-async def chat_stream():
-    """Server-Sent Events endpoint for unlimited streaming responses"""
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data:
-        return redirect(url_for('auth.login'))
-    
-    # Get parameters from query string
-    message = request.args.get('message', '')
-    session_id = request.args.get('session_id', '')
-    stream_id = request.args.get('stream_id', '')
-    
-    if not message or not session_id:
-        async def error_stream():
-            yield f"data: {json.dumps({'error': 'Missing message or session_id'})}\n\n"
-        return Response(error_stream(), mimetype='text/event-stream')
-    
-    # Track this stream immediately to prevent rate limiting during response
-    active_streams[stream_id] = {'interrupt': False, 'user_id': user_data.id}
-    
-    # Check rate limit ONLY for new requests, not during streaming
-    if not await check_rate_limit(user_data.id, RATE_LIMIT_MAX):
-        # Remove from active streams if rate limited
-        if stream_id in active_streams:
-            del active_streams[stream_id]
-        async def rate_limit_stream():
-            yield f"data: {json.dumps({'error': 'Rate limit exceeded'})}\n\n"
-        return Response(rate_limit_stream(), mimetype='text/event-stream')
-    
-    # Save user message immediately to database
-    await save_message(user_data.id, 'user', message, session_id)
-    
-    # Get chat history for context
-    chat_history = await get_session_messages(session_id, CHAT_HISTORY_LIMIT // 3)
-    
-    # Check cache first
-    prompt_hash = hashlib.md5(message.encode()).hexdigest()
-    cached_response = await get_cached_response(prompt_hash)
-    
-    if cached_response:
-        # Save cached response immediately to database
-        await save_message(user_data.id, 'assistant', cached_response, session_id)
-        
-        # Clean up stream tracking for cached response
-        if stream_id in active_streams:
-            del active_streams[stream_id]
-        
-        # Return cached response as if it was streamed
-        async def cached_stream():
-            yield f"data: {json.dumps({'content': cached_response, 'cached': True})}\n\n"
-            yield f"data: {json.dumps({'done': True})}\n\n"
-        return Response(cached_stream(), mimetype='text/event-stream')
-    
-    # Stream the AI response with unlimited network
-    async def unlimited_streaming_with_db_updates():
-        full_response = ''
+        if not await current_user.is_authenticated:
+            print(f"🔐 Chat: User not authenticated")
+            if request.is_json:
+                return {'error': 'Authentication required'}, 401
+            return redirect(url_for('auth.login'))
         
         try:
-            async for chunk in stream_ai_response(message, chat_history, stream_id):
-                yield chunk
-                
-                # Parse the chunk to get content
-                if chunk.startswith('data: '):
-                    try:
-                        data = json.loads(chunk[6:].strip())
-                        if 'content' in data:
-                            full_response += data['content']
-                        elif data.get('done'):
-                            # Save complete response to database immediately
-                            if full_response.strip():
-                                await save_message(user_data.id, 'assistant', full_response, session_id)
-                                # Cache the response
-                                await cache_response(prompt_hash, full_response)
-                            break
-                        elif data.get('interrupted'):
-                            # Save partial response if interrupted
-                            if full_response.strip():
-                                interrupted_response = full_response + '\n\n[Generation interrupted]'
-                                await save_message(user_data.id, 'assistant', interrupted_response, session_id)
-                            break
-                        elif 'error' in data:
-                            # Handle errors gracefully
-                            print(f"❌ Streaming error: {data['error']}")
-                            if full_response.strip():
-                                error_response = full_response + f'\n\n[Error: {data["error"]}]'
-                                await save_message(user_data.id, 'assistant', error_response, session_id)
-                            break
-                    except (json.JSONDecodeError, KeyError) as e:
-                        print(f"⚠️ JSON decode error: {e}")
-                        continue
+            user_data = await get_current_user_data(current_user.auth_id)
+            if not user_data or (not user_data.is_approved and not user_data.is_admin):
+                print(f"🔐 Chat: User not approved")
+                if request.is_json:
+                    return {'error': 'Account not approved'}, 403
+                return redirect(url_for('auth.login'))
         except Exception as e:
-            print(f"❌ Streaming exception: {e}")
-            # Save any partial response
-            if full_response.strip():
-                error_response = full_response + f'\n\n[Connection error: {str(e)}]'
-                await save_message(user_data.id, 'assistant', error_response, session_id)
-            # Send error to client
-            yield f"data: {json.dumps({'error': f'Streaming error: {str(e)}'})}\n\n"
-    
-    return Response(
-        unlimited_streaming_with_db_updates(),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
-            'X-Accel-Buffering': 'no',  # Disable nginx buffering
-            'Transfer-Encoding': 'chunked'  # Ensure chunked encoding
-        }
-    )
+            print(f"🔐 Chat auth error: {e}")
+            if request.is_json:
+                return {'error': 'Authentication error'}, 401
+            return redirect(url_for('auth.login'))
+        
+        print(f"🔐 Chat auth successful")
+        return await f(*args, **kwargs)
+    return decorated_function
 
-@chat_bp.route('/chat/interrupt', methods=['POST'])
-@login_required
-async def interrupt_stream():
-    """Interrupt an active stream"""
-    data = await request.json
-    stream_id = data.get('stream_id')
+# FIXED: Essential chat routes only
+@chat_bp.route('/chat', methods=['GET'])
+@chat_bp.route('/chat/new', methods=['GET'])
+@require_auth
+async def chat():
+    """Main chat interface - FIXED"""
+    print(f"🔗 Chat route accessed: {request.path}")
     
-    if stream_id and stream_id in active_streams:
-        active_streams[stream_id]['interrupt'] = True
-        return {'success': True}
-    
-    return {'success': False}, 404
-
-@chat_bp.route('/chat/delete_session', methods=['POST'])
-@login_required
-async def delete_session():
-    """Delete a chat session"""
-    data = await request.json
-    session_id = data.get('session_id')
-    
-    if not session_id:
-        return {'success': False, 'message': 'Session ID required'}, 400
-    
-    user_data = await get_current_user_data(current_user.auth_id)
-    if not user_data:
-        return {'success': False, 'message': 'Unauthorized'}, 401
-    
-    # Verify session belongs to user
-    session_obj = await get_chat_session(session_id)
-    if not session_obj or session_obj.user_id != user_data.id:
-        return {'success': False, 'message': 'Session not found'}, 404
-    
-    # Don't allow deleting if it's the only session
-    user_sessions = await get_user_chat_sessions(user_data.id)
-    if len(user_sessions) <= 1:
-        return {'success': False, 'message': 'Cannot delete the last session'}, 400
-    
-    # Delete the session
-    await delete_chat_session(user_data.id, session_id)
-    
-    return {'success': True, 'message': 'Session deleted successfully'}
-
-@chat_bp.route('/chat/test_connection')
-@login_required
-async def test_connection():
-    """Test connection to Ollama service"""
     try:
-        connector = create_unlimited_connector()
-        test_timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(
-            timeout=test_timeout,
-            connector=connector
-        ) as session:
-            async with session.get(f"{OLLAMA_URL}/api/tags") as response:
-                if response.status == 200:
-                    return {'status': 'success', 'message': 'Connection to Ollama successful'}
-                else:
-                    return {'status': 'error', 'message': f'HTTP {response.status}'}
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            print(f"🔗 Chat: No user data found")
+            return redirect(url_for('auth.login'))
+        
+        print(f"🔗 Chat: User {user_data.username} accessing chat")
+        
+        # Get session ID from query parameter or create new
+        requested_session_id = request.args.get('session')
+        
+        if request.path == '/chat/new' or not requested_session_id:
+            # Create new session
+            print(f"🔗 Chat: Creating new session")
+            current_session_id = await get_or_create_current_session(user_data.id)
+        else:
+            # Use requested session or fallback to default
+            print(f"🔗 Chat: Using session {requested_session_id}")
+            current_session_id = requested_session_id
+            # Verify session exists and belongs to user
+            session_obj = await get_chat_session(current_session_id)
+            if not session_obj or session_obj.user_id != user_data.id:
+                print(f"🔗 Chat: Session not found, creating new")
+                current_session_id = await get_or_create_current_session(user_data.id)
+        
+        # Get all user sessions for sidebar
+        try:
+            chat_sessions = await get_user_chat_sessions(user_data.id)
+            print(f"🔗 Chat: Found {len(chat_sessions)} sessions")
+        except Exception as e:
+            print(f"🔗 Chat: Error getting sessions: {e}")
+            chat_sessions = []
+        
+        # Get messages for current session
+        try:
+            messages = await get_session_messages(current_session_id, CHAT_HISTORY_LIMIT)
+            print(f"🔗 Chat: Found {len(messages)} messages")
+        except Exception as e:
+            print(f"🔗 Chat: Error getting messages: {e}")
+            messages = []
+        
+        formatted_messages = []
+        for msg in messages:
+            formatted_messages.append({
+                'role': msg.get('role'),
+                'content': msg.get('content', ''),
+                'timestamp': msg.get('timestamp'),
+                'cached': msg.get('cached', False)
+            })
+        
+        print(f"🔗 Chat: Rendering template")
+        return await render_template('chat/index.html', 
+                                   username=user_data.username,
+                                   messages=formatted_messages,
+                                   current_session_id=current_session_id,
+                                   chat_sessions=chat_sessions)
+                                   
     except Exception as e:
-        return {'status': 'error', 'message': f'Connection failed: {str(e)}'}
+        print(f"❌ Chat route error: {e}")
+        return redirect(url_for('auth.login'))
 
-@chat_bp.route('/chat/health')
-@login_required
-async def chat_health():
-    """Check AI service health with unlimited network"""
+@chat_bp.route('/chat/test', methods=['GET'])
+@require_auth
+async def chat_test():
+    """Simple test route for chat"""
+    print(f"🔗 Chat test route accessed")
+    
     try:
-        # Use unlimited timeout for health check - create fresh connector
-        health_timeout = aiohttp.ClientTimeout(total=10)
-        connector = create_unlimited_connector()
-        async with aiohttp.ClientSession(
-            timeout=health_timeout,
-            connector=connector
-        ) as session:
+        user_data = await get_current_user_data(current_user.auth_id)
+        return {
+            'status': 'success',
+            'message': 'Chat blueprint is working',
+            'user': user_data.username if user_data else 'Unknown',
+            'timestamp': time.time()
+        }
+    except Exception as e:
+        print(f"❌ Chat test error: {e}")
+        return {'error': str(e)}, 500
+
+@chat_bp.route('/chat/health', methods=['GET'])
+@require_auth
+async def chat_health():
+    """Check AI service health - simplified"""
+    print(f"🔗 Chat health check")
+    
+    try:
+        # Simple connection test
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(f"{OLLAMA_URL}/api/tags") as response:
                 if response.status == 200:
                     data = await response.json()
                     available_models = [model['name'] for model in data.get('models', [])]
-                    model_loaded = any(ACTIVE_MODEL in model for model in available_models)
+                    model_loaded = any(OLLAMA_MODEL in model for model in available_models)
                     
                     return {
                         'status': 'healthy' if model_loaded else 'model_not_found',
-                        'active_model': ACTIVE_MODEL,
+                        'active_model': OLLAMA_MODEL,
                         'available_models': available_models,
-                        'ollama_url': OLLAMA_URL,
-                        'environment_config': {
-                            'temperature': MODEL_TEMPERATURE,
-                            'top_p': MODEL_TOP_P,
-                            'context_size': OLLAMA_CONTEXT_SIZE,
-                            'gpu_layers': OLLAMA_GPU_LAYERS,
-                            'use_mmap': MODEL_USE_MMAP,
-                            'use_mlock': MODEL_USE_MLOCK,
-                            'keep_alive': OLLAMA_KEEP_ALIVE,
-                            'max_tokens': MODEL_MAX_TOKENS,
-                            'timeout': MODEL_TIMEOUT
-                        },
-                        'network_config': {
-                            'unlimited_timeout': UNLIMITED_TIMEOUT,
-                            'streaming_timeout': STREAMING_TIMEOUT,
-                            'aiohttp_limit': AIOHTTP_LIMIT,
-                            'aiohttp_limit_per_host': AIOHTTP_LIMIT_PER_HOST,
-                            'aiohttp_keepalive_timeout': AIOHTTP_KEEPALIVE_TIMEOUT
-                        }
+                        'ollama_url': OLLAMA_URL
                     }
         return {'status': 'unhealthy', 'error': 'Service unavailable'}
     except Exception as e:
+        print(f"❌ Health check error: {e}")
         return {'status': 'error', 'error': str(e)}
+
+@chat_bp.route('/chat/clear', methods=['POST'])
+@require_auth
+async def clear_current_chat():
+    """Clear all messages from current chat session"""
+    print(f"🔗 Clear chat request")
+    
+    try:
+        data = await request.json
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return {'success': False, 'message': 'Session ID required'}, 400
+        
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            return {'success': False, 'message': 'Unauthorized'}, 401
+        
+        # Verify session belongs to user
+        session_obj = await get_chat_session(session_id)
+        if not session_obj or session_obj.user_id != user_data.id:
+            return {'success': False, 'message': 'Session not found'}, 404
+        
+        # Clear all messages from this session
+        await clear_session_messages(session_id)
+        
+        return {'success': True, 'message': 'Chat cleared successfully'}
+        
+    except Exception as e:
+        print(f"❌ Clear chat error: {e}")
+        return {'success': False, 'message': str(e)}, 500
+
+print("✅ Chat Blueprint FIXED - Essential routes only")
