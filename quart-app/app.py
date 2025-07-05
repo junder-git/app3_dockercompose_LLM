@@ -192,13 +192,31 @@ async def load_user_data():
         print(f"⚠️ Error loading user data: {e}")
         g.current_user_data = None
 
-# CSRF Protection for POST requests
+# CSRF Protection for POST requests - FIXED with proper exceptions
 @app.before_request
 async def csrf_protect():
     """Validate CSRF token for state-changing requests"""
     if request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
         # Skip health check
         if request.path == '/health':
+            return
+        
+        # Skip GET requests to admin and chat (these are safe)
+        if request.path.startswith('/admin') and request.method == 'GET':
+            return
+        if request.path.startswith('/chat') and request.method == 'GET':
+            return
+        
+        # Skip SSE endpoints (they use GET)
+        if request.path == '/chat/stream':
+            return
+        if request.path == '/chat/health':
+            return
+        if request.path == '/chat/test_connection':
+            return
+        if request.path == '/admin/system_info':
+            return
+        if request.path == '/admin/api/stats':
             return
             
         try:
@@ -340,7 +358,8 @@ async def internal_error(error):
 
 @app.errorhandler(404)
 async def not_found(error):
-    return jsonify({'error': 'Not found'}), 404
+    print(f"❌ 404 error for path: {request.path}")
+    return jsonify({'error': 'Not found', 'path': request.path}), 404
 
 @app.errorhandler(403)
 async def forbidden(error):

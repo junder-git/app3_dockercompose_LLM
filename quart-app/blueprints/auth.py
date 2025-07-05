@@ -6,6 +6,9 @@ import os
 from .models import User
 from .utils import sanitize_html, generate_csrf_token
 from .database import save_user, get_user_by_username, get_pending_users_count, get_all_users
+# quart-app/blueprints/simple_auth.py - Simple authentication decorators only
+from functools import wraps
+from quart import request, jsonify, redirect, url_for
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -127,3 +130,41 @@ async def logout():
     logout_user()
     session.clear()
     return redirect(url_for('auth.login'))
+
+def require_auth(f):
+    """Simple decorator to require authentication"""
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        if not await current_user.is_authenticated:
+            if request.is_json:
+                return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
+            return redirect(url_for('auth.login'))
+        
+        # Check if user is approved
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data or (not user_data.is_approved and not user_data.is_admin):
+            if request.is_json:
+                return jsonify({'error': 'Account not approved', 'redirect': '/login'}), 403
+            return redirect(url_for('auth.login'))
+        
+        return await f(*args, **kwargs)
+    return decorated_function
+
+def require_admin(f):
+    """Simple decorator to require admin privileges"""
+    @wraps(f)
+    async def decorated_function(*args, **kwargs):
+        if not await current_user.is_authenticated:
+            if request.is_json:
+                return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
+            return redirect(url_for('auth.login'))
+        
+        # Check if user is admin
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data or not user_data.is_admin:
+            if request.is_json:
+                return jsonify({'error': 'Admin privileges required'}), 403
+            return redirect(url_for('auth.login'))
+        
+        return await f(*args, **kwargs)
+    return decorated_function
