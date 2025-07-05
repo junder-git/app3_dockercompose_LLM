@@ -81,15 +81,17 @@ UNLIMITED_CLIENT_TIMEOUT = aiohttp.ClientTimeout(
     sock_connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT
 )
 
-# UNLIMITED CONNECTOR CONFIGURATION
-UNLIMITED_CONNECTOR = aiohttp.TCPConnector(
-    limit=AIOHTTP_LIMIT if AIOHTTP_LIMIT > 0 else None,
-    limit_per_host=AIOHTTP_LIMIT_PER_HOST if AIOHTTP_LIMIT_PER_HOST > 0 else None,
-    keepalive_timeout=None if AIOHTTP_KEEPALIVE_TIMEOUT == 0 else AIOHTTP_KEEPALIVE_TIMEOUT,
-    enable_cleanup_closed=AIOHTTP_ENABLE_CLEANUP_CLOSED,
-    force_close=AIOHTTP_FORCE_CLOSE,
-    ttl_dns_cache=AIOHTTP_TTL_DNS_CACHE if AIOHTTP_TTL_DNS_CACHE > 0 else None
-)
+# UNLIMITED CONNECTOR CONFIGURATION - Create per request to avoid loop issues
+def create_unlimited_connector():
+    """Create a new connector for each request to avoid event loop issues"""
+    return aiohttp.TCPConnector(
+        limit=AIOHTTP_LIMIT if AIOHTTP_LIMIT > 0 else None,
+        limit_per_host=AIOHTTP_LIMIT_PER_HOST if AIOHTTP_LIMIT_PER_HOST > 0 else None,
+        keepalive_timeout=None if AIOHTTP_KEEPALIVE_TIMEOUT == 0 else AIOHTTP_KEEPALIVE_TIMEOUT,
+        enable_cleanup_closed=AIOHTTP_ENABLE_CLEANUP_CLOSED,
+        force_close=AIOHTTP_FORCE_CLOSE,
+        ttl_dns_cache=AIOHTTP_TTL_DNS_CACHE if AIOHTTP_TTL_DNS_CACHE > 0 else None
+    )
 
 def get_active_model():
     """Get the active optimized model name"""
@@ -121,10 +123,23 @@ print(f"  AIOHTTP Keepalive: {AIOHTTP_KEEPALIVE_TIMEOUT}")
 # Global dictionary to track active streams
 active_streams = {}
 
-async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
-    """Stream AI response with unlimited network settings"""
+async def check_rate_limit_for_streaming(user_id: str, rate_limit_max: int) -> bool:
+    """Check rate limit but ignore if user is already streaming"""
+    # Check if user is currently streaming
+    for stream_info in active_streams.values():
+        if stream_info.get('user_id') == user_id:
+            return True  # Allow streaming to continue
     
+    # Otherwise check normal rate limit
+    return await check_rate_limit(user_id, rate_limit_max)
+
+async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
+    """Stream AI response with unlimited network settings and robust error handling"""
+    
+    connector = None
     try:
+        print(f"🔧 Starting AI streaming for prompt: {prompt[:50]}...")
+        
         # Build messages array
         messages = []
         
@@ -176,59 +191,93 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
         
         print(f"🔧 AI Request with unlimited network:")
         print(f"  Model: {ACTIVE_MODEL}")
-        print(f"  MMAP: {MODEL_USE_MMAP}")
-        print(f"  MLOCK: {MODEL_USE_MLOCK}")
         print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
-        print(f"  Temperature: {MODEL_TEMPERATURE}")
-        print(f"  Using unlimited timeouts: {UNLIMITED_CLIENT_TIMEOUT}")
+        print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
+        print(f"  Batch Size: {OLLAMA_BATCH_SIZE}")
         
-        # Use unlimited timeout and connector
+        # Use unlimited timeout and connector - create fresh connector per request
+        connector = create_unlimited_connector()
+        
         async with aiohttp.ClientSession(
             timeout=UNLIMITED_CLIENT_TIMEOUT,
-            connector=UNLIMITED_CONNECTOR
+            connector=connector
         ) as session:
+            print(f"🌐 Connecting to {OLLAMA_URL}/api/chat...")
+            
             async with session.post(
                 f"{OLLAMA_URL}/api/chat",
                 json=payload,
                 headers={'Content-Type': 'application/json'}
             ) as response:
                 
+                print(f"📡 Response status: {response.status}")
+                
                 if response.status != 200:
                     error_text = await response.text()
+                    print(f"❌ API Error {response.status}: {error_text}")
                     yield f"data: {json.dumps({'error': f'API Error {response.status}: {error_text}'})}\n\n"
                     return
                 
-                # Stream the response with unlimited network
-                async for line in response.content:
+                # Stream the response with unlimited network - improved buffering
+                buffer = ""
+                chunk_count = 0
+                
+                async for chunk in response.content.iter_chunked(8192):  # Larger chunks
+                    chunk_count += 1
+                    if chunk_count % 10 == 0:
+                        print(f"📦 Processed {chunk_count} chunks...")
+                    
                     # Check if stream should be interrupted
                     if stream_id and stream_id in active_streams and active_streams[stream_id].get('interrupt'):
+                        print(f"⏹️ Stream interrupted by user")
                         yield f"data: {json.dumps({'interrupted': True})}\n\n"
-                        break
+                        return
                     
-                    line = line.decode('utf-8').strip()
-                    if line:
-                        try:
-                            data = json.loads(line)
-                            if 'message' in data and 'content' in data['message']:
-                                content = data['message']['content']
-                                if content:
-                                    yield f"data: {json.dumps({'content': content})}\n\n"
-                            
-                            # Check if done
-                            if data.get('done', False):
-                                yield f"data: {json.dumps({'done': True})}\n\n"
-                                break
-                        except json.JSONDecodeError:
-                            continue
+                    try:
+                        buffer += chunk.decode('utf-8')
+                        lines = buffer.split('\n')
+                        buffer = lines[-1]  # Keep incomplete line in buffer
+                        
+                        for line in lines[:-1]:  # Process complete lines
+                            line = line.strip()
+                            if line:
+                                try:
+                                    data = json.loads(line)
+                                    if 'message' in data and 'content' in data['message']:
+                                        content = data['message']['content']
+                                        if content:
+                                            yield f"data: {json.dumps({'content': content})}\n\n"
+                                    
+                                    # Check if done
+                                    if data.get('done', False):
+                                        print(f"✅ Stream completed successfully")
+                                        yield f"data: {json.dumps({'done': True})}\n\n"
+                                        return
+                                except json.JSONDecodeError as e:
+                                    print(f"⚠️ JSON decode error: {e} for line: {line[:100]}")
+                                    continue
+                    except UnicodeDecodeError as e:
+                        print(f"⚠️ Unicode decode error: {e}")
+                        continue
+                        
+                print(f"🏁 Stream ended naturally")
     
     except asyncio.TimeoutError:
+        print(f"⏱️ Timeout error occurred")
         yield f"data: {json.dumps({'error': 'Timeout error occurred'})}\n\n"
+    except aiohttp.ClientError as e:
+        print(f"🌐 Connection error: {e}")
+        yield f"data: {json.dumps({'error': f'Connection error: {str(e)}'})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'error': f'Error: {str(e)}'})}\n\n"
+        print(f"💥 Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        yield f"data: {json.dumps({'error': f'Unexpected error: {str(e)}'})}\n\n"
     finally:
         # Clean up stream tracking
         if stream_id and stream_id in active_streams:
             del active_streams[stream_id]
+        print(f"🧹 Stream cleanup completed")
 
 @chat_bp.route('/chat', methods=['GET'])
 @chat_bp.route('/chat/new', methods=['GET'])
@@ -329,8 +378,14 @@ async def chat_stream():
             yield f"data: {json.dumps({'error': 'Missing message or session_id'})}\n\n"
         return Response(error_stream(), mimetype='text/event-stream')
     
-    # Check rate limit
+    # Track this stream immediately to prevent rate limiting during response
+    active_streams[stream_id] = {'interrupt': False, 'user_id': user_data.id}
+    
+    # Check rate limit ONLY for new requests, not during streaming
     if not await check_rate_limit(user_data.id, RATE_LIMIT_MAX):
+        # Remove from active streams if rate limited
+        if stream_id in active_streams:
+            del active_streams[stream_id]
         async def rate_limit_stream():
             yield f"data: {json.dumps({'error': 'Rate limit exceeded'})}\n\n"
         return Response(rate_limit_stream(), mimetype='text/event-stream')
@@ -349,43 +404,64 @@ async def chat_stream():
         # Save cached response immediately to database
         await save_message(user_data.id, 'assistant', cached_response, session_id)
         
+        # Clean up stream tracking for cached response
+        if stream_id in active_streams:
+            del active_streams[stream_id]
+        
         # Return cached response as if it was streamed
         async def cached_stream():
             yield f"data: {json.dumps({'content': cached_response, 'cached': True})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         return Response(cached_stream(), mimetype='text/event-stream')
     
-    # Track this stream
-    active_streams[stream_id] = {'interrupt': False}
+    # Track this stream - NO MORE DUPLICATE TRACKING
+    # Stream was already tracked above before rate limit check
     
     # Stream the AI response with unlimited network
     async def unlimited_streaming_with_db_updates():
         full_response = ''
         
-        async for chunk in stream_ai_response(message, chat_history, stream_id):
-            yield chunk
-            
-            # Parse the chunk to get content
-            if chunk.startswith('data: '):
-                try:
-                    data = json.loads(chunk[6:].strip())
-                    if 'content' in data:
-                        full_response += data['content']
-                    elif data.get('done'):
-                        # Save complete response to database immediately
-                        if full_response.strip():
-                            await save_message(user_data.id, 'assistant', full_response, session_id)
-                            # Cache the response
-                            await cache_response(prompt_hash, full_response)
-                        break
-                    elif data.get('interrupted'):
-                        # Save partial response if interrupted
-                        if full_response.strip():
-                            interrupted_response = full_response + '\n\n[Generation interrupted]'
-                            await save_message(user_data.id, 'assistant', interrupted_response, session_id)
-                        break
-                except (json.JSONDecodeError, KeyError):
-                    pass
+        try:
+            async for chunk in stream_ai_response(message, chat_history, stream_id):
+                yield chunk
+                
+                # Parse the chunk to get content
+                if chunk.startswith('data: '):
+                    try:
+                        data = json.loads(chunk[6:].strip())
+                        if 'content' in data:
+                            full_response += data['content']
+                        elif data.get('done'):
+                            # Save complete response to database immediately
+                            if full_response.strip():
+                                await save_message(user_data.id, 'assistant', full_response, session_id)
+                                # Cache the response
+                                await cache_response(prompt_hash, full_response)
+                            break
+                        elif data.get('interrupted'):
+                            # Save partial response if interrupted
+                            if full_response.strip():
+                                interrupted_response = full_response + '\n\n[Generation interrupted]'
+                                await save_message(user_data.id, 'assistant', interrupted_response, session_id)
+                            break
+                        elif 'error' in data:
+                            # Handle errors gracefully
+                            print(f"❌ Streaming error: {data['error']}")
+                            if full_response.strip():
+                                error_response = full_response + f'\n\n[Error: {data["error"]}]'
+                                await save_message(user_data.id, 'assistant', error_response, session_id)
+                            break
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"⚠️ JSON decode error: {e}")
+                        continue
+        except Exception as e:
+            print(f"❌ Streaming exception: {e}")
+            # Save any partial response
+            if full_response.strip():
+                error_response = full_response + f'\n\n[Connection error: {str(e)}]'
+                await save_message(user_data.id, 'assistant', error_response, session_id)
+            # Send error to client
+            yield f"data: {json.dumps({'error': f'Streaming error: {str(e)}'})}\n\n"
     
     return Response(
         unlimited_streaming_with_db_updates(),
@@ -394,7 +470,8 @@ async def chat_stream():
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
-            'X-Accel-Buffering': 'no'  # Disable nginx buffering
+            'X-Accel-Buffering': 'no',  # Disable nginx buffering
+            'Transfer-Encoding': 'chunked'  # Ensure chunked encoding
         }
     )
 
@@ -440,16 +517,36 @@ async def delete_session():
     
     return {'success': True, 'message': 'Session deleted successfully'}
 
+@chat_bp.route('/chat/test_connection')
+@login_required
+async def test_connection():
+    """Test connection to Ollama service"""
+    try:
+        connector = create_unlimited_connector()
+        test_timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(
+            timeout=test_timeout,
+            connector=connector
+        ) as session:
+            async with session.get(f"{OLLAMA_URL}/api/tags") as response:
+                if response.status == 200:
+                    return {'status': 'success', 'message': 'Connection to Ollama successful'}
+                else:
+                    return {'status': 'error', 'message': f'HTTP {response.status}'}
+    except Exception as e:
+        return {'status': 'error', 'message': f'Connection failed: {str(e)}'}
+
 @chat_bp.route('/chat/health')
 @login_required
 async def chat_health():
     """Check AI service health with unlimited network"""
     try:
-        # Use unlimited timeout for health check
+        # Use unlimited timeout for health check - create fresh connector
         health_timeout = aiohttp.ClientTimeout(total=10)
+        connector = create_unlimited_connector()
         async with aiohttp.ClientSession(
             timeout=health_timeout,
-            connector=UNLIMITED_CONNECTOR
+            connector=connector
         ) as session:
             async with session.get(f"{OLLAMA_URL}/api/tags") as response:
                 if response.status == 200:
