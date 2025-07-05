@@ -9,12 +9,12 @@ services:
     ports:
       - "11434:11434"
     # UNLIMITED NETWORK CONFIGURATION
-    sysctls:
-      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    #sysctls:
+    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
@@ -85,12 +85,12 @@ services:
     ports:
       - "6379:6379"
     # UNLIMITED NETWORK CONFIGURATION
-    sysctls:
-      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    #sysctls:
+    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
@@ -124,12 +124,12 @@ services:
       dockerfile: Dockerfile
     container_name: devstral-quart-app
     # UNLIMITED NETWORK CONFIGURATION
-    sysctls:
-      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    #sysctls:
+    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
@@ -227,12 +227,12 @@ services:
     ports:
       - "80:80"
     # UNLIMITED NETWORK CONFIGURATION
-    sysctls:
-      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    #sysctls:
+    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
     ulimits:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
