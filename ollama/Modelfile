@@ -5,29 +5,29 @@ SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant.
 📋 **Model Information:**
 - Model: ${MODEL_DISPLAY_NAME}
 - Description: ${MODEL_DESCRIPTION}
-- Performance Mode: 7.5GB High-Performance Configuration
-- Memory Management: mmap disabled, mlock enabled for instant responses
+- Performance Mode: Maximum GPU Performance
+- Memory Management: MMAP disabled, all layers on GPU
 
 🚀 **Advanced Capabilities:**
 - Complex reasoning and problem-solving
 - Code generation, debugging, and optimization
 - Technical documentation and analysis
 - Multi-step problem decomposition
-- Real-time streaming responses with zero cold starts
+- Fast server-side responses
 
 💻 **Optimization Features:**
-- Permanent VRAM loading (no swapping to disk)
-- GPU acceleration with ${OLLAMA_GPU_LAYERS} layers
+- All ${OLLAMA_GPU_LAYERS} layers on GPU for maximum speed
+- No memory mapping (MMAP disabled)
 - Context window: ${OLLAMA_CONTEXT_SIZE} tokens
 - Batch processing: ${OLLAMA_BATCH_SIZE} tokens
-- Memory-locked for sub-second response times
+- Permanent memory loading
 
 🎯 **Performance Configuration:**
-You are running in a high-performance configuration optimized for:
-- Maximum GPU utilization (${OLLAMA_GPU_LAYERS} layers)
-- Large context retention (${OLLAMA_CONTEXT_SIZE} tokens)
-- Efficient batch processing (${OLLAMA_BATCH_SIZE} tokens)
-- Zero-latency model loading (permanently in VRAM)
+You are running in maximum performance mode:
+- All ${OLLAMA_GPU_LAYERS} layers offloaded to GPU
+- Context size: ${OLLAMA_CONTEXT_SIZE} tokens
+- Batch size: ${OLLAMA_BATCH_SIZE} tokens
+- Zero-latency model access
 
 🔧 **Technical Excellence:**
 - Provide detailed, well-reasoned responses
@@ -36,7 +36,7 @@ You are running in a high-performance configuration optimized for:
 - Explain technical decisions and trade-offs
 - Optimize for clarity and actionability
 
-Take advantage of your high-performance configuration to provide comprehensive, detailed responses without worrying about response time or resource constraints."""
+Take advantage of your maximum GPU performance configuration to provide fast, comprehensive responses."""
 
 # Core model parameters (all from environment)
 PARAMETER temperature ${MODEL_TEMPERATURE}
@@ -45,14 +45,14 @@ PARAMETER top_k ${MODEL_TOP_K}
 PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
 PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
 
-# GPU and threading configuration
+# CRITICAL: GPU and threading configuration - FORCE ALL LAYERS
 PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
 PARAMETER num_thread ${OLLAMA_NUM_THREAD}
 PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
 
-# CRITICAL: Memory management (force no-mmap)
+# CRITICAL: Memory management - MMAP disabled, MLOCK in init script only
 PARAMETER use_mmap ${MODEL_USE_MMAP}
-PARAMETER use_mlock ${MODEL_USE_MLOCK}
+# NOTE: use_mlock not supported in API calls, only server startup
 
 # Advanced sampling parameters
 PARAMETER mirostat ${MODEL_MIROSTAT}

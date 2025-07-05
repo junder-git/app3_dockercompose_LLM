@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - FIXED server-side only with ENV vars
+# quart-app/blueprints/chat.py - ALL ISSUES FIXED
 import os
 import hashlib
 import aiohttp
@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 from typing import List, Dict
-from quart import Blueprint, render_template, request, redirect, url_for, flash
+from quart import Blueprint, render_template, request, redirect, url_for, flash, session
 from quart_auth import login_required, current_user
 
 from .database import (
@@ -28,7 +28,7 @@ MODEL_TOP_P = float(os.environ.get('MODEL_TOP_P', '0.9'))
 MODEL_TOP_K = int(os.environ.get('MODEL_TOP_K', '40'))
 MODEL_REPEAT_PENALTY = float(os.environ.get('MODEL_REPEAT_PENALTY', '1.1'))
 MODEL_MAX_TOKENS = int(os.environ.get('MODEL_MAX_TOKENS', '1024'))
-MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '180'))
+MODEL_TIMEOUT = int(os.environ.get('MODEL_TIMEOUT', '120'))
 
 # Hardware settings from environment
 OLLAMA_GPU_LAYERS = int(os.environ.get('OLLAMA_GPU_LAYERS', '29'))
@@ -40,7 +40,7 @@ OLLAMA_BATCH_SIZE = int(os.environ.get('OLLAMA_BATCH_SIZE', '128'))
 MODEL_USE_MMAP = os.environ.get('MODEL_USE_MMAP', 'false').lower() == 'true'
 MODEL_USE_MLOCK = os.environ.get('MODEL_USE_MLOCK', 'true').lower() == 'true'
 
-# Other settings from environment
+# Keep alive setting
 OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '-1')
 MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
 
@@ -64,6 +64,7 @@ print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
 print(f"  Temperature: {MODEL_TEMPERATURE}")
 print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
 print(f"  Timeout: {MODEL_TIMEOUT}")
+print(f"  Keep Alive: {OLLAMA_KEEP_ALIVE}")
 
 async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
     """Get AI response - server-side only, no streaming"""
@@ -96,12 +97,11 @@ async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
             'content': user_prompt
         })
         
-        # Build payload with ALL environment settings
+        # FIXED: Build payload with only valid options
         payload = {
             'model': ACTIVE_MODEL,
             'messages': messages,
             'stream': False,  # Server-side only
-            'keep_alive': OLLAMA_KEEP_ALIVE,
             'options': {
                 'temperature': MODEL_TEMPERATURE,
                 'top_p': MODEL_TOP_P,
@@ -113,17 +113,24 @@ async def get_ai_response(prompt: str, chat_history: List[Dict] = None) -> str:
                 'num_gpu': OLLAMA_GPU_LAYERS,
                 'num_thread': OLLAMA_NUM_THREAD,
                 'use_mmap': MODEL_USE_MMAP,
-                'use_mlock': MODEL_USE_MLOCK,
+                # REMOVED: use_mlock - not supported in API calls
                 'stop': MODEL_STOP_SEQUENCES
             }
         }
         
+        # Add keep_alive properly
+        if OLLAMA_KEEP_ALIVE == '-1':
+            payload['keep_alive'] = -1  # Integer for permanent
+        elif OLLAMA_KEEP_ALIVE:
+            payload['keep_alive'] = OLLAMA_KEEP_ALIVE
+        
         print(f"🔧 AI Request:")
         print(f"  Model: {ACTIVE_MODEL}")
         print(f"  MMAP: {MODEL_USE_MMAP}")
-        print(f"  MLOCK: {MODEL_USE_MLOCK}")
         print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
+        print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
         print(f"  Temperature: {MODEL_TEMPERATURE}")
+        print(f"  Keep Alive: {payload.get('keep_alive', 'Not set')}")
         
         timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
         
@@ -229,8 +236,8 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
     
     if cached_response:
         await save_message(user_id, 'assistant', cached_response, session_id)
-        flash('Response retrieved from cache.', 'success')
-        return redirect(url_for('chat.chat'))
+        # REMOVED: flash('Response retrieved from cache.', 'success')
+        return redirect(url_for('chat.chat') + '#latest')
     
     # Get chat history for context
     chat_history = await get_session_messages(session_id, 8)
@@ -243,7 +250,7 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
             # Save AI response
             await save_message(user_id, 'assistant', ai_response.strip(), session_id)
             await cache_response(prompt_hash, ai_response.strip())
-            flash('AI response generated successfully.', 'success')
+            # REMOVED: flash('AI response generated successfully.', 'success')
         else:
             flash('No response from AI. Please try again.', 'error')
     
@@ -251,7 +258,8 @@ async def handle_chat_message(user_id: str, session_id: str, username: str):
         print(f"Error generating AI response: {e}")
         flash('Error generating AI response. Please try again.', 'error')
     
-    return redirect(url_for('chat.chat'))
+    # Redirect with anchor to scroll to latest message
+    return redirect(url_for('chat.chat') + '#latest')
 
 @chat_bp.route('/chat/health')
 @login_required

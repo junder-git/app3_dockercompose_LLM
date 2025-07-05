@@ -1,10 +1,12 @@
-# quart-app/app.py - Debug version with better error handling
+# quart-app/app.py - Complete fix with markdown support
 import os
 import sys
 import secrets
 import asyncio
+import markdown
 from datetime import timedelta
 from dotenv import load_dotenv
+from markupsafe import Markup
 
 print("🔍 Starting Quart app initialization...")
 
@@ -32,8 +34,42 @@ except Exception as e:
 load_dotenv()
 print("✅ Environment loaded")
 
+# Markdown filter function
+def markdown_filter(text):
+    """Convert markdown text to HTML"""
+    if not text:
+        return ""
+    
+    # Configure markdown with extensions
+    md = markdown.Markdown(
+        extensions=[
+            'codehilite',
+            'fenced_code',
+            'tables',
+            'nl2br',
+            'toc'
+        ],
+        extension_configs={
+            'codehilite': {
+                'css_class': 'highlight',
+                'use_pygments': True,
+                'noclasses': True
+            }
+        }
+    )
+    
+    # Convert markdown to HTML
+    html = md.convert(text)
+    
+    # Return as safe HTML (won't be escaped)
+    return Markup(html)
+
 # Initialize Quart app
 app = Quart(__name__)
+
+# Register the markdown filter
+app.jinja_env.filters['markdown'] = markdown_filter
+
 print("✅ Quart app created")
 
 # Configure Quart
@@ -98,7 +134,7 @@ async def csrf_protect():
             print(f"⚠️ CSRF validation error: {e}")
             return jsonify({'error': 'CSRF validation failed'}), 403
 
-# Security Headers Middleware
+# Security Headers Middleware - UPDATED TO ALLOW JAVASCRIPT
 @app.after_request
 async def add_security_headers(response):
     """Add security headers to all responses"""
@@ -109,14 +145,14 @@ async def add_security_headers(response):
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
         
-        # Simplified CSP - NO JavaScript
+        # Updated CSP to allow inline scripts for Enter key handling
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "font-src 'self' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
-            "script-src 'none'; "
-            "connect-src 'none'"
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "connect-src 'self'"
         )
         
         # Add CSRF token to all HTML responses
