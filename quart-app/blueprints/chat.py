@@ -51,13 +51,16 @@ if MODEL_USE_MLOCK and MODEL_USE_MMAP:
 
 # Other settings from environment
 OLLAMA_KEEP_ALIVE = os.environ['OLLAMA_KEEP_ALIVE']
-# Convert keep_alive to proper format for Ollama
-if OLLAMA_KEEP_ALIVE == '-1':
-    OLLAMA_KEEP_ALIVE = -1  # Convert to integer
+# Convert keep_alive to proper format for Ollama (handles both string and int)
+if str(OLLAMA_KEEP_ALIVE) == '-1':
+    OLLAMA_KEEP_ALIVE = -1  # Convert to integer for permanent loading
 
 # Chat and rate limiting from environment
 CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
 RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
+
+# Stop sequences - fixed list for AI models
+MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
 
 def get_active_model():
     """Get the active optimized model name"""

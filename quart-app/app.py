@@ -241,8 +241,8 @@ async def init_admin():
     """Create default admin user if not exists"""
     try:
         print("🔧 Initializing admin user...")
-        ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-        ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+        ADMIN_USERNAME = os.environ['ADMIN_USERNAME']
+        ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
         
         admin = await get_user_by_username(ADMIN_USERNAME)
         if not admin:

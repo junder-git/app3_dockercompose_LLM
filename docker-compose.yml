@@ -115,6 +115,10 @@ services:
       - MODEL_USE_MMAP=${MODEL_USE_MMAP}
       - MODEL_USE_MLOCK=${MODEL_USE_MLOCK}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
+      - MODEL_MIROSTAT=${MODEL_MIROSTAT}
+      - MODEL_MIROSTAT_ETA=${MODEL_MIROSTAT_ETA}
+      - MODEL_MIROSTAT_TAU=${MODEL_MIROSTAT_TAU}
+      - MODEL_STOP_SEQUENCES=${MODEL_STOP_SEQUENCES}
     volumes:
       - ./volumes/app_data:/app/data
       - ./volumes/app_logs:/app/logs
