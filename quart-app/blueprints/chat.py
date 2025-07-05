@@ -18,7 +18,7 @@ from .database import (
     clear_session_messages
 )
 from .utils import escape_html
-from .auth import require_auth  # Import from auth module
+from .auth import login_required  # Import from auth module
 
 chat_bp = Blueprint('chat', __name__)
 
@@ -273,7 +273,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
 # Chat routes - Using simple authentication decorators
 @chat_bp.route('/chat', methods=['GET'])
 @chat_bp.route('/chat/new', methods=['GET'])
-@require_auth
+@login_required
 async def chat():
     """Main chat interface with session management"""
     user_data = await get_current_user_data(current_user.auth_id)
@@ -316,7 +316,7 @@ async def chat():
                                chat_sessions=chat_sessions)
 
 @chat_bp.route('/chat/new', methods=['POST'])
-@require_auth
+@login_required
 async def create_new_chat():
     """Create a new chat session"""
     user_data = await get_current_user_data(current_user.auth_id)
@@ -329,7 +329,7 @@ async def create_new_chat():
     return {'success': True, 'session_id': new_session.id}
 
 @chat_bp.route('/chat/clear', methods=['POST'])
-@require_auth
+@login_required
 async def clear_current_chat():
     """Clear all messages from current chat session"""
     data = await request.json
@@ -353,7 +353,7 @@ async def clear_current_chat():
     return {'success': True, 'message': 'Chat cleared successfully'}
 
 @chat_bp.route('/chat/stream')
-@require_auth
+@login_required
 async def chat_stream():
     """Server-Sent Events endpoint for unlimited streaming responses"""
     user_data = await get_current_user_data(current_user.auth_id)
@@ -465,7 +465,7 @@ async def chat_stream():
     )
 
 @chat_bp.route('/chat/interrupt', methods=['POST'])
-@require_auth
+@login_required
 async def interrupt_stream():
     """Interrupt an active stream"""
     data = await request.json
@@ -478,7 +478,7 @@ async def interrupt_stream():
     return {'success': False}, 404
 
 @chat_bp.route('/chat/delete_session', methods=['POST'])
-@require_auth
+@login_required
 async def delete_session():
     """Delete a chat session"""
     data = await request.json
@@ -507,7 +507,7 @@ async def delete_session():
     return {'success': True, 'message': 'Session deleted successfully'}
 
 @chat_bp.route('/chat/test_connection')
-@require_auth
+@login_required
 async def test_connection():
     """Test connection to Ollama service"""
     try:
@@ -526,7 +526,7 @@ async def test_connection():
         return {'status': 'error', 'message': f'Connection failed: {str(e)}'}
 
 @chat_bp.route('/chat/health')
-@require_auth
+@login_required
 async def chat_health():
     """Check AI service health with unlimited network"""
     try:
