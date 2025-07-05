@@ -1,4 +1,4 @@
-# quart-app/app.py - Simplified without auth middleware
+# quart-app/app.py - Minimal version without error handlers
 import os
 import sys
 import secrets
@@ -10,7 +10,7 @@ from markupsafe import Markup
 from markdown.extensions import codehilite, fenced_code, tables, toc
 from pymdownx import superfences, highlight
 
-print("🔍 Starting Quart app initialization with enhanced security...")
+print("🔍 Starting Quart app initialization - minimal version...")
 
 try:
     from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
@@ -26,7 +26,7 @@ try:
     from blueprints import auth_bp, chat_bp, admin_bp
     from blueprints.database import get_user_by_username, save_user, get_current_user_data
     from blueprints.models import User
-    from blueprints.utils import generate_csrf_token, validate_csrf_token
+    from blueprints.utils import generate_csrf_token
     print("✅ Blueprint imports successful")
 except Exception as e:
     print(f"❌ Blueprint import failed: {e}")
@@ -44,320 +44,143 @@ ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
 ADMIN_USER_ID = os.environ['ADMIN_USER_ID']
 SECRET_KEY = os.environ['SECRET_KEY']
 
-# Enhanced markdown filter with better code block support
+# Enhanced markdown filter
 def markdown_filter(text):
     """Convert markdown text to HTML with enhanced features"""
     if not text:
         return ""
     
-    # Configure markdown with comprehensive extensions
     md = markdown.Markdown(
         extensions=[
-            'codehilite',
-            'fenced_code',
-            'tables',
-            'nl2br',
-            'toc',
-            'attr_list',
-            'def_list',
-            'abbr',
-            'footnotes',
-            'md_in_html',
-            'pymdownx.superfences',
-            'pymdownx.highlight',
-            'pymdownx.inlinehilite',
-            'pymdownx.tasklist',
-            'pymdownx.tilde',
-            'pymdownx.caret',
-            'pymdownx.mark',
-            'pymdownx.keys',
-            'pymdownx.smartsymbols'
+            'codehilite', 'fenced_code', 'tables', 'nl2br', 'toc',
+            'attr_list', 'def_list', 'abbr', 'footnotes', 'md_in_html',
+            'pymdownx.superfences', 'pymdownx.highlight', 'pymdownx.inlinehilite',
+            'pymdownx.tasklist', 'pymdownx.tilde', 'pymdownx.caret',
+            'pymdownx.mark', 'pymdownx.keys', 'pymdownx.smartsymbols'
         ],
         extension_configs={
             'codehilite': {
-                'css_class': 'highlight',
-                'use_pygments': True,
-                'noclasses': True,
-                'linenos': True,
-                'linenostart': 1,
-                'linenostep': 1,
-                'linenospecial': 0,
-                'nobackground': False
+                'css_class': 'highlight', 'use_pygments': True, 'noclasses': True,
+                'linenos': True, 'linenostart': 1, 'linenostep': 1,
+                'linenospecial': 0, 'nobackground': False
             },
             'pymdownx.highlight': {
-                'css_class': 'highlight',
-                'use_pygments': True,
-                'pygments_style': 'github-dark',
-                'noclasses': True,
-                'linenums': True,
-                'linenums_style': 'pymdownx-inline'
+                'css_class': 'highlight', 'use_pygments': True,
+                'pygments_style': 'github-dark', 'noclasses': True,
+                'linenums': True, 'linenums_style': 'pymdownx-inline'
             },
             'pymdownx.superfences': {
-                'custom_fences': [
-                    {
-                        'name': 'mermaid',
-                        'class': 'mermaid',
-                        'format': lambda source, language, css_class, options, md, **kwargs: f'<div class="{css_class}">{source}</div>'
-                    }
-                ]
+                'custom_fences': [{
+                    'name': 'mermaid', 'class': 'mermaid',
+                    'format': lambda source, language, css_class, options, md, **kwargs: f'<div class="{css_class}">{source}</div>'
+                }]
             },
-            'pymdownx.tasklist': {
-                'custom_checkbox': True,
-                'clickable_checkbox': False
-            },
-            'toc': {
-                'permalink': True,
-                'permalink_class': 'toc-permalink',
-                'permalink_title': 'Link to this section'
-            }
+            'pymdownx.tasklist': {'custom_checkbox': True, 'clickable_checkbox': False},
+            'toc': {'permalink': True, 'permalink_class': 'toc-permalink', 'permalink_title': 'Link to this section'}
         }
     )
     
-    # Convert markdown to HTML
-    html = md.convert(text)
-    
-    # Return as safe HTML (won't be escaped)
-    return Markup(html)
+    return Markup(md.convert(text))
 
 # Initialize Quart app
 app = Quart(__name__)
-
-# Register the enhanced markdown filter
 app.jinja_env.filters['markdown'] = markdown_filter
 
-print("✅ Quart app created with enhanced markdown support")
-
-# Configure Quart - ALL from environment
+# Configure Quart
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=SESSION_LIFETIME_DAYS)
-
-# Configure auth - ALL from environment
 app.config['QUART_AUTH_COOKIE_SECURE'] = SECURE_COOKIES
 app.config['QUART_AUTH_COOKIE_HTTPONLY'] = True
 app.config['QUART_AUTH_COOKIE_SAMESITE'] = 'Lax'
 
 # Initialize extensions
-try:
-    auth = QuartAuth(app)
-    print("✅ QuartAuth initialized")
-except Exception as e:
-    print(f"❌ QuartAuth initialization failed: {e}")
-    sys.exit(1)
+auth = QuartAuth(app)
+print("✅ QuartAuth initialized")
 
-# Register essential blueprints only
-try:
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(admin_bp)
-    print("✅ Blueprints registered")
-except Exception as e:
-    print(f"❌ Blueprint registration failed: {e}")
-    sys.exit(1)
+# Register blueprints
+app.register_blueprint(auth_bp)
+app.register_blueprint(chat_bp)
+app.register_blueprint(admin_bp)
+print("✅ Blueprints registered")
 
-# Make sessions permanent by default
+# Minimal middleware
 @app.before_request
 async def make_session_permanent():
-    """Make sessions permanent (persist across browser sessions)"""
+    """Make sessions permanent"""
     session.permanent = True
-
-# Load user data for templates
-@app.before_request
-async def load_user_data():
-    """Load current user data for template context"""
-    g.current_user_data = None
-    try:
-        if await current_user.is_authenticated:
-            user_data = await get_current_user_data(current_user.auth_id)
-            # Check if user is approved (or admin)
-            if user_data and (user_data.is_admin or user_data.is_approved):
-                g.current_user_data = user_data
-            else:
-                # User not approved, clear session
-                session.clear()
-                g.current_user_data = None
-    except Exception as e:
-        print(f"⚠️ Error loading user data: {e}")
-        g.current_user_data = None
-
-# CSRF Protection for POST requests
-@app.before_request
-async def csrf_protect():
-    """Validate CSRF token for state-changing requests"""
-    if request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
-        # Skip health check
-        if request.path == '/health':
-            return
-        
-        # Skip SSE endpoints (they use GET)
-        if request.path == '/chat/stream':
-            return
-        if request.path == '/chat/health':
-            return
-        if request.path == '/chat/test_connection':
-            return
-        if request.path == '/admin/system_info':
-            return
-        if request.path == '/admin/api/stats':
-            return
-            
-        try:
-            token = (await request.form).get('csrf_token') or request.headers.get('X-CSRF-Token')
-            if not await validate_csrf_token(token):
-                return jsonify({'error': 'Invalid CSRF token'}), 403
-        except Exception as e:
-            print(f"⚠️ CSRF validation error: {e}")
-            return jsonify({'error': 'CSRF validation failed'}), 403
-
-# Enhanced Security Headers Middleware
-@app.after_request
-async def add_security_headers(response):
-    """Add enhanced security headers to all responses"""
-    try:
-        # Basic security headers
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['X-XSS-Protection'] = '1; mode=block'
-        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-        
-        # Enhanced CSP
-        response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "font-src 'self' https://cdn.jsdelivr.net; "
-            "img-src 'self' data:; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "connect-src 'self'"
-        )
-        
-        # Add CSRF token to HTML responses
-        if response.content_type and 'text/html' in response.content_type:
-            try:
-                response.headers['X-CSRF-Token'] = await generate_csrf_token()
-            except:
-                pass  # Don't fail the request if CSRF token generation fails
-                
-    except Exception as e:
-        print(f"⚠️ Error adding security headers: {e}")
-    
-    return response
 
 # Template globals
 @app.context_processor
 async def inject_template_globals():
     """Inject global variables into all templates"""
     try:
+        csrf_token = await generate_csrf_token()
+        current_user_data = None
+        
+        if await current_user.is_authenticated:
+            try:
+                current_user_data = await get_current_user_data(current_user.auth_id)
+            except Exception as e:
+                print(f"⚠️ Error loading user data: {e}")
+        
         return {
-            'csrf_token': await generate_csrf_token(),
-            'current_user_data': g.get('current_user_data')
+            'csrf_token': csrf_token,
+            'current_user_data': current_user_data
         }
     except Exception as e:
         print(f"⚠️ Error injecting template globals: {e}")
-        return {
-            'csrf_token': '',
-            'current_user_data': None
-        }
+        return {'csrf_token': '', 'current_user_data': None}
 
 # Initialize admin user
 async def init_admin():
     """Create default admin user if not exists"""
     try:
         print("🔧 Initializing admin user...")
-        
         admin = await get_user_by_username(ADMIN_USERNAME)
         if not admin:
             admin_user = User(
-                user_id=ADMIN_USER_ID,  # Use environment variable
-                username=ADMIN_USERNAME,
+                user_id=ADMIN_USER_ID, username=ADMIN_USERNAME,
                 password_hash=generate_password_hash(ADMIN_PASSWORD),
-                is_admin=True,
-                is_approved=True  # Admin is always approved
+                is_admin=True, is_approved=True
             )
             await save_user(admin_user)
-            print(f"✅ Created default admin user: {ADMIN_USERNAME}")
+            print(f"✅ Created admin user: {ADMIN_USERNAME}")
         else:
-            # Ensure existing admin has correct admin status and approval
             if not admin.is_admin or not admin.is_approved:
                 admin.is_admin = True
                 admin.is_approved = True
                 await save_user(admin)
-                print(f"✅ Fixed admin status for user: {ADMIN_USERNAME}")
+                print(f"✅ Fixed admin status: {ADMIN_USERNAME}")
             else:
-                print(f"✅ Admin user already exists: {ADMIN_USERNAME}")
+                print(f"✅ Admin user exists: {ADMIN_USERNAME}")
     except Exception as e:
-        print(f"❌ Error initializing admin user: {e}")
-        # Don't exit - let the app start anyway
+        print(f"❌ Error initializing admin: {e}")
 
 @app.before_serving
 async def startup():
-    try:
-        print("🚀 Running startup tasks...")
-        await init_admin()
-        print("✅ Startup tasks completed")
-    except Exception as e:
-        print(f"⚠️ Startup task error: {e}")
+    await init_admin()
 
-# Health check endpoint
+# Health check
 @app.route('/health')
 async def health():
-    try:
-        return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
-    except Exception as e:
-        print(f"❌ Health check error: {e}")
-        return jsonify({'status': 'error', 'error': str(e)}), 500
+    return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
 
-# Routes
+# Root route
 @app.route('/')
 async def index():
-    try:
-        if await current_user.is_authenticated:
-            return redirect(url_for('chat.chat'))
-        return redirect(url_for('auth.login'))
-    except Exception as e:
-        print(f"❌ Index route error: {e}")
-        return f"Error: {e}", 500
+    if await current_user.is_authenticated:
+        return redirect(url_for('chat.chat'))
+    return redirect(url_for('auth.login'))
 
-# Error handlers
-@app.errorhandler(500)
-async def internal_error(error):
-    print(f"❌ Internal server error: {error}")
-    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
+# NO ERROR HANDLERS - Let nginx handle errors
 
-@app.errorhandler(404)
-async def not_found(error):
-    print(f"❌ 404 error for path: {request.path}")
-    return jsonify({'error': 'Not found', 'path': request.path}), 404
-
-@app.errorhandler(403)
-async def forbidden(error):
-    return jsonify({'error': 'Forbidden - Access denied'}), 403
-
-@app.errorhandler(401)
-async def unauthorized(error):
-    return jsonify({'error': 'Unauthorized - Authentication required'}), 401
-
-@app.errorhandler(429)
-async def rate_limited(error):
-    return jsonify({'error': 'Rate limit exceeded - Please slow down'}), 429
-
-print("✅ Quart app configuration complete - Simplified without auth middleware")
-print("📝 Configuration loaded from environment:")
-print(f"  - Admin Username: {ADMIN_USERNAME}")
-print(f"  - Admin User ID: {ADMIN_USER_ID}")
-print(f"  - Session Lifetime: {SESSION_LIFETIME_DAYS} days")
-print(f"  - Secure Cookies: {SECURE_COOKIES}")
-print("🔒 Security features enabled:")
-print("  - Rate limiting handled by nginx")
-print("  - Authentication handled by decorators in blueprints")
-print("  - CSRF protection for state-changing requests")
-print("  - Comprehensive security headers")
-print("📝 Markdown features enabled:")
-print("  - Syntax highlighting with line numbers")
-print("  - Tables, task lists, and footnotes")
-print("  - Table of contents generation")
-print("  - Enhanced code blocks with language detection")
-print("  - GitHub-style markdown extensions")
+print("✅ Minimal Quart app ready")
+print(f"  - Admin: {ADMIN_USERNAME} (ID: {ADMIN_USER_ID})")
+print(f"  - Sessions: {SESSION_LIFETIME_DAYS} days")
+print(f"  - Secure cookies: {SECURE_COOKIES}")
+print("🔗 Error handling: nginx only")
+print("🔗 Rate limiting: nginx only") 
+print("🔗 Auth: blueprint decorators only")
 
 if __name__ == '__main__':
-    print("🚀 Starting Quart app with simplified architecture...")
     app.run(debug=True, host='0.0.0.0', port=8000)
