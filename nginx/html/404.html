@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Not Found - Devstral AI</title>
+    <link href="/static/css/styles.css" rel="stylesheet">
+    <style>
+        .error-page-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 20px;
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .error-code {
+            font-size: 8rem;
+            font-weight: bold;
+            color: #0d6efd;
+            margin-bottom: 0;
+            text-shadow: 0 0 20px rgba(13, 110, 253, 0.3);
+        }
+        .error-message {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #ffffff;
+        }
+        .error-description {
+            font-size: 1rem;
+            margin-bottom: 2rem;
+            color: #b0b0b0;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+        .error-actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .error-btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #0d6efd;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+        }
+        .error-btn:hover {
+            background-color: #0b5ed7;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+        }
+        .error-btn.secondary {
+            background-color: #6c757d;
+        }
+        .error-btn.secondary:hover {
+            background-color: #5c636a;
+        }
+        .robot-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.7;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .breadcrumb {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        @media (max-width: 768px) {
+            .error-code {
+                font-size: 5rem;
+            }
+            .error-message {
+                font-size: 1.2rem;
+            }
+            .error-actions {
+                flex-direction: column;
+                align-items: center;
+            }
+            .error-btn {
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="breadcrumb">
+        🤖 Devstral AI / Error 404
+    </div>
+    
+    <div class="error-page-container">
+        <div class="robot-icon">🤖</div>
+        <div class="error-code">404</div>
+        <h1 class="error-message">Page Not Found</h1>
+        <p class="error-description">
+            The page you're looking for doesn't exist or has been moved. This could be because:
+            <br><br>
+            • The URL was typed incorrectly<br>
+            • The page has been removed or relocated<br>
+            • You don't have permission to access this resource<br>
+            • The link you followed is broken or outdated
+        </p>
+        
+        <div class="error-actions">
+            <a href="/" class="error-btn">
+                🏠 Go Home
+            </a>
+            <a href="/login" class="error-btn secondary">
+                🔐 Login
+            </a>
+            <button onclick="history.back()" class="error-btn secondary">
+                ← Go Back
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Auto-redirect to home after 30 seconds
+        setTimeout(function() {
+            if (confirm('Redirect to home page?')) {
+                window.location.href = '/';
+            }
+        }, 30000);
+        
+        // Add some interactive feedback
+        document.addEventListener('DOMContentLoaded', function() {
+            const code = document.querySelector('.error-code');
+            code.addEventListener('click', function() {
+                this.style.transform = 'scale(1.1)';
+                setTimeout(() => {
+                    this.style.transform = 'scale(1)';
+                }, 200);
+            });
+        });
+    </script>
+</body>
+</html>

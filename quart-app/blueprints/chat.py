@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - FIXED with minimal essential routes
+# quart-app/blueprints/chat.py - COMPLETE with all required routes
 import os
 import hashlib
 import aiohttp
@@ -7,7 +7,7 @@ import json
 import time
 import uuid
 from typing import List, Dict, AsyncGenerator
-from quart import Blueprint, render_template, request, redirect, url_for, flash, Response
+from quart import Blueprint, render_template, request, redirect, url_for, flash, Response, jsonify
 from quart_auth import current_user, login_required
 
 from .database import (
@@ -17,60 +17,40 @@ from .database import (
     get_chat_session, delete_chat_session, create_chat_session,
     clear_session_messages
 )
-from .utils import escape_html
+from .utils import escape_html, sanitize_html, validate_message
 
-# FIXED: Create blueprint with explicit url_prefix
+# Create blueprint with explicit url_prefix
 chat_bp = Blueprint('chat', __name__, url_prefix='')
 
-# AI Model configuration - Essential only
-OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'llama2')
-CHAT_HISTORY_LIMIT = int(os.environ.get('CHAT_HISTORY_LIMIT', '50'))
-RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MESSAGES_PER_MINUTE', '10'))
+# AI Model configuration - ALL from environment
+OLLAMA_URL = os.environ['OLLAMA_URL']
+OLLAMA_MODEL = os.environ['OLLAMA_MODEL']
+CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
+RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
 
-print(f"🔧 Chat Blueprint FIXED Config:")
+# Model parameters - ALL from environment
+MODEL_TEMPERATURE = float(os.environ['MODEL_TEMPERATURE'])
+MODEL_TOP_P = float(os.environ['MODEL_TOP_P'])
+MODEL_TOP_K = int(os.environ['MODEL_TOP_K'])
+MODEL_MAX_TOKENS = int(os.environ['MODEL_MAX_TOKENS'])
+MODEL_TIMEOUT = int(os.environ['MODEL_TIMEOUT'])
+
+print(f"🔧 Chat Blueprint COMPLETE Config:")
 print(f"  OLLAMA_URL: {OLLAMA_URL}")
 print(f"  OLLAMA_MODEL: {OLLAMA_MODEL}")
 print(f"  CHAT_HISTORY_LIMIT: {CHAT_HISTORY_LIMIT}")
 print(f"  RATE_LIMIT_MAX: {RATE_LIMIT_MAX}")
+print(f"  MODEL_TIMEOUT: {MODEL_TIMEOUT}")
 
-# FIXED: Simple require_auth decorator for chat
-def require_auth(f):
-    """Simple auth decorator for chat routes"""
-    from functools import wraps
-    @wraps(f)
-    async def decorated_function(*args, **kwargs):
-        print(f"🔐 Chat auth check for {request.endpoint}")
-        
-        if not await current_user.is_authenticated:
-            print(f"🔐 Chat: User not authenticated")
-            if request.is_json:
-                return {'error': 'Authentication required'}, 401
-            return redirect(url_for('auth.login'))
-        
-        try:
-            user_data = await get_current_user_data(current_user.auth_id)
-            if not user_data or (not user_data.is_approved and not user_data.is_admin):
-                print(f"🔐 Chat: User not approved")
-                if request.is_json:
-                    return {'error': 'Account not approved'}, 403
-                return redirect(url_for('auth.login'))
-        except Exception as e:
-            print(f"🔐 Chat auth error: {e}")
-            if request.is_json:
-                return {'error': 'Authentication error'}, 401
-            return redirect(url_for('auth.login'))
-        
-        print(f"🔐 Chat auth successful")
-        return await f(*args, **kwargs)
-    return decorated_function
+# Global storage for active streams
+active_streams = {}
 
-# FIXED: Essential chat routes only
+# Chat routes
 @chat_bp.route('/chat', methods=['GET'])
 @chat_bp.route('/chat/new', methods=['GET'])
-@require_auth
+@login_required
 async def chat():
-    """Main chat interface - FIXED"""
+    """Main chat interface"""
     print(f"🔗 Chat route accessed: {request.path}")
     
     try:
@@ -134,28 +114,289 @@ async def chat():
         print(f"❌ Chat route error: {e}")
         return redirect(url_for('auth.login'))
 
+@chat_bp.route('/chat/stream', methods=['GET'])
+@login_required
+async def chat_stream():
+    """Server-Sent Events streaming endpoint for real-time AI responses"""
+    print(f"🌊 Chat stream request started")
+    
+    try:
+        # Get parameters
+        message = request.args.get('message', '').strip()
+        session_id = request.args.get('session_id')
+        stream_id = request.args.get('stream_id')
+        
+        print(f"🌊 Stream params: message_len={len(message)}, session={session_id}, stream={stream_id}")
+        
+        if not message or not session_id or not stream_id:
+            print(f"🌊 Missing required parameters")
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        # Validate message
+        is_valid, error_msg = validate_message(message)
+        if not is_valid:
+            print(f"🌊 Invalid message: {error_msg}")
+            return jsonify({'error': error_msg}), 400
+        
+        # Get user data
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            print(f"🌊 No user data")
+            return jsonify({'error': 'User not found'}), 401
+        
+        # Check rate limit
+        if not await check_rate_limit(user_data.id, RATE_LIMIT_MAX):
+            print(f"🌊 Rate limit exceeded for user {user_data.username}")
+            return jsonify({'error': 'Rate limit exceeded'}), 429
+        
+        # Verify session belongs to user
+        session_obj = await get_chat_session(session_id)
+        if not session_obj or session_obj.user_id != user_data.id:
+            print(f"🌊 Invalid session")
+            return jsonify({'error': 'Invalid session'}), 403
+        
+        print(f"🌊 Starting stream for user {user_data.username}")
+        
+        # Save user message
+        await save_message(user_data.id, 'user', message, session_id)
+        
+        # Store stream info for interrupt capability
+        active_streams[stream_id] = {
+            'user_id': user_data.id,
+            'active': True,
+            'start_time': time.time()
+        }
+        
+        # Create response generator
+        async def generate_response():
+            try:
+                # Check for cached response
+                message_hash = hashlib.md5(message.encode()).hexdigest()
+                cached = await get_cached_response(message_hash)
+                
+                if cached:
+                    print(f"🌊 Using cached response")
+                    yield f"data: {json.dumps({'content': cached, 'cached': True})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                    # Save cached response
+                    await save_message(user_data.id, 'assistant', cached, session_id)
+                    return
+                
+                # Generate new response from Ollama
+                print(f"🌊 Generating new response from Ollama")
+                
+                # Build request payload
+                payload = {
+                    'model': OLLAMA_MODEL,
+                    'messages': [{'role': 'user', 'content': message}],
+                    'stream': True,
+                    'options': {
+                        'temperature': MODEL_TEMPERATURE,
+                        'top_p': MODEL_TOP_P,
+                        'top_k': MODEL_TOP_K,
+                        'num_predict': MODEL_MAX_TOKENS
+                    }
+                }
+                
+                # Set timeout configuration
+                if MODEL_TIMEOUT > 0:
+                    timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
+                else:
+                    timeout = aiohttp.ClientTimeout(total=None)  # Unlimited
+                
+                # Stream from Ollama
+                full_response = ""
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(f"{OLLAMA_URL}/api/chat", json=payload) as resp:
+                        if resp.status != 200:
+                            error_text = await resp.text()
+                            print(f"🌊 Ollama error: {resp.status} - {error_text}")
+                            yield f"data: {json.dumps({'error': f'AI service error: {resp.status}'})}\n\n"
+                            return
+                        
+                        async for line in resp.content:
+                            # Check if stream was interrupted
+                            if stream_id not in active_streams or not active_streams[stream_id]['active']:
+                                print(f"🌊 Stream {stream_id} interrupted")
+                                yield f"data: {json.dumps({'interrupted': True})}\n\n"
+                                return
+                            
+                            try:
+                                line_text = line.decode('utf-8').strip()
+                                if not line_text:
+                                    continue
+                                
+                                data = json.loads(line_text)
+                                
+                                if data.get('done'):
+                                    print(f"🌊 Stream complete")
+                                    yield f"data: {json.dumps({'done': True})}\n\n"
+                                    break
+                                
+                                if 'message' in data and 'content' in data['message']:
+                                    content = data['message']['content']
+                                    full_response += content
+                                    yield f"data: {json.dumps({'content': content})}\n\n"
+                                    
+                            except json.JSONDecodeError as e:
+                                print(f"🌊 JSON decode error: {e}")
+                                continue
+                            except Exception as e:
+                                print(f"🌊 Stream processing error: {e}")
+                                continue
+                
+                # Save full response and cache it
+                if full_response.strip():
+                    await save_message(user_data.id, 'assistant', full_response, session_id)
+                    await cache_response(message_hash, full_response)
+                    print(f"🌊 Response saved and cached")
+                
+            except asyncio.TimeoutError:
+                print(f"🌊 Timeout error")
+                yield f"data: {json.dumps({'error': 'Request timeout'})}\n\n"
+            except Exception as e:
+                print(f"🌊 Stream error: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                # Clean up stream tracking
+                if stream_id in active_streams:
+                    del active_streams[stream_id]
+                print(f"🌊 Stream {stream_id} cleanup complete")
+        
+        # Return Server-Sent Events response
+        return Response(
+            generate_response(),
+            content_type='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'  # Disable nginx buffering
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ Stream error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@chat_bp.route('/chat/interrupt', methods=['POST'])
+@login_required
+async def chat_interrupt():
+    """Interrupt an active streaming response"""
+    print(f"🛑 Interrupt request")
+    
+    try:
+        data = await request.json
+        stream_id = data.get('stream_id')
+        
+        if not stream_id:
+            return jsonify({'error': 'Stream ID required'}), 400
+        
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            return jsonify({'error': 'User not found'}), 401
+        
+        # Check if stream exists and belongs to user
+        if stream_id in active_streams:
+            stream_info = active_streams[stream_id]
+            if stream_info['user_id'] == user_data.id:
+                stream_info['active'] = False
+                print(f"🛑 Stream {stream_id} marked for interruption")
+                return jsonify({'success': True, 'message': 'Stream interrupted'})
+            else:
+                return jsonify({'error': 'Unauthorized'}), 403
+        else:
+            return jsonify({'error': 'Stream not found'}), 404
+            
+    except Exception as e:
+        print(f"❌ Interrupt error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@chat_bp.route('/chat/clear', methods=['POST'])
+@login_required
+async def clear_current_chat():
+    """Clear all messages from current chat session"""
+    print(f"🔗 Clear chat request")
+    
+    try:
+        data = await request.json
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'success': False, 'message': 'Session ID required'}), 400
+        
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+        # Verify session belongs to user
+        session_obj = await get_chat_session(session_id)
+        if not session_obj or session_obj.user_id != user_data.id:
+            return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # Clear all messages from this session
+        await clear_session_messages(session_id)
+        
+        return jsonify({'success': True, 'message': 'Chat cleared successfully'})
+        
+    except Exception as e:
+        print(f"❌ Clear chat error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@chat_bp.route('/chat/delete_session', methods=['POST'])
+@login_required
+async def delete_session():
+    """Delete a chat session"""
+    print(f"🔗 Delete session request")
+    
+    try:
+        data = await request.json
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'success': False, 'message': 'Session ID required'}), 400
+        
+        user_data = await get_current_user_data(current_user.auth_id)
+        if not user_data:
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+        # Verify session belongs to user
+        session_obj = await get_chat_session(session_id)
+        if not session_obj or session_obj.user_id != user_data.id:
+            return jsonify({'success': False, 'message': 'Session not found'}), 404
+        
+        # Delete the session
+        await delete_chat_session(user_data.id, session_id)
+        
+        return jsonify({'success': True, 'message': 'Session deleted successfully'})
+        
+    except Exception as e:
+        print(f"❌ Delete session error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @chat_bp.route('/chat/test', methods=['GET'])
-@require_auth
+@login_required
 async def chat_test():
     """Simple test route for chat"""
     print(f"🔗 Chat test route accessed")
     
     try:
         user_data = await get_current_user_data(current_user.auth_id)
-        return {
+        return jsonify({
             'status': 'success',
             'message': 'Chat blueprint is working',
             'user': user_data.username if user_data else 'Unknown',
-            'timestamp': time.time()
-        }
+            'timestamp': time.time(),
+            'ollama_url': OLLAMA_URL,
+            'model': OLLAMA_MODEL
+        })
     except Exception as e:
         print(f"❌ Chat test error: {e}")
-        return {'error': str(e)}, 500
+        return jsonify({'error': str(e)}), 500
 
 @chat_bp.route('/chat/health', methods=['GET'])
-@require_auth
+@login_required
 async def chat_health():
-    """Check AI service health - simplified"""
+    """Check AI service health"""
     print(f"🔗 Chat health check")
     
     try:
@@ -168,46 +409,15 @@ async def chat_health():
                     available_models = [model['name'] for model in data.get('models', [])]
                     model_loaded = any(OLLAMA_MODEL in model for model in available_models)
                     
-                    return {
+                    return jsonify({
                         'status': 'healthy' if model_loaded else 'model_not_found',
                         'active_model': OLLAMA_MODEL,
                         'available_models': available_models,
                         'ollama_url': OLLAMA_URL
-                    }
-        return {'status': 'unhealthy', 'error': 'Service unavailable'}
+                    })
+        return jsonify({'status': 'unhealthy', 'error': 'Service unavailable'})
     except Exception as e:
         print(f"❌ Health check error: {e}")
-        return {'status': 'error', 'error': str(e)}
+        return jsonify({'status': 'error', 'error': str(e)})
 
-@chat_bp.route('/chat/clear', methods=['POST'])
-@require_auth
-async def clear_current_chat():
-    """Clear all messages from current chat session"""
-    print(f"🔗 Clear chat request")
-    
-    try:
-        data = await request.json
-        session_id = data.get('session_id')
-        
-        if not session_id:
-            return {'success': False, 'message': 'Session ID required'}, 400
-        
-        user_data = await get_current_user_data(current_user.auth_id)
-        if not user_data:
-            return {'success': False, 'message': 'Unauthorized'}, 401
-        
-        # Verify session belongs to user
-        session_obj = await get_chat_session(session_id)
-        if not session_obj or session_obj.user_id != user_data.id:
-            return {'success': False, 'message': 'Session not found'}, 404
-        
-        # Clear all messages from this session
-        await clear_session_messages(session_id)
-        
-        return {'success': True, 'message': 'Chat cleared successfully'}
-        
-    except Exception as e:
-        print(f"❌ Clear chat error: {e}")
-        return {'success': False, 'message': str(e)}, 500
-
-print("✅ Chat Blueprint FIXED - Essential routes only")
+print("✅ Chat Blueprint COMPLETE - All routes implemented")

@@ -1,4 +1,4 @@
-# quart-app/blueprints/admin.py - FIXED with proper route handling
+# quart-app/blueprints/admin.py - COMPLETELY FIXED VERSION
 from quart import Blueprint, render_template, request, redirect, url_for, flash, g, jsonify
 from quart_auth import current_user, login_required
 from .database import (
@@ -7,45 +7,39 @@ from .database import (
     get_pending_users, approve_user, reject_user
 )
 
-# FIXED: Create blueprint with explicit url_prefix
-admin_bp = Blueprint('admin', __name__, url_prefix='')
+# Create blueprint WITHOUT url_prefix (let app handle it)
+admin_bp = Blueprint('admin', __name__)
 
-# FIXED: Simple require_admin decorator
-def require_admin(f):
-    """Simple admin decorator"""
-    from functools import wraps
-    @wraps(f)
-    async def decorated_function(*args, **kwargs):
-        print(f"🔐 Admin auth check for {request.endpoint}")
-        
-        if not await current_user.is_authenticated:
-            print(f"🔐 Admin: User not authenticated")
-            if request.is_json:
-                return jsonify({'error': 'Authentication required'}), 401
-            return redirect(url_for('auth.login'))
-        
-        try:
-            user_data = await get_current_user_data(current_user.auth_id)
-            if not user_data or not user_data.is_admin:
-                print(f"🔐 Admin: User not admin")
-                if request.is_json:
-                    return jsonify({'error': 'Admin privileges required'}), 403
-                return redirect(url_for('auth.login'))
-        except Exception as e:
-            print(f"🔐 Admin auth error: {e}")
-            if request.is_json:
-                return jsonify({'error': 'Authentication error'}), 401
-            return redirect(url_for('auth.login'))
-        
-        print(f"🔐 Admin auth successful")
-        return await f(*args, **kwargs)
-    return decorated_function
+# FIXED: Helper functions instead of decorators
+async def get_current_user_info():
+    """Get current user info safely"""
+    if not await current_user.is_authenticated:
+        return None
+    
+    try:
+        return await get_current_user_data(current_user.auth_id)
+    except Exception as e:
+        print(f"⚠️ Error getting user data: {e}")
+        return None
 
+async def check_user_admin():
+    """Check if current user is admin"""
+    user_info = await get_current_user_info()
+    if not user_info:
+        return False
+    return user_info.is_admin
+
+# FIXED: Admin routes using @login_required
 @admin_bp.route('/admin')
-@require_admin
+@login_required
 async def admin():
-    """Admin dashboard - FIXED"""
+    """Admin dashboard - COMPLETELY FIXED"""
     print(f"🔗 Admin dashboard accessed")
+    
+    # Check if user is admin (not in decorator to avoid loops)
+    if not await check_user_admin():
+        print(f"🔗 Admin: User not admin, redirecting to login")
+        return redirect(url_for('auth.login'))
     
     try:
         # Get database stats, users, and pending users
@@ -72,13 +66,17 @@ async def admin():
                                    pending_users=[])
 
 @admin_bp.route('/admin/test')
-@require_admin
+@login_required
 async def admin_test():
     """Simple test route for admin"""
     print(f"🔗 Admin test route accessed")
     
+    # Check admin
+    if not await check_user_admin():
+        return {'error': 'Admin privileges required'}, 403
+    
     try:
-        user_data = await get_current_user_data(current_user.auth_id)
+        user_data = await get_current_user_info()
         return {
             'status': 'success',
             'message': 'Admin blueprint is working',
@@ -90,10 +88,15 @@ async def admin_test():
         return {'error': str(e)}, 500
 
 @admin_bp.route('/admin/cleanup', methods=['POST'])
-@require_admin
+@login_required
 async def admin_database_cleanup():
     """Perform database cleanup operations via form"""
     print(f"🔗 Admin cleanup request")
+    
+    # Check admin
+    if not await check_user_admin():
+        await flash('Admin privileges required', 'error')
+        return redirect(url_for('auth.login'))
     
     try:
         form_data = await request.form
@@ -126,10 +129,15 @@ async def admin_database_cleanup():
         return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/approve_user', methods=['POST'])
-@require_admin
+@login_required
 async def admin_approve_user():
     """Approve a pending user"""
     print(f"🔗 Admin approve user request")
+    
+    # Check admin
+    if not await check_user_admin():
+        await flash('Admin privileges required', 'error')
+        return redirect(url_for('auth.login'))
     
     try:
         form_data = await request.form
@@ -154,10 +162,15 @@ async def admin_approve_user():
         return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/reject_user', methods=['POST'])
-@require_admin
+@login_required
 async def admin_reject_user():
     """Reject and delete a pending user"""
     print(f"🔗 Admin reject user request")
+    
+    # Check admin
+    if not await check_user_admin():
+        await flash('Admin privileges required', 'error')
+        return redirect(url_for('auth.login'))
     
     try:
         form_data = await request.form
@@ -182,10 +195,15 @@ async def admin_reject_user():
         return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/user/<user_id>')
-@require_admin
+@login_required
 async def admin_user_detail(user_id):
     """View detailed user information and chat history"""
     print(f"🔗 Admin user detail for: {user_id}")
+    
+    # Check admin
+    if not await check_user_admin():
+        await flash('Admin privileges required', 'error')
+        return redirect(url_for('auth.login'))
     
     try:
         # Get user messages
@@ -216,10 +234,15 @@ async def admin_user_detail(user_id):
         return redirect(url_for('admin.admin'))
 
 @admin_bp.route('/admin/user/<user_id>/delete', methods=['POST'])
-@require_admin
+@login_required
 async def admin_delete_user(user_id):
     """Delete a user via form submission"""
     print(f"🔗 Admin delete user: {user_id}")
+    
+    # Check admin
+    if not await check_user_admin():
+        await flash('Admin privileges required', 'error')
+        return redirect(url_for('auth.login'))
     
     try:
         # Check if trying to delete self
@@ -241,4 +264,72 @@ async def admin_delete_user(user_id):
         await flash(f'Delete error: {str(e)}', 'error')
         return redirect(url_for('admin.admin'))
 
-print("✅ Admin Blueprint FIXED and configured")
+@admin_bp.route('/admin/system_info')
+@login_required
+async def admin_system_info():
+    """Get system information"""
+    # Check admin
+    if not await check_user_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    try:
+        # Try to import psutil, but handle gracefully if not available
+        try:
+            import psutil
+            import os
+            
+            # Get system stats
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            system_info = {
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'memory_used': f"{memory.used / (1024**3):.1f} GB",
+                'memory_total': f"{memory.total / (1024**3):.1f} GB",
+                'disk_percent': disk.percent,
+                'disk_used': f"{disk.used / (1024**3):.1f} GB",
+                'disk_total': f"{disk.total / (1024**3):.1f} GB",
+                'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else None
+            }
+            
+            return jsonify({
+                'success': True,
+                'system_info': system_info
+            })
+            
+        except ImportError:
+            # psutil not available
+            return jsonify({
+                'success': False,
+                'error': 'psutil not available - system monitoring disabled'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@admin_bp.route('/admin/api/stats')
+@login_required
+async def admin_api_stats():
+    """Get database stats via API"""
+    # Check admin
+    if not await check_user_admin():
+        return jsonify({'error': 'Admin privileges required'}), 403
+    
+    try:
+        stats = await get_database_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+print("✅ Admin Blueprint COMPLETELY FIXED - Using @login_required properly")

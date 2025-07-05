@@ -16,6 +16,8 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Copy static HTML error pages
 COPY html/unauthorized.html /usr/share/nginx/html/
 COPY html/rate_limited.html /usr/share/nginx/html/
+COPY html/50x.html /usr/share/nginx/html/
+COPY html/404.html /usr/share/nginx/html/
 
 # Copy static assets (CSS, JS, etc.)
 COPY static/ /usr/share/nginx/html/static/
