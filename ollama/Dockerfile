@@ -39,7 +39,8 @@ ENV OLLAMA_MODELS=/home/ollama/.ollama/models
 EXPOSE 11434
 
 # Switch to ollama user for running the service
-USER ollama
+#USER ollama
+USER root
 WORKDIR /home/ollama
 
 # Use the initialization script
