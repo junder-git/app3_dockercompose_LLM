@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Complete streaming with unlimited network settings
+# quart-app/blueprints/chat.py - Updated with middleware authentication
 import os
 import hashlib
 import aiohttp
@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import List, Dict, AsyncGenerator
 from quart import Blueprint, render_template, request, redirect, url_for, flash, Response
-from quart_auth import login_required, current_user
+from quart_auth import current_user
 
 from .database import (
     get_current_user_data, get_or_create_current_session,
@@ -57,7 +57,7 @@ if str(OLLAMA_KEEP_ALIVE) == '-1':
 CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
 RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
 
-# UNLIMITED NETWORK SETTINGS from environment
+# UNLIMITED NETWORK SETTINGS from environment (only for chat endpoints)
 UNLIMITED_TIMEOUT = int(os.environ['UNLIMITED_TIMEOUT'])
 STREAMING_TIMEOUT = int(os.environ['STREAMING_TIMEOUT'])
 AIOHTTP_TOTAL_TIMEOUT = int(os.environ['AIOHTTP_TOTAL_TIMEOUT'])
@@ -73,7 +73,7 @@ AIOHTTP_TTL_DNS_CACHE = int(os.environ['AIOHTTP_TTL_DNS_CACHE'])
 # Stop sequences
 MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
 
-# UNLIMITED TIMEOUT CONFIGURATION
+# UNLIMITED TIMEOUT CONFIGURATION (only for chat streaming)
 UNLIMITED_CLIENT_TIMEOUT = aiohttp.ClientTimeout(
     total=None if AIOHTTP_TOTAL_TIMEOUT == 0 else AIOHTTP_TOTAL_TIMEOUT,
     connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT,
@@ -113,7 +113,7 @@ print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
 print(f"  Temperature: {MODEL_TEMPERATURE}")
 print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
 print(f"  Timeout: {MODEL_TIMEOUT}")
-print(f"🌐 Network Config:")
+print(f"🌐 Network Config (Chat Only):")
 print(f"  Unlimited Timeout: {UNLIMITED_TIMEOUT}")
 print(f"  Streaming Timeout: {STREAMING_TIMEOUT}")
 print(f"  AIOHTTP Limit: {AIOHTTP_LIMIT}")
@@ -189,7 +189,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
             }
         }
         
-        print(f"🔧 AI Request with unlimited network:")
+        print(f"🔧 AI Request with unlimited network (chat only):")
         print(f"  Model: {ACTIVE_MODEL}")
         print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
         print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
@@ -279,11 +279,11 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
             del active_streams[stream_id]
         print(f"🧹 Stream cleanup completed")
 
+# Chat routes - authentication handled by middleware
 @chat_bp.route('/chat', methods=['GET'])
 @chat_bp.route('/chat/new', methods=['GET'])
-@login_required
 async def chat():
-    """Main chat interface with session management"""
+    """Main chat interface with session management - Auth via middleware"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -324,9 +324,8 @@ async def chat():
                                chat_sessions=chat_sessions)
 
 @chat_bp.route('/chat/new', methods=['POST'])
-@login_required
 async def create_new_chat():
-    """Create a new chat session"""
+    """Create a new chat session - Auth via middleware"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return {'success': False, 'message': 'Unauthorized'}, 401
@@ -337,9 +336,8 @@ async def create_new_chat():
     return {'success': True, 'session_id': new_session.id}
 
 @chat_bp.route('/chat/clear', methods=['POST'])
-@login_required
 async def clear_current_chat():
-    """Clear all messages from current chat session"""
+    """Clear all messages from current chat session - Auth via middleware"""
     data = await request.json
     session_id = data.get('session_id')
     
@@ -361,9 +359,8 @@ async def clear_current_chat():
     return {'success': True, 'message': 'Chat cleared successfully'}
 
 @chat_bp.route('/chat/stream')
-@login_required
 async def chat_stream():
-    """Server-Sent Events endpoint for unlimited streaming responses"""
+    """Server-Sent Events endpoint for unlimited streaming responses - Auth via middleware"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -413,9 +410,6 @@ async def chat_stream():
             yield f"data: {json.dumps({'content': cached_response, 'cached': True})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         return Response(cached_stream(), mimetype='text/event-stream')
-    
-    # Track this stream - NO MORE DUPLICATE TRACKING
-    # Stream was already tracked above before rate limit check
     
     # Stream the AI response with unlimited network
     async def unlimited_streaming_with_db_updates():
@@ -476,9 +470,8 @@ async def chat_stream():
     )
 
 @chat_bp.route('/chat/interrupt', methods=['POST'])
-@login_required
 async def interrupt_stream():
-    """Interrupt an active stream"""
+    """Interrupt an active stream - Auth via middleware"""
     data = await request.json
     stream_id = data.get('stream_id')
     
@@ -489,9 +482,8 @@ async def interrupt_stream():
     return {'success': False}, 404
 
 @chat_bp.route('/chat/delete_session', methods=['POST'])
-@login_required
 async def delete_session():
-    """Delete a chat session"""
+    """Delete a chat session - Auth via middleware"""
     data = await request.json
     session_id = data.get('session_id')
     
@@ -518,9 +510,8 @@ async def delete_session():
     return {'success': True, 'message': 'Session deleted successfully'}
 
 @chat_bp.route('/chat/test_connection')
-@login_required
 async def test_connection():
-    """Test connection to Ollama service"""
+    """Test connection to Ollama service - Auth via middleware"""
     try:
         connector = create_unlimited_connector()
         test_timeout = aiohttp.ClientTimeout(total=5)
@@ -537,9 +528,8 @@ async def test_connection():
         return {'status': 'error', 'message': f'Connection failed: {str(e)}'}
 
 @chat_bp.route('/chat/health')
-@login_required
 async def chat_health():
-    """Check AI service health with unlimited network"""
+    """Check AI service health with unlimited network - Auth via middleware"""
     try:
         # Use unlimited timeout for health check - create fresh connector
         health_timeout = aiohttp.ClientTimeout(total=10)

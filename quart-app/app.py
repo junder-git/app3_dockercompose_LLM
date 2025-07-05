@@ -1,4 +1,4 @@
-# quart-app/app.py - Fully environment-driven configuration
+# quart-app/app.py - Enhanced security with strict rate limiting
 import os
 import sys
 import secrets
@@ -10,7 +10,7 @@ from markupsafe import Markup
 from markdown.extensions import codehilite, fenced_code, tables, toc
 from pymdownx import superfences, highlight
 
-print("🔍 Starting Quart app initialization...")
+print("🔍 Starting Quart app initialization with enhanced security...")
 
 try:
     from quart import Quart, render_template, redirect, url_for, session, request, jsonify, g
@@ -27,6 +27,7 @@ try:
     from blueprints.database import get_user_by_username, save_user, get_current_user_data
     from blueprints.models import User
     from blueprints.utils import generate_csrf_token, validate_csrf_token
+    from blueprints.auth_middleware import enforce_endpoint_access, add_security_context
     print("✅ Blueprint imports successful")
 except Exception as e:
     print(f"❌ Blueprint import failed: {e}")
@@ -160,6 +161,18 @@ async def make_session_permanent():
     """Make sessions permanent (persist across browser sessions)"""
     session.permanent = True
 
+# Enhanced access control middleware
+@app.before_request
+async def enhanced_access_control():
+    """Enhanced access control and rate limiting context"""
+    # Add security context first
+    await add_security_context()
+    
+    # Enforce endpoint access controls
+    response = await enforce_endpoint_access()
+    if response:
+        return response
+
 # Load user data for templates
 @app.before_request
 async def load_user_data():
@@ -196,18 +209,19 @@ async def csrf_protect():
             print(f"⚠️ CSRF validation error: {e}")
             return jsonify({'error': 'CSRF validation failed'}), 403
 
-# Security Headers Middleware
+# Enhanced Security Headers Middleware
 @app.after_request
 async def add_security_headers(response):
-    """Add security headers to all responses"""
+    """Add enhanced security headers to all responses"""
     try:
+        # Basic security headers
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
         
-        # Updated CSP to allow inline scripts and external CDN resources
+        # Enhanced CSP
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
@@ -217,12 +231,23 @@ async def add_security_headers(response):
             "connect-src 'self'"
         )
         
-        # Add CSRF token to all HTML responses
+        # Add rate limiting headers based on endpoint type
+        if hasattr(g, 'endpoint_limits'):
+            limits = g.endpoint_limits
+            response.headers['X-RateLimit-Limit'] = str(limits['rate'])
+            response.headers['X-RateLimit-Burst'] = str(limits['burst'])
+            if hasattr(g, 'is_unlimited_endpoint') and g.is_unlimited_endpoint:
+                response.headers['X-RateLimit-Type'] = 'unlimited'
+            else:
+                response.headers['X-RateLimit-Type'] = 'strict'
+        
+        # Add CSRF token to HTML responses
         if response.content_type and 'text/html' in response.content_type:
             try:
                 response.headers['X-CSRF-Token'] = await generate_csrf_token()
             except:
                 pass  # Don't fail the request if CSRF token generation fails
+                
     except Exception as e:
         print(f"⚠️ Error adding security headers: {e}")
     
@@ -235,13 +260,17 @@ async def inject_template_globals():
     try:
         return {
             'csrf_token': await generate_csrf_token(),
-            'current_user_data': g.get('current_user_data')
+            'current_user_data': g.get('current_user_data'),
+            'is_unlimited_endpoint': g.get('is_unlimited_endpoint', False),
+            'is_strict_endpoint': g.get('is_strict_endpoint', True)
         }
     except Exception as e:
         print(f"⚠️ Error injecting template globals: {e}")
         return {
             'csrf_token': '',
-            'current_user_data': None
+            'current_user_data': None,
+            'is_unlimited_endpoint': False,
+            'is_strict_endpoint': True
         }
 
 # Initialize admin user
@@ -313,12 +342,30 @@ async def internal_error(error):
 async def not_found(error):
     return jsonify({'error': 'Not found'}), 404
 
-print("✅ Quart app configuration complete with enhanced markdown support")
+@app.errorhandler(403)
+async def forbidden(error):
+    return jsonify({'error': 'Forbidden - Access denied'}), 403
+
+@app.errorhandler(401)
+async def unauthorized(error):
+    return jsonify({'error': 'Unauthorized - Authentication required'}), 401
+
+@app.errorhandler(429)
+async def rate_limited(error):
+    return jsonify({'error': 'Rate limit exceeded - Please slow down'}), 429
+
+print("✅ Quart app configuration complete with enhanced security")
 print("📝 Configuration loaded from environment:")
 print(f"  - Admin Username: {ADMIN_USERNAME}")
 print(f"  - Admin User ID: {ADMIN_USER_ID}")
 print(f"  - Session Lifetime: {SESSION_LIFETIME_DAYS} days")
 print(f"  - Secure Cookies: {SECURE_COOKIES}")
+print("🔒 Security features enabled:")
+print("  - Strict rate limiting for auth endpoints")
+print("  - Unlimited rate limiting for chat/admin (authenticated users only)")
+print("  - Enhanced access control middleware")
+print("  - CSRF protection for state-changing requests")
+print("  - Comprehensive security headers")
 print("📝 Markdown features enabled:")
 print("  - Syntax highlighting with line numbers")
 print("  - Tables, task lists, and footnotes")
@@ -327,5 +374,5 @@ print("  - Enhanced code blocks with language detection")
 print("  - GitHub-style markdown extensions")
 
 if __name__ == '__main__':
-    print("🚀 Starting Quart app...")
+    print("🚀 Starting Quart app with enhanced security...")
     app.run(debug=True, host='0.0.0.0', port=8000)
