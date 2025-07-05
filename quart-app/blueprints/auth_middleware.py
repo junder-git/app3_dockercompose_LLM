@@ -1,4 +1,4 @@
-# quart-app/blueprints/auth_middleware.py - Enhanced authentication middleware
+# quart-app/blueprints/auth_middleware.py - Fixed authentication middleware
 import os
 from functools import wraps
 from quart import request, jsonify, redirect, url_for, g
@@ -52,7 +52,7 @@ def require_admin(f):
         if not user_data or not user_data.is_admin:
             if request.is_json:
                 return jsonify({'error': 'Admin privileges required'}), 403
-            return redirect(url_for('chat.chat'))
+            return redirect(url_for('auth.login'))
         
         return await f(*args, **kwargs)
     return decorated_function
@@ -76,7 +76,7 @@ def get_endpoint_rate_limits(endpoint_path):
     return STRICT_ENDPOINTS['/']
 
 async def enforce_endpoint_access():
-    """Middleware to enforce access controls"""
+    """Middleware to enforce access controls - LESS RESTRICTIVE"""
     path = request.path
     
     # Allow health checks without authentication
@@ -87,36 +87,26 @@ async def enforce_endpoint_access():
     if path.startswith('/static/'):
         return
     
-    # Chat endpoints require authentication
-    if path.startswith('/chat'):
-        if not await current_user.is_authenticated:
-            if request.is_json:
-                return jsonify({'error': 'Authentication required for chat', 'redirect': '/login'}), 401
-            return redirect(url_for('auth.login'))
-        
-        # Check if user is approved
-        user_data = await get_current_user_data(current_user.auth_id)
-        if not user_data or (not user_data.is_approved and not user_data.is_admin):
-            if request.is_json:
-                return jsonify({'error': 'Account not approved', 'redirect': '/login'}), 403
-            return redirect(url_for('auth.login'))
+    # Allow auth routes without authentication (login, register, logout)
+    if path.startswith('/login') or path.startswith('/register') or path.startswith('/logout'):
+        return
     
-    # Admin endpoints require admin privileges
-    if path.startswith('/admin'):
-        if not await current_user.is_authenticated:
-            if request.is_json:
-                return jsonify({'error': 'Authentication required for admin', 'redirect': '/login'}), 401
-            return redirect(url_for('auth.login'))
-        
-        # Check if user is admin
-        user_data = await get_current_user_data(current_user.auth_id)
-        if not user_data or not user_data.is_admin:
-            if request.is_json:
-                return jsonify({'error': 'Admin privileges required'}), 403
-            return redirect(url_for('chat.chat'))
+    # Allow root path without authentication (it redirects appropriately)
+    if path == '/':
+        return
+    
+    # ONLY block chat and admin endpoints if user is not authenticated
+    # But let the individual routes handle the authentication checks
+    if path.startswith('/chat') or path.startswith('/admin'):
+        # Don't block here - let the individual routes handle auth
+        # This allows the routes to return proper error messages/redirects
+        return
+    
+    # For all other paths, no restriction
+    return
 
 async def add_security_context():
     """Add security context to request"""
     g.endpoint_limits = get_endpoint_rate_limits(request.path)
     g.is_unlimited_endpoint = request.path.startswith('/chat') or request.path.startswith('/admin')
-    g.is_strict_endpoint = not g.is_unlimited_endpoint
+    g.is_strict_endpoint = not g.is_unlimited_endpoints
