@@ -1,4 +1,4 @@
-# quart-app/blueprints/chat.py - Complete streaming implementation with all features
+# quart-app/blueprints/chat.py - Complete streaming with unlimited network settings
 import os
 import hashlib
 import aiohttp
@@ -21,11 +21,11 @@ from .utils import escape_html
 
 chat_bp = Blueprint('chat', __name__)
 
-# AI Model configuration - ONLY from environment variables, NO DEFAULTS
+# AI Model configuration - ALL from environment variables
 OLLAMA_URL = os.environ['OLLAMA_URL']
 OLLAMA_MODEL = os.environ['OLLAMA_MODEL']
 
-# All parameters from environment - NO DEFAULTS
+# Model parameters from environment
 MODEL_TEMPERATURE = float(os.environ['MODEL_TEMPERATURE'])
 MODEL_TOP_P = float(os.environ['MODEL_TOP_P'])
 MODEL_TOP_K = int(os.environ['MODEL_TOP_K'])
@@ -39,28 +39,57 @@ OLLAMA_NUM_THREAD = int(os.environ['OLLAMA_NUM_THREAD'])
 OLLAMA_CONTEXT_SIZE = int(os.environ['OLLAMA_CONTEXT_SIZE'])
 OLLAMA_BATCH_SIZE = int(os.environ['OLLAMA_BATCH_SIZE'])
 
-# CRITICAL: Memory management - proper boolean conversion
+# Memory management from environment
 MODEL_USE_MMAP = os.environ['MODEL_USE_MMAP'].lower() == 'true'
 MODEL_USE_MLOCK = os.environ['MODEL_USE_MLOCK'].lower() == 'true'
 
-# Auto-adjust MMAP when MLOCK is enabled (they conflict)
+# Auto-adjust MMAP when MLOCK is enabled
 if MODEL_USE_MLOCK and MODEL_USE_MMAP:
     MODEL_USE_MMAP = False
-    print("🔧 Auto-disabled MMAP because MLOCK is enabled (they conflict)")
-    print("   For fully RAM/VRAM loaded models, MLOCK without MMAP is optimal")
+    print("🔧 Auto-disabled MMAP because MLOCK is enabled")
 
 # Other settings from environment
 OLLAMA_KEEP_ALIVE = os.environ['OLLAMA_KEEP_ALIVE']
-# Convert keep_alive to proper format for Ollama (handles both string and int)
 if str(OLLAMA_KEEP_ALIVE) == '-1':
-    OLLAMA_KEEP_ALIVE = -1  # Convert to integer for permanent loading
+    OLLAMA_KEEP_ALIVE = -1
 
-# Chat and rate limiting from environment
+# Chat settings from environment
 CHAT_HISTORY_LIMIT = int(os.environ['CHAT_HISTORY_LIMIT'])
 RATE_LIMIT_MAX = int(os.environ['RATE_LIMIT_MESSAGES_PER_MINUTE'])
 
-# Stop sequences - fixed list for AI models
+# UNLIMITED NETWORK SETTINGS from environment
+UNLIMITED_TIMEOUT = int(os.environ['UNLIMITED_TIMEOUT'])
+STREAMING_TIMEOUT = int(os.environ['STREAMING_TIMEOUT'])
+AIOHTTP_TOTAL_TIMEOUT = int(os.environ['AIOHTTP_TOTAL_TIMEOUT'])
+AIOHTTP_CONNECT_TIMEOUT = int(os.environ['AIOHTTP_CONNECT_TIMEOUT'])
+AIOHTTP_READ_TIMEOUT = int(os.environ['AIOHTTP_READ_TIMEOUT'])
+AIOHTTP_LIMIT = int(os.environ['AIOHTTP_LIMIT'])
+AIOHTTP_LIMIT_PER_HOST = int(os.environ['AIOHTTP_LIMIT_PER_HOST'])
+AIOHTTP_KEEPALIVE_TIMEOUT = int(os.environ['AIOHTTP_KEEPALIVE_TIMEOUT'])
+AIOHTTP_ENABLE_CLEANUP_CLOSED = os.environ['AIOHTTP_ENABLE_CLEANUP_CLOSED'].lower() == 'true'
+AIOHTTP_FORCE_CLOSE = os.environ['AIOHTTP_FORCE_CLOSE'].lower() == 'true'
+AIOHTTP_TTL_DNS_CACHE = int(os.environ['AIOHTTP_TTL_DNS_CACHE'])
+
+# Stop sequences
 MODEL_STOP_SEQUENCES = ["<|endoftext|>", "<|im_end|>", "[DONE]", "<|end|>"]
+
+# UNLIMITED TIMEOUT CONFIGURATION
+UNLIMITED_CLIENT_TIMEOUT = aiohttp.ClientTimeout(
+    total=None if AIOHTTP_TOTAL_TIMEOUT == 0 else AIOHTTP_TOTAL_TIMEOUT,
+    connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT,
+    sock_read=None if AIOHTTP_READ_TIMEOUT == 0 else AIOHTTP_READ_TIMEOUT,
+    sock_connect=None if AIOHTTP_CONNECT_TIMEOUT == 0 else AIOHTTP_CONNECT_TIMEOUT
+)
+
+# UNLIMITED CONNECTOR CONFIGURATION
+UNLIMITED_CONNECTOR = aiohttp.TCPConnector(
+    limit=AIOHTTP_LIMIT if AIOHTTP_LIMIT > 0 else None,
+    limit_per_host=AIOHTTP_LIMIT_PER_HOST if AIOHTTP_LIMIT_PER_HOST > 0 else None,
+    keepalive_timeout=None if AIOHTTP_KEEPALIVE_TIMEOUT == 0 else AIOHTTP_KEEPALIVE_TIMEOUT,
+    enable_cleanup_closed=AIOHTTP_ENABLE_CLEANUP_CLOSED,
+    force_close=AIOHTTP_FORCE_CLOSE,
+    ttl_dns_cache=AIOHTTP_TTL_DNS_CACHE if AIOHTTP_TTL_DNS_CACHE > 0 else None
+)
 
 def get_active_model():
     """Get the active optimized model name"""
@@ -82,12 +111,18 @@ print(f"  GPU Layers: {OLLAMA_GPU_LAYERS}")
 print(f"  Temperature: {MODEL_TEMPERATURE}")
 print(f"  Max Tokens: {MODEL_MAX_TOKENS}")
 print(f"  Timeout: {MODEL_TIMEOUT}")
+print(f"🌐 Network Config:")
+print(f"  Unlimited Timeout: {UNLIMITED_TIMEOUT}")
+print(f"  Streaming Timeout: {STREAMING_TIMEOUT}")
+print(f"  AIOHTTP Limit: {AIOHTTP_LIMIT}")
+print(f"  AIOHTTP Limit Per Host: {AIOHTTP_LIMIT_PER_HOST}")
+print(f"  AIOHTTP Keepalive: {AIOHTTP_KEEPALIVE_TIMEOUT}")
 
 # Global dictionary to track active streams
 active_streams = {}
 
 async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, stream_id: str = None) -> AsyncGenerator[str, None]:
-    """Stream AI response with interruption capability"""
+    """Stream AI response with unlimited network settings"""
     
     try:
         # Build messages array
@@ -121,7 +156,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
         payload = {
             'model': ACTIVE_MODEL,
             'messages': messages,
-            'stream': True,  # Enable streaming
+            'stream': True,
             'keep_alive': OLLAMA_KEEP_ALIVE,
             'options': {
                 'temperature': MODEL_TEMPERATURE,
@@ -139,16 +174,19 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
             }
         }
         
-        print(f"🔧 AI Request:")
+        print(f"🔧 AI Request with unlimited network:")
         print(f"  Model: {ACTIVE_MODEL}")
         print(f"  MMAP: {MODEL_USE_MMAP}")
         print(f"  MLOCK: {MODEL_USE_MLOCK}")
         print(f"  Context: {OLLAMA_CONTEXT_SIZE}")
         print(f"  Temperature: {MODEL_TEMPERATURE}")
+        print(f"  Using unlimited timeouts: {UNLIMITED_CLIENT_TIMEOUT}")
         
-        timeout = aiohttp.ClientTimeout(total=MODEL_TIMEOUT)
-        
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        # Use unlimited timeout and connector
+        async with aiohttp.ClientSession(
+            timeout=UNLIMITED_CLIENT_TIMEOUT,
+            connector=UNLIMITED_CONNECTOR
+        ) as session:
             async with session.post(
                 f"{OLLAMA_URL}/api/chat",
                 json=payload,
@@ -160,7 +198,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
                     yield f"data: {json.dumps({'error': f'API Error {response.status}: {error_text}'})}\n\n"
                     return
                 
-                # Stream the response
+                # Stream the response with unlimited network
                 async for line in response.content:
                     # Check if stream should be interrupted
                     if stream_id and stream_id in active_streams and active_streams[stream_id].get('interrupt'):
@@ -184,7 +222,7 @@ async def stream_ai_response(prompt: str, chat_history: List[Dict] = None, strea
                             continue
     
     except asyncio.TimeoutError:
-        yield f"data: {json.dumps({'error': f'Timeout: Response took longer than {MODEL_TIMEOUT}s.'})}\n\n"
+        yield f"data: {json.dumps({'error': 'Timeout error occurred'})}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'error': f'Error: {str(e)}'})}\n\n"
     finally:
@@ -215,7 +253,7 @@ async def chat():
         if not session_obj or session_obj.user_id != user_data.id:
             current_session_id = await get_or_create_current_session(user_data.id)
     
-    # Get all user sessions for sidebar (limited to 3)
+    # Get all user sessions for sidebar
     chat_sessions = await get_user_chat_sessions(user_data.id)
     
     # Get messages for current session
@@ -276,7 +314,7 @@ async def clear_current_chat():
 @chat_bp.route('/chat/stream')
 @login_required
 async def chat_stream():
-    """Server-Sent Events endpoint for streaming responses with real-time DB updates"""
+    """Server-Sent Events endpoint for unlimited streaming responses"""
     user_data = await get_current_user_data(current_user.auth_id)
     if not user_data:
         return redirect(url_for('auth.login'))
@@ -320,8 +358,8 @@ async def chat_stream():
     # Track this stream
     active_streams[stream_id] = {'interrupt': False}
     
-    # Stream the AI response with real-time DB updates
-    async def streaming_with_db_updates():
+    # Stream the AI response with unlimited network
+    async def unlimited_streaming_with_db_updates():
         full_response = ''
         
         async for chunk in stream_ai_response(message, chat_history, stream_id):
@@ -339,7 +377,6 @@ async def chat_stream():
                             await save_message(user_data.id, 'assistant', full_response, session_id)
                             # Cache the response
                             await cache_response(prompt_hash, full_response)
-                        # No refresh needed - just mark as done
                         break
                     elif data.get('interrupted'):
                         # Save partial response if interrupted
@@ -351,12 +388,13 @@ async def chat_stream():
                     pass
     
     return Response(
-        streaming_with_db_updates(),
+        unlimited_streaming_with_db_updates(),
         mimetype='text/event-stream',
         headers={
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'X-Accel-Buffering': 'no'  # Disable nginx buffering
         }
     )
 
@@ -402,18 +440,17 @@ async def delete_session():
     
     return {'success': True, 'message': 'Session deleted successfully'}
 
-async def handle_chat_message(user_id: str, session_id: str, username: str):
-    """Legacy handler - no longer used with streaming"""
-    # This is kept for backward compatibility but streaming handles everything now
-    return redirect(url_for('chat.chat', session=session_id))
-
 @chat_bp.route('/chat/health')
 @login_required
 async def chat_health():
-    """Check AI service health"""
+    """Check AI service health with unlimited network"""
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        # Use unlimited timeout for health check
+        health_timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(
+            timeout=health_timeout,
+            connector=UNLIMITED_CONNECTOR
+        ) as session:
             async with session.get(f"{OLLAMA_URL}/api/tags") as response:
                 if response.status == 200:
                     data = await response.json()
@@ -435,6 +472,13 @@ async def chat_health():
                             'keep_alive': OLLAMA_KEEP_ALIVE,
                             'max_tokens': MODEL_MAX_TOKENS,
                             'timeout': MODEL_TIMEOUT
+                        },
+                        'network_config': {
+                            'unlimited_timeout': UNLIMITED_TIMEOUT,
+                            'streaming_timeout': STREAMING_TIMEOUT,
+                            'aiohttp_limit': AIOHTTP_LIMIT,
+                            'aiohttp_limit_per_host': AIOHTTP_LIMIT_PER_HOST,
+                            'aiohttp_keepalive_timeout': AIOHTTP_KEEPALIVE_TIMEOUT
                         }
                     }
         return {'status': 'unhealthy', 'error': 'Service unavailable'}

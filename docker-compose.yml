@@ -8,6 +8,19 @@ services:
     restart: unless-stopped
     ports:
       - "11434:11434"
+    # UNLIMITED NETWORK CONFIGURATION
+    sysctls:
+      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    ulimits:
+      nofile:
+        soft: ${ULIMIT_NOFILE_SOFT}
+        hard: ${ULIMIT_NOFILE_HARD}
+    cap_add:
+      - NET_ADMIN
     environment:
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_MODELS=/home/ollama/.ollama/models
@@ -36,11 +49,18 @@ services:
       - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS}
       - MODEL_TIMEOUT=${MODEL_TIMEOUT}
       - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
+      - UNLIMITED_TIMEOUT=${UNLIMITED_TIMEOUT}
+      - STREAMING_TIMEOUT=${STREAMING_TIMEOUT}
     volumes:
       - ./volumes/ollama:/home/ollama/.ollama
     deploy:
       resources:
+        limits:
+          cpus: ${OLLAMA_CPU}
+          memory: ${OLLAMA_MEMORY}
         reservations:
+          cpus: ${OLLAMA_CPU}
+          memory: ${OLLAMA_MEMORY}
           devices:
             - driver: nvidia
               count: all
@@ -52,7 +72,7 @@ services:
       retries: 5
       start_period: 120s
     networks:
-      - devstral-network
+      - ${DOCKER_NETWORK_NAME}
 
   # Redis Database
   redis:
@@ -64,13 +84,24 @@ services:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
+    # UNLIMITED NETWORK CONFIGURATION
+    sysctls:
+      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    ulimits:
+      nofile:
+        soft: ${ULIMIT_NOFILE_SOFT}
+        hard: ${ULIMIT_NOFILE_HARD}
     environment:
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
       - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
       - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
       - REDIS_DECODE_RESPONSES=${REDIS_DECODE_RESPONSES}
     networks:
-      - devstral-network
+      - ${DOCKER_NETWORK_NAME}
     deploy:
       resources:
         limits:
@@ -92,6 +123,17 @@ services:
       context: ./quart-app
       dockerfile: Dockerfile
     container_name: devstral-quart-app
+    # UNLIMITED NETWORK CONFIGURATION
+    sysctls:
+      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    ulimits:
+      nofile:
+        soft: ${ULIMIT_NOFILE_SOFT}
+        hard: ${ULIMIT_NOFILE_HARD}
     environment:
       - REDIS_URL=${REDIS_URL}
       - OLLAMA_URL=${OLLAMA_URL}
@@ -140,6 +182,18 @@ services:
       - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
       - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
       - REDIS_DECODE_RESPONSES=${REDIS_DECODE_RESPONSES}
+      # UNLIMITED NETWORK SETTINGS
+      - UNLIMITED_TIMEOUT=${UNLIMITED_TIMEOUT}
+      - STREAMING_TIMEOUT=${STREAMING_TIMEOUT}
+      - AIOHTTP_TOTAL_TIMEOUT=${AIOHTTP_TOTAL_TIMEOUT}
+      - AIOHTTP_CONNECT_TIMEOUT=${AIOHTTP_CONNECT_TIMEOUT}
+      - AIOHTTP_READ_TIMEOUT=${AIOHTTP_READ_TIMEOUT}
+      - AIOHTTP_LIMIT=${AIOHTTP_LIMIT}
+      - AIOHTTP_LIMIT_PER_HOST=${AIOHTTP_LIMIT_PER_HOST}
+      - AIOHTTP_KEEPALIVE_TIMEOUT=${AIOHTTP_KEEPALIVE_TIMEOUT}
+      - AIOHTTP_ENABLE_CLEANUP_CLOSED=${AIOHTTP_ENABLE_CLEANUP_CLOSED}
+      - AIOHTTP_FORCE_CLOSE=${AIOHTTP_FORCE_CLOSE}
+      - AIOHTTP_TTL_DNS_CACHE=${AIOHTTP_TTL_DNS_CACHE}
     volumes:
       - ./volumes/app_data:/app/data
       - ./volumes/app_logs:/app/logs
@@ -149,7 +203,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - devstral-network
+      - ${DOCKER_NETWORK_NAME}
     deploy:
       resources:
         limits:
@@ -172,6 +226,17 @@ services:
     container_name: devstral-nginx
     ports:
       - "80:80"
+    # UNLIMITED NETWORK CONFIGURATION
+    sysctls:
+      - net.core.rmem_max=${NET_CORE_RMEM_MAX}
+      - net.core.wmem_max=${NET_CORE_WMEM_MAX}
+      - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
+      - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
+      - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
+    ulimits:
+      nofile:
+        soft: ${ULIMIT_NOFILE_SOFT}
+        hard: ${ULIMIT_NOFILE_HARD}
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static:ro
       - ./volumes/nginx_cache:/var/cache/nginx
@@ -180,7 +245,7 @@ services:
       quart-app:
         condition: service_healthy
     networks:
-      - devstral-network
+      - ${DOCKER_NETWORK_NAME}
     deploy:
       resources:
         limits:
@@ -198,11 +263,16 @@ services:
       start_period: 45s
 
 networks:
-  devstral-network:
+  ${DOCKER_NETWORK_NAME}:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: devstral-br0
+      com.docker.network.driver.mtu: ${DOCKER_MTU}
     ipam:
       config:
-        - subnet: 172.21.0.0/16
+        - subnet: ${DOCKER_SUBNET}
+    # Unlimited bandwidth between containers
+    internal: false
 
 # Remove the volumes section since we're using bind mounts
 # volumes:
