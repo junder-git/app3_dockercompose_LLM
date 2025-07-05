@@ -72,7 +72,7 @@ services:
       retries: 5
       start_period: 120s
     networks:
-      - ${DOCKER_NETWORK_NAME}
+      - devstral-network
 
   # Redis Database
   redis:
@@ -101,7 +101,7 @@ services:
       - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
       - REDIS_DECODE_RESPONSES=${REDIS_DECODE_RESPONSES}
     networks:
-      - ${DOCKER_NETWORK_NAME}
+      - devstral-network
     deploy:
       resources:
         limits:
@@ -203,7 +203,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - ${DOCKER_NETWORK_NAME}
+      - devstral-network
     deploy:
       resources:
         limits:
@@ -237,6 +237,8 @@ services:
       nofile:
         soft: ${ULIMIT_NOFILE_SOFT}
         hard: ${ULIMIT_NOFILE_HARD}
+    environment:
+      - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
     volumes:
       - ./nginx/static:/usr/share/nginx/html/static:ro
       - ./volumes/nginx_cache:/var/cache/nginx
@@ -245,7 +247,7 @@ services:
       quart-app:
         condition: service_healthy
     networks:
-      - ${DOCKER_NETWORK_NAME}
+      - devstral-network
     deploy:
       resources:
         limits:
@@ -263,7 +265,7 @@ services:
       start_period: 45s
 
 networks:
-  ${DOCKER_NETWORK_NAME}:
+  devstral-network:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.name: devstral-br0
