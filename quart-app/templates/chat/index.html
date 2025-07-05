@@ -9,12 +9,9 @@
         <div class="card border-secondary">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0">
-                    <i class="bi bi-chat-square"></i> Chat Sessions
+                    <i class="bi bi-chat-square"></i> Chats
                 </h6>
                 <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary" id="new-chat-btn">
-                        <i class="bi bi-plus"></i> New
-                    </button>
                     <button class="btn btn-sm btn-outline-secondary" id="clear-chat-btn">
                         <i class="bi bi-trash"></i> Clear
                     </button>
@@ -70,29 +67,9 @@
                                 <!-- User messages as plain text -->
                                 <pre class="user-text">{{ message.content }}</pre>
                             {% else %}
-                                <!-- AI messages with markdown formatting -->
-                                {% if message.content.startswith('<think>') %}
-                                    {% set think_end = message.content.find('</think>') %}
-                                    {% if think_end != -1 %}
-                                        <details class="thinking-dropdown mb-3">
-                                            <summary class="text-muted">💭 Thinking process</summary>
-                                            <div class="thinking-content mt-2 p-3 bg-dark rounded">
-                                                {{ message.content[7:think_end] | markdown }}
-                                            </div>
-                                        </details>
-                                        <div class="ai-response">
-                                            {{ message.content[think_end+8:] | markdown }}
-                                        </div>
-                                    {% else %}
-                                        <div class="ai-response">
-                                            {{ message.content | markdown }}
-                                        </div>
-                                    {% endif %}
-                                {% else %}
-                                    <div class="ai-response">
-                                        {{ message.content | markdown }}
-                                    </div>
-                                {% endif %}
+                                <div class="ai-response">
+                                    <pre class="ai-text">{{ message.content }}</pre>
+                                </div>                            
                             {% endif %}
                         </div>
                         {% if message.timestamp %}
@@ -161,7 +138,6 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 <script>
-// Insert the fixed JavaScript here
 $(document).ready(function() {
     let eventSource = null;
     let streamId = null;
@@ -225,45 +201,48 @@ $(document).ready(function() {
         }
     });
     
-    // New chat button
-    $("#new-chat-btn").on('click', function() {
-        $.ajax({
-            url: '/chat/new',
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({}),
-            success: function(response) {
-                if (response.success) {
-                    window.location.href = '/chat?session=' + response.session_id;
-                } else {
-                    alert('Error creating new chat: ' + response.message);
-                }
-            },
-            error: function() {
-                alert('Error creating new chat');
-            }
-        });
-    });
-    
-    // Clear chat button
+    // Clear chat button - FIXED
     $("#clear-chat-btn").on('click', function() {
         if (confirm('Are you sure you want to clear all messages from this chat?')) {
             $.ajax({
                 url: '/chat/clear',
                 method: 'POST',
                 contentType: 'application/json',
+                headers: {
+                    'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
+                },
                 data: JSON.stringify({
                     session_id: currentSessionId
                 }),
                 success: function(response) {
                     if (response.success) {
-                        location.reload();
+                        // Clear messages from UI immediately
+                        $("#chat-messages").empty();
+                        
+                        // Add welcome message back
+                        const welcomeHtml = `
+                            <div class="text-center text-muted py-5">
+                                <i class="bi bi-chat-dots" style="font-size: 3rem;" aria-hidden="true"></i>
+                                <h2>Welcome to Devstral AI Chat</h2>
+                                <p>Send a message to start chatting with the AI assistant</p>
+                                <small class="text-muted">
+                                    <i class="bi bi-shield-check" aria-hidden="true"></i> Secure • 
+                                    <i class="bi bi-lightning" aria-hidden="true"></i> Fast • 
+                                    <i class="bi bi-cpu" aria-hidden="true"></i> AI-Powered
+                                </small>
+                            </div>
+                        `;
+                        $("#chat-messages").html(welcomeHtml);
+                        
+                        // Focus on message input
+                        $("#message").focus();
                     } else {
                         alert('Error clearing chat: ' + response.message);
                     }
                 },
-                error: function() {
-                    alert('Error clearing chat');
+                error: function(xhr, status, error) {
+                    console.error('Clear chat error:', error);
+                    alert('Error clearing chat: ' + error);
                 }
             });
         }
@@ -372,6 +351,7 @@ $(document).ready(function() {
                     handleStreamComplete();
                 } else if (data.content) {
                     streamedResponse += data.content;
+                    // Keep markdown formatting for streaming
                     updateStreamingText(streamedResponse);
                     if (data.cached) {
                         // Show cached indicator
@@ -393,6 +373,7 @@ $(document).ready(function() {
         scrollToBottom();
     }
     
+    // Use markdown formatting for streaming (keeping original functionality)
     function updateStreamingText(text) {
         // Process thinking tags
         const thinkingPattern = /<think>([\s\S]*?)<\/think>/g;
@@ -503,6 +484,9 @@ $(document).ready(function() {
             url: '/chat/interrupt',
             method: 'POST',
             contentType: 'application/json',
+            headers: {
+                'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
+            },
             data: JSON.stringify({
                 stream_id: streamId
             })
@@ -521,7 +505,8 @@ $(document).ready(function() {
     
     // Auto-scroll to bottom on page load (but don't reorder messages)
     if ($('.message').length > 0) {
-        scrollToBottom();
+        updateStreamingText($('.message').text.toString());
+        
     }
     
     // Window resize handler for responsive sidebar
@@ -538,26 +523,35 @@ $(document).ready(function() {
     });
 });
 
-// Delete session function
+// Delete session function - FIXED
 function deleteSession(sessionId) {
     if (confirm('Are you sure you want to delete this chat session?')) {
         $.ajax({
             url: '/chat/delete_session',
             method: 'POST',
             contentType: 'application/json',
+            headers: {
+                'X-CSRF-Token': $('meta[name="csrf-token"]').attr('content')
+            },
             data: JSON.stringify({
                 session_id: sessionId
             }),
             success: function(response) {
                 if (response.success) {
-                    location.reload();
+                    // Redirect to main chat if we deleted the current session
+                    window.location.href = '/chat';
                 } else {
                     alert('Error deleting session: ' + response.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                console.error('Delete session error:', error);
+                alert('Error deleting session: ' + error);
             }
         });
     }
 }
+
 </script>
 
 <!-- Include highlight.js for syntax highlighting -->
