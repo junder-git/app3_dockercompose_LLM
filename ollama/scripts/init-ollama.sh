@@ -1,5 +1,5 @@
 #!/bin/bash
-# ollama/scripts/init-ollama.sh - FIXED with better model handling
+# ollama/scripts/init-ollama.sh - FIXED with proper duration handling and VRAM management
 
 echo "=== FIXED Ollama Initialization ==="
 echo "Handling actual model: Devstral"
@@ -36,9 +36,9 @@ else
     curl -fsSL https://ollama.com/install.sh | sh
 fi
 
-# GPU detection with better memory estimation
+# GPU detection and memory management
 echo ""
-echo "🔍 GPU Detection..."
+echo "🔍 GPU Detection and Memory Management..."
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "🎮 NVIDIA GPU detected:"
     GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits 2>/dev/null | head -1)
@@ -51,10 +51,14 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     echo "🎯 GPU Layers configured: $OLLAMA_GPU_LAYERS"
     echo "💾 GPU Memory: ${GPU_MEMORY_FREE}MB free / ${GPU_MEMORY_TOTAL}MB total"
     
+    # Clear GPU memory if needed
+    echo "🧹 Clearing GPU memory..."
+    nvidia-smi --gpu-reset 2>/dev/null || echo "GPU reset not available"
+    
     # Warn if GPU memory might be insufficient
-    if [ "$GPU_MEMORY_FREE" -lt 15000 ]; then
+    if [ "$GPU_MEMORY_FREE" -lt 12000 ]; then
         echo "⚠️  WARNING: GPU memory might be insufficient for full model"
-        echo "💡 Consider reducing OLLAMA_GPU_LAYERS if loading fails"
+        echo "💡 Consider reducing OLLAMA_GPU_LAYERS to 25 or less"
     fi
 else
     echo "💻 CPU mode - no GPU detected"
@@ -76,21 +80,28 @@ else
     echo "⚠️ Base Modelfile not found"
 fi
 
-# FIXED: Handle keep_alive properly
+# FIXED: Handle keep_alive properly with valid duration format
 KEEP_ALIVE_SETTING=""
 if [ "$OLLAMA_KEEP_ALIVE" = "-1" ]; then
-    KEEP_ALIVE_SETTING="-1"
-    echo "🔧 Keep Alive: PERMANENT (model stays in memory)"
+    KEEP_ALIVE_SETTING="30m"  # Use 30 minutes instead of -1
+    echo "🔧 Keep Alive: 30m (converted from -1)"
 elif [ -n "$OLLAMA_KEEP_ALIVE" ]; then
     KEEP_ALIVE_SETTING="$OLLAMA_KEEP_ALIVE"
     echo "🔧 Keep Alive: $OLLAMA_KEEP_ALIVE"
 else
-    echo "🔧 Keep Alive: Default (not set)"
+    KEEP_ALIVE_SETTING="10m"  # Default to 10 minutes
+    echo "🔧 Keep Alive: 10m (default)"
 fi
 
-# Start Ollama with extended timeout environment
+# Kill any existing Ollama processes
 echo ""
-echo "🚀 Starting Ollama with extended timeouts..."
+echo "🔄 Cleaning up existing processes..."
+pkill -f ollama || true
+sleep 3
+
+# Start Ollama with conservative settings
+echo ""
+echo "🚀 Starting Ollama with conservative settings..."
 exec env \
     OLLAMA_HOST="$OLLAMA_HOST" \
     OLLAMA_MODELS="$OLLAMA_MODELS" \
@@ -103,7 +114,8 @@ exec env \
     OLLAMA_NUM_THREAD="$OLLAMA_NUM_THREAD" \
     OLLAMA_CONTEXT_SIZE="$OLLAMA_CONTEXT_SIZE" \
     OLLAMA_BATCH_SIZE="$OLLAMA_BATCH_SIZE" \
-    OLLAMA_LOAD_TIMEOUT="${OLLAMA_LOAD_TIMEOUT:-10m}" \
+    OLLAMA_LOAD_TIMEOUT="${OLLAMA_LOAD_TIMEOUT:-15m}" \
+    CUDA_VISIBLE_DEVICES=0 \
     ollama serve &
 
 OLLAMA_PID=$!
@@ -111,15 +123,18 @@ echo "📝 Ollama started with PID: $OLLAMA_PID"
 
 # Wait for API with extended timeout
 echo "⏳ Waiting for Ollama API (extended timeout)..."
-for i in {1..120}; do  # Increased from 60 to 120 attempts (4 minutes)
+for i in {1..180}; do  # Increased to 6 minutes
     if curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
         echo "✅ API ready after ${i} attempts"
         break
     fi
-    if [ $i -eq 120 ]; then
-        echo "❌ API failed to start after 4 minutes"
+    if [ $i -eq 180 ]; then
+        echo "❌ API failed to start after 6 minutes"
+        echo "📋 Checking process status..."
+        ps aux | grep ollama || true
         exit 1
     fi
+    echo "⏳ Attempt $i/180..."
     sleep 2
 done
 
@@ -140,14 +155,14 @@ if [ "$MODEL_EXISTS" -eq 0 ]; then
     echo "🔄 Attempting to pull model: $OLLAMA_MODEL"
     
     # Try to pull the model with extended timeout
-    timeout 600 ollama pull "$OLLAMA_MODEL" || {
+    timeout 900 ollama pull "$OLLAMA_MODEL" || {
         echo "❌ Failed to pull $OLLAMA_MODEL"
         echo "💡 Trying alternative model names..."
         
         # Try alternative names
         for alt_model in "devstral:latest" "codestral" "mistral"; do
             echo "🔄 Trying: $alt_model"
-            if timeout 300 ollama pull "$alt_model"; then
+            if timeout 600 ollama pull "$alt_model"; then
                 echo "✅ Successfully pulled $alt_model"
                 export OLLAMA_MODEL="$alt_model"
                 break
@@ -188,28 +203,24 @@ TEST_PAYLOAD="{
     \"stream\": false,
     \"options\": {
         \"temperature\": 0.1,
-        \"num_predict\": 10,
+        \"num_predict\": 5,
         \"use_mmap\": ${MODEL_USE_MMAP:-false},
-        \"use_mlock\": ${MODEL_USE_MLOCK:-true}
-    }"
-
-# Add keep_alive only if set
-if [ -n "$KEEP_ALIVE_SETTING" ]; then
-    TEST_PAYLOAD="${TEST_PAYLOAD},\"keep_alive\": \"$KEEP_ALIVE_SETTING\""
-fi
-
-TEST_PAYLOAD="${TEST_PAYLOAD}}"
+        \"num_ctx\": 2048,
+        \"num_gpu\": ${OLLAMA_GPU_LAYERS}
+    },
+    \"keep_alive\": \"$KEEP_ALIVE_SETTING\"
+}"
 
 echo "📤 Sending test request..."
-TEST_RESPONSE=$(curl -s --max-time 60 -X POST http://localhost:11434/api/chat \
+echo "🔧 Test payload: $TEST_PAYLOAD"
+
+TEST_RESPONSE=$(curl -s --max-time 120 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "$TEST_PAYLOAD")
 
 if echo "$TEST_RESPONSE" | grep -q "\"content\""; then
     echo "✅ Model test successful"
-    if [ "$OLLAMA_KEEP_ALIVE" = "-1" ]; then
-        echo "🔒 Model loaded PERMANENTLY in memory"
-    fi
+    echo "🔒 Model loaded in memory for $KEEP_ALIVE_SETTING"
     
     # Show response for verification
     echo "📋 Test response:"
@@ -219,12 +230,13 @@ else
     echo "📋 Response: $TEST_RESPONSE"
     echo ""
     echo "💡 Troubleshooting suggestions:"
-    echo "   1. Check if model name is correct in .env"
-    echo "   2. Reduce OLLAMA_GPU_LAYERS if GPU memory insufficient"
-    echo "   3. Try pulling a different model (codestral, mistral)"
+    echo "   1. Reduce OLLAMA_GPU_LAYERS to 25 or less"
+    echo "   2. Restart Docker containers: docker-compose down && docker-compose up"
+    echo "   3. Check GPU memory with: nvidia-smi"
+    echo "   4. Try a smaller model like 'mistral' first"
 fi
 
-# Save active model
+# Save active model and mark ready
 echo "$OPTIMIZED_MODEL" > /tmp/active_model
 touch /tmp/ollama_ready
 
@@ -237,13 +249,13 @@ echo "✅ Active Model: $OPTIMIZED_MODEL"
 echo "✅ GPU Layers: $OLLAMA_GPU_LAYERS"
 echo "✅ Context Size: $OLLAMA_CONTEXT_SIZE"
 echo "✅ Batch Size: $OLLAMA_BATCH_SIZE"
-echo "✅ Load Timeout: ${OLLAMA_LOAD_TIMEOUT:-10m}"
-echo "✅ Keep Alive: $([ "$OLLAMA_KEEP_ALIVE" = "-1" ] && echo "PERMANENT" || echo "$OLLAMA_KEEP_ALIVE")"
+echo "✅ Load Timeout: ${OLLAMA_LOAD_TIMEOUT:-15m}"
+echo "✅ Keep Alive: $KEEP_ALIVE_SETTING"
 echo "✅ Temperature: $MODEL_TEMPERATURE"
 echo "✅ Max Tokens: $MODEL_MAX_TOKENS"
 echo "================================================="
 
-# Keep running and monitor
+# Keep running and monitor with better error handling
 cleanup() {
     echo "🔄 Shutting down..."
     kill $OLLAMA_PID 2>/dev/null
@@ -255,8 +267,17 @@ trap cleanup SIGTERM SIGINT
 echo "🔄 Monitoring service..."
 while true; do
     if ! kill -0 $OLLAMA_PID 2>/dev/null; then
-        echo "❌ Process died, restarting..."
+        echo "❌ Process died, checking logs..."
+        # Show last few log entries
+        tail -20 /var/log/ollama.log 2>/dev/null || echo "No log file found"
+        echo "🔄 Restarting..."
         exec "$0"
     fi
+    
+    # Check API health every 30 seconds
+    if ! curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
+        echo "⚠️ API health check failed, but process is running"
+    fi
+    
     sleep 30
 done
