@@ -160,10 +160,6 @@ async def init_admin():
 async def startup():
     await init_admin()
 
-# Health check
-@app.route('/health')
-async def health():
-    return jsonify({'status': 'healthy', 'service': 'devstral-chat'})
 
 # FIXED: Root route with proper logic
 @app.route('/')

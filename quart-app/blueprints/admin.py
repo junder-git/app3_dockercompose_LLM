@@ -65,28 +65,6 @@ async def admin():
                                    users=[], 
                                    pending_users=[])
 
-@admin_bp.route('/admin/test')
-@login_required
-async def admin_test():
-    """Simple test route for admin"""
-    print(f"🔗 Admin test route accessed")
-    
-    # Check admin
-    if not await check_user_admin():
-        return {'error': 'Admin privileges required'}, 403
-    
-    try:
-        user_data = await get_current_user_info()
-        return {
-            'status': 'success',
-            'message': 'Admin blueprint is working',
-            'admin': user_data.username if user_data else 'Unknown',
-            'is_admin': user_data.is_admin if user_data else False
-        }
-    except Exception as e:
-        print(f"❌ Admin test error: {e}")
-        return {'error': str(e)}, 500
-
 @admin_bp.route('/admin/cleanup', methods=['POST'])
 @login_required
 async def admin_database_cleanup():
