@@ -8,19 +8,6 @@ services:
     restart: unless-stopped
     ports:
       - "11434:11434"
-    # UNLIMITED NETWORK CONFIGURATION
-    #sysctls:
-    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
-    ulimits:
-      nofile:
-        soft: ${ULIMIT_NOFILE_SOFT}
-        hard: ${ULIMIT_NOFILE_HARD}
-    cap_add:
-      - NET_ADMIN
     environment:
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_MODELS=/home/ollama/.ollama/models
@@ -66,7 +53,7 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -84,17 +71,6 @@ services:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     ports:
       - "6379:6379"
-    # UNLIMITED NETWORK CONFIGURATION
-    #sysctls:
-    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
-    ulimits:
-      nofile:
-        soft: ${ULIMIT_NOFILE_SOFT}
-        hard: ${ULIMIT_NOFILE_HARD}
     environment:
       - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
       - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
@@ -123,17 +99,6 @@ services:
       context: ./quart-app
       dockerfile: Dockerfile
     container_name: devstral-quart-app
-    # UNLIMITED NETWORK CONFIGURATION
-    #sysctls:
-    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
-    ulimits:
-      nofile:
-        soft: ${ULIMIT_NOFILE_SOFT}
-        hard: ${ULIMIT_NOFILE_HARD}
     environment:
       - REDIS_URL=${REDIS_URL}
       - OLLAMA_URL=${OLLAMA_URL}
@@ -213,12 +178,6 @@ services:
           cpus: ${QUART_APP_CPU}
           memory: ${QUART_APP_MEMORY}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
   # Nginx Reverse Proxy
   nginx:
@@ -226,17 +185,6 @@ services:
     container_name: devstral-nginx
     ports:
       - "80:80"
-    # UNLIMITED NETWORK CONFIGURATION
-    #sysctls:
-    #  - net.core.rmem_max=${NET_CORE_RMEM_MAX}
-    #  - net.core.wmem_max=${NET_CORE_WMEM_MAX}
-    #  - net.ipv4.tcp_rmem=${NET_IPV4_TCP_RMEM}
-    #  - net.ipv4.tcp_wmem=${NET_IPV4_TCP_WMEM}
-    #  - net.core.netdev_max_backlog=${NET_CORE_NETDEV_MAX_BACKLOG}
-    ulimits:
-      nofile:
-        soft: ${ULIMIT_NOFILE_SOFT}
-        hard: ${ULIMIT_NOFILE_HARD}
     environment:
       - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
     volumes:
@@ -244,8 +192,7 @@ services:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
     depends_on:
-      quart-app:
-        condition: service_healthy
+      - quart-app
     networks:
       - devstral-network
     deploy:
@@ -257,30 +204,7 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 45s
 
 networks:
   devstral-network:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.name: devstral-br0
-      com.docker.network.driver.mtu: ${DOCKER_MTU}
-    ipam:
-      config:
-        - subnet: ${DOCKER_SUBNET}
-    # Unlimited bandwidth between containers
-    internal: false
-
-# Remove the volumes section since we're using bind mounts
-# volumes:
-#   nginx_cache:
-#     driver: local
-#   nginx_logs:
-#     driver: local
-#   ollama_models:
-#     driver: local
