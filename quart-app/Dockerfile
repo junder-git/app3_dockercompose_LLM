@@ -19,8 +19,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Set environment variables for proper logging
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
+
 # Expose port
 EXPOSE 8000
 
-# Run with Hypercorn
-CMD ["hypercorn", "app:app", "--bind", "0.0.0.0:8000", "--workers", "4", "--worker-class", "asyncio"]
+# Run with Hypercorn - REDUCED workers for stability
+CMD ["hypercorn", "app:app", "--bind", "0.0.0.0:8000", "--workers", "1", "--worker-class", "asyncio", "--access-logfile", "-", "--error-logfile", "-"]
