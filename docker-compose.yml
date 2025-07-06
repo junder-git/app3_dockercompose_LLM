@@ -61,21 +61,16 @@ services:
     networks:
       - devstral-network
 
-  # Redis Database
+  # Redis with HTTP Wrapper
   redis:
     build: ./redis
     container_name: devstral-redis
+    ports:
+      - "6379:6379"  # Redis
+      - "8001:8001"  # HTTP wrapper + RedisInsight
     volumes:
       - ./volumes/redis_data:/data
       - ./volumes/redis_logs:/var/log/redis
-      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    ports:
-      - "6379:6379"
-    environment:
-      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
-      - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
-      - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
-      - REDIS_DECODE_RESPONSES=${REDIS_DECODE_RESPONSES}
     networks:
       - devstral-network
     deploy:
@@ -93,93 +88,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Quart Web Application
-  quart-app:
-    build:
-      context: ./quart-app
-      dockerfile: Dockerfile
-    container_name: devstral-quart-app
-    environment:
-      - REDIS_URL=${REDIS_URL}
-      - OLLAMA_URL=${OLLAMA_URL}
-      - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - SECRET_KEY=${SECRET_KEY}
-      - ADMIN_USERNAME=${ADMIN_USERNAME}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - ADMIN_USER_ID=${ADMIN_USER_ID}
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P}
-      - MODEL_TOP_K=${MODEL_TOP_K}
-      - MODEL_REPEAT_PENALTY=${MODEL_REPEAT_PENALTY}
-      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS}
-      - MODEL_TIMEOUT=${MODEL_TIMEOUT}
-      - CHAT_CACHE_TTL_SECONDS=${CHAT_CACHE_TTL_SECONDS}
-      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
-      - SESSION_LIFETIME_DAYS=${SESSION_LIFETIME_DAYS}
-      - SECURE_COOKIES=${SECURE_COOKIES}
-      - SSE_HEARTBEAT_INTERVAL=${SSE_HEARTBEAT_INTERVAL}
-      - SSE_MAX_CONNECTIONS=${SSE_MAX_CONNECTIONS}
-      - SSE_RETRY_TIMEOUT=${SSE_RETRY_TIMEOUT}
-      - RATE_LIMIT_MESSAGES_PER_MINUTE=${RATE_LIMIT_MESSAGES_PER_MINUTE}
-      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW}
-      - MAX_CHATS_PER_USER=${MAX_CHATS_PER_USER}
-      - MAX_PENDING_USERS=${MAX_PENDING_USERS}
-      - USER_ID_COUNTER_START=${USER_ID_COUNTER_START}
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS}
-      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD}
-      - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
-      - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
-      - MODEL_USE_MMAP=${MODEL_USE_MMAP}
-      - MODEL_USE_MLOCK=${MODEL_USE_MLOCK}
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
-      - MODEL_MIROSTAT=${MODEL_MIROSTAT}
-      - MODEL_MIROSTAT_ETA=${MODEL_MIROSTAT_ETA}
-      - MODEL_MIROSTAT_TAU=${MODEL_MIROSTAT_TAU}
-      - MODEL_STOP_SEQUENCES=${MODEL_STOP_SEQUENCES}
-      - MIN_USERNAME_LENGTH=${MIN_USERNAME_LENGTH}
-      - MAX_USERNAME_LENGTH=${MAX_USERNAME_LENGTH}
-      - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH}
-      - MAX_PASSWORD_LENGTH=${MAX_PASSWORD_LENGTH}
-      - MAX_MESSAGE_LENGTH=${MAX_MESSAGE_LENGTH}
-      - MAX_FILENAME_LENGTH=${MAX_FILENAME_LENGTH}
-      - CSRF_TOKEN_LENGTH=${CSRF_TOKEN_LENGTH}
-      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS}
-      - REDIS_SOCKET_KEEPALIVE=${REDIS_SOCKET_KEEPALIVE}
-      - REDIS_RETRY_ON_TIMEOUT=${REDIS_RETRY_ON_TIMEOUT}
-      - REDIS_DECODE_RESPONSES=${REDIS_DECODE_RESPONSES}
-      # UNLIMITED NETWORK SETTINGS
-      - UNLIMITED_TIMEOUT=${UNLIMITED_TIMEOUT}
-      - STREAMING_TIMEOUT=${STREAMING_TIMEOUT}
-      - AIOHTTP_TOTAL_TIMEOUT=${AIOHTTP_TOTAL_TIMEOUT}
-      - AIOHTTP_CONNECT_TIMEOUT=${AIOHTTP_CONNECT_TIMEOUT}
-      - AIOHTTP_READ_TIMEOUT=${AIOHTTP_READ_TIMEOUT}
-      - AIOHTTP_LIMIT=${AIOHTTP_LIMIT}
-      - AIOHTTP_LIMIT_PER_HOST=${AIOHTTP_LIMIT_PER_HOST}
-      - AIOHTTP_KEEPALIVE_TIMEOUT=${AIOHTTP_KEEPALIVE_TIMEOUT}
-      - AIOHTTP_ENABLE_CLEANUP_CLOSED=${AIOHTTP_ENABLE_CLEANUP_CLOSED}
-      - AIOHTTP_FORCE_CLOSE=${AIOHTTP_FORCE_CLOSE}
-      - AIOHTTP_TTL_DNS_CACHE=${AIOHTTP_TTL_DNS_CACHE}
-    volumes:
-      - ./volumes/app_data:/app/data
-      - ./volumes/app_logs:/app/logs
-    depends_on:
-      ollama:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - devstral-network
-    deploy:
-      resources:
-        limits:
-          cpus: ${QUART_APP_CPU}
-          memory: ${QUART_APP_MEMORY}
-        reservations:
-          cpus: ${QUART_APP_CPU}
-          memory: ${QUART_APP_MEMORY}
-    restart: unless-stopped
-
-  # Nginx Reverse Proxy
+  # Nginx Static File Server with API Proxying
   nginx:
     build: ./nginx
     container_name: devstral-nginx
@@ -188,11 +97,11 @@ services:
     environment:
       - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
     volumes:
-      - ./nginx/static:/usr/share/nginx/html/static:ro
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
     depends_on:
-      - quart-app
+      - ollama
+      - redis
     networks:
       - devstral-network
     deploy:
