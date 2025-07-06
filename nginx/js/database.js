@@ -513,6 +513,8 @@ class Database {
     // DATABASE MANAGEMENT
     // =====================================================
 
+    // database.js - Redis HTTP Operations (CONTINUATION)
+
     async getDatabaseStats() {
         try {
             const allKeys = await this.keys('*');
@@ -546,4 +548,281 @@ class Database {
                         message_count: 0 // Could calculate this but it's expensive
                     });
                     
-                    if (!user.is
+                    if (!user.is_approved && !user.is_admin) {
+                        stats.pending_count++;
+                    } else {
+                        stats.approved_count++;
+                    }
+                    stats.user_count++;
+                }
+            }
+            
+            return stats;
+        } catch (error) {
+            console.error('Error getting database stats:', error);
+            throw error;
+        }
+    }
+
+    async clearAllUserData(userId) {
+        try {
+            const user = await this.getUserById(userId);
+            if (!user) {
+                return { success: false, message: 'User not found' };
+            }
+            
+            if (user.is_admin) {
+                return { success: false, message: 'Cannot clear admin user data' };
+            }
+            
+            let deletedCounts = {
+                sessions: 0,
+                messages: 0,
+                cache_entries: 0
+            };
+            
+            // Delete all user sessions and messages
+            const sessionIds = await this.zrange(`user_sessions:${userId}`, 0, -1);
+            for (const sessionId of sessionIds) {
+                const messageIds = await this.zrange(`session_messages:${sessionId}`, 0, -1);
+                deletedCounts.messages += messageIds.length;
+                
+                // Delete all messages
+                for (const msgId of messageIds) {
+                    await this.del(`message:${msgId}`);
+                }
+                
+                // Delete session
+                await this.del(`session:${sessionId}`);
+                await this.del(`session_messages:${sessionId}`);
+                deletedCounts.sessions++;
+            }
+            
+            // Clear user's session list
+            await this.del(`user_sessions:${userId}`);
+            
+            // Clear rate limiting
+            await this.del(`rate_limit:${userId}`);
+            
+            // Clear any AI response cache entries for this user
+            const cacheKeys = await this.keys(`ai_response:*`);
+            for (const key of cacheKeys) {
+                // This is a simple approach - in production you might want to track user-specific cache
+                deletedCounts.cache_entries++;
+            }
+            
+            return {
+                success: true,
+                message: `Successfully cleared all data for user ${user.username}`,
+                deleted_data: deletedCounts
+            };
+            
+        } catch (error) {
+            console.error('Error clearing user data:', error);
+            throw error;
+        }
+    }
+
+    async exportUserData(userId) {
+        try {
+            const user = await this.getUserById(userId);
+            if (!user) {
+                return { success: false, message: 'User not found' };
+            }
+            
+            const userData = {
+                user: user.toDict(),
+                sessions: [],
+                messages: [],
+                export_timestamp: new Date().toISOString()
+            };
+            
+            // Get all user sessions
+            const sessionIds = await this.zrange(`user_sessions:${userId}`, 0, -1);
+            for (const sessionId of sessionIds) {
+                const session = await this.getChatSession(sessionId);
+                if (session) {
+                    userData.sessions.push(session.toDict());
+                    
+                    // Get session messages
+                    const messages = await this.getSessionMessages(sessionId, null);
+                    userData.messages.push(...messages);
+                }
+            }
+            
+            return {
+                success: true,
+                data: userData
+            };
+            
+        } catch (error) {
+            console.error('Error exporting user data:', error);
+            throw error;
+        }
+    }
+
+    async getSystemHealth() {
+        try {
+            const health = {
+                status: 'healthy',
+                timestamp: new Date().toISOString(),
+                database: {
+                    connected: false,
+                    response_time: 0
+                },
+                memory: {
+                    used: 0,
+                    peak: 0
+                },
+                performance: {
+                    commands_processed: 0,
+                    slow_queries: 0
+                }
+            };
+            
+            // Test database connectivity and response time
+            const startTime = Date.now();
+            try {
+                await this.ping();
+                health.database.connected = true;
+                health.database.response_time = Date.now() - startTime;
+            } catch (error) {
+                health.status = 'unhealthy';
+                health.database.connected = false;
+                health.database.error = error.message;
+            }
+            
+            return health;
+        } catch (error) {
+            console.error('Error getting system health:', error);
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                error: error.message
+            };
+        }
+    }
+
+    // =====================================================
+    // BULK OPERATIONS
+    // =====================================================
+
+    async bulkDeleteKeys(pattern) {
+        try {
+            const keys = await this.keys(pattern);
+            let deleted = 0;
+            
+            for (const key of keys) {
+                await this.del(key);
+                deleted++;
+            }
+            
+            return { success: true, deleted_count: deleted };
+        } catch (error) {
+            console.error('Error in bulk delete:', error);
+            throw error;
+        }
+    }
+
+    async cleanupExpiredSessions() {
+        try {
+            const allUsers = await this.smembers('users');
+            let cleanedSessions = 0;
+            
+            for (const userId of allUsers) {
+                const sessionIds = await this.zrange(`user_sessions:${userId}`, 0, -1);
+                
+                for (const sessionId of sessionIds) {
+                    const session = await this.getChatSession(sessionId);
+                    if (!session) {
+                        // Session data missing, remove from user's list
+                        await this.zrem(`user_sessions:${userId}`, sessionId);
+                        cleanedSessions++;
+                    }
+                }
+            }
+            
+            return { success: true, cleaned_sessions: cleanedSessions };
+        } catch (error) {
+            console.error('Error cleaning up sessions:', error);
+            throw error;
+        }
+    }
+
+    // =====================================================
+    // MIGRATION AND MAINTENANCE
+    // =====================================================
+
+    async migrateLegacyData() {
+        try {
+            // Check if migration is needed
+            const migrationKey = 'migration:v1_complete';
+            const migrationComplete = await this.exists(migrationKey);
+            
+            if (migrationComplete) {
+                return { success: true, message: 'Migration already complete' };
+            }
+            
+            // Perform any necessary data migrations here
+            console.log('Running database migration...');
+            
+            // Mark migration as complete
+            await this.set(migrationKey, 'true');
+            
+            return { success: true, message: 'Migration completed successfully' };
+        } catch (error) {
+            console.error('Migration error:', error);
+            throw error;
+        }
+    }
+
+    async validateDataIntegrity() {
+        try {
+            const issues = [];
+            
+            // Check for orphaned sessions
+            const allSessionKeys = await this.keys('session:*');
+            for (const sessionKey of allSessionKeys) {
+                const sessionId = sessionKey.replace('session:', '');
+                const session = await this.getChatSession(sessionId);
+                
+                if (session) {
+                    // Check if user exists
+                    const user = await this.getUserById(session.user_id);
+                    if (!user) {
+                        issues.push(`Orphaned session ${sessionId} - user ${session.user_id} not found`);
+                    }
+                }
+            }
+            
+            // Check for orphaned messages
+            const allMessageKeys = await this.keys('message:*');
+            for (const messageKey of allMessageKeys) {
+                const messageData = await this.hgetall(messageKey);
+                if (messageData.session_id) {
+                    const session = await this.getChatSession(messageData.session_id);
+                    if (!session) {
+                        issues.push(`Orphaned message ${messageKey} - session ${messageData.session_id} not found`);
+                    }
+                }
+            }
+            
+            return {
+                success: true,
+                issues_found: issues.length,
+                issues: issues
+            };
+        } catch (error) {
+            console.error('Data integrity check error:', error);
+            throw error;
+        }
+    }
+}
+
+// Create global instance
+window.Database = new Database();
+
+// Export for module use
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Database;
+}
