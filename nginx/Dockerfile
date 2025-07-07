@@ -1,8 +1,8 @@
-# nginx/Dockerfile - Fixed paths and setup
+# nginx/Dockerfile - Complete setup with NJS and Redis2 module
 
 FROM nginx:1.25.3-alpine
 
-# Try to install available nginx modules from packages
+# Install dependencies for building nginx modules
 RUN apk add --no-cache \
     nginx-module-njs \
     curl \
@@ -11,7 +11,7 @@ RUN apk add --no-cache \
     zlib-dev \
     openssl-dev
 
-# Download and build only the redis2 module from a stable release
+# Download and build the redis2 module from a stable release
 WORKDIR /tmp
 
 # Use a specific stable release instead of git clone
@@ -30,7 +30,7 @@ RUN wget https://github.com/openresty/redis2-nginx-module/archive/v0.15.tar.gz &
 RUN apk del build-base pcre-dev zlib-dev openssl-dev && \
     rm -rf /tmp/*
 
-# Continue with rest of your setup...
+# Set working directory
 WORKDIR /usr/share/nginx/html
 
 # Remove default NGINX configuration and content
@@ -41,7 +41,7 @@ RUN rm /etc/nginx/conf.d/default.conf && \
 # Copy NGINX configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Create directories and download libraries
+# Create directories and download external libraries
 RUN mkdir -p /etc/nginx/njs && \
     mkdir -p /usr/share/nginx/html/css && \
     mkdir -p /usr/share/nginx/html/js/lib && \
@@ -51,31 +51,25 @@ RUN mkdir -p /etc/nginx/njs && \
     curl -o /usr/share/nginx/html/js/lib/jquery.min.js https://code.jquery.com/jquery-3.7.1.min.js && \
     curl -o /usr/share/nginx/html/js/lib/bootstrap.min.js https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js && \
     curl -o /usr/share/nginx/html/css/bootstrap.min.css https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css
-    #curl -o /usr/share/nginx/html/css/bootstrap-icons.min.css https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css
 
-# Copy your files - FIXED PATHS
+# Copy application files
 COPY njs/ /etc/nginx/njs/
 COPY html/ /usr/share/nginx/html/
 COPY static/ /usr/share/nginx/html/
 
-# Copy entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# Set permissions
+# Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/ && \
     chmod -R 755 /etc/nginx/njs/ && \
-    chmod +x /usr/local/bin/entrypoint.sh && \
     chown -R nginx:nginx /usr/share/nginx/html/ && \
     chown -R nginx:nginx /var/cache/nginx && \
-    chown -R nginx:nginx /var/log/nginx && \
-    ls -la /usr/local/bin/entrypoint.sh
+    chown -R nginx:nginx /var/log/nginx
 
+# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
+# Expose port
 EXPOSE 80
 
-CMD ["/usr/local/bin/entrypoint.sh"]
-
-
-
+# Use the custom entrypoint
+CMD ["nginx", "-g", "daemon off;"]

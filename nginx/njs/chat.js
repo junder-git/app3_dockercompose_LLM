@@ -24,7 +24,7 @@ async function handleChatRequest(r) {
         }
 
     } catch (e) {
-        r.log(`Chat error: ${e.message}`);
+        r.log('Chat error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Internal server error" }));
     }
 }
@@ -38,7 +38,7 @@ async function handleSendMessage(r, user) {
         }
 
         const data = JSON.parse(body);
-        const { message } = data;
+        const message = data.message;
 
         if (!message || message.trim() === '') {
             r.return(400, JSON.stringify({ error: "Message cannot be empty" }));
@@ -50,7 +50,7 @@ async function handleSendMessage(r, user) {
 
         // For now, return a simple echo response
         // In production, this would interface with Ollama
-        const response = `Echo: ${message}`;
+        const response = "Echo: " + message;
 
         // Save chat to database
         const saved = await database.saveChat(chatId, user.id, message, response);
@@ -67,7 +67,7 @@ async function handleSendMessage(r, user) {
         }));
 
     } catch (e) {
-        r.log(`Send message error: ${e.message}`);
+        r.log('Send message error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to send message" }));
     }
 }
@@ -83,7 +83,7 @@ async function handleGetHistory(r, user) {
         }));
 
     } catch (e) {
-        r.log(`Get history error: ${e.message}`);
+        r.log('Get history error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to fetch chat history" }));
     }
 }

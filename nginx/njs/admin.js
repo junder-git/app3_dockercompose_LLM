@@ -37,7 +37,7 @@ async function handleAdminRequest(r) {
         }
 
     } catch (e) {
-        r.log(`Admin error: ${e.message}`);
+        r.log('Admin error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Internal server error" }));
     }
 }
@@ -47,16 +47,20 @@ async function handleGetUsers(r) {
         const users = await database.getAllUsers();
         
         // Format users for admin view
-        const formattedUsers = users.map(user => ({
-            id: user.id,
-            username: user.username,
-            is_admin: user.is_admin === 'true' || user.is_admin === true,
-            is_approved: user.is_approved === 'true' || user.is_approved === true,
-            created_at: user.created_at
-        }));
+        const formattedUsers = users.map(function(user) {
+            return {
+                id: user.id,
+                username: user.username,
+                is_admin: user.is_admin === 'true' || user.is_admin === true,
+                is_approved: user.is_approved === 'true' || user.is_approved === true,
+                created_at: user.created_at
+            };
+        });
 
         // Sort by created_at (newest first)
-        formattedUsers.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        formattedUsers.sort(function(a, b) {
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
 
         r.return(200, JSON.stringify({
             success: true,
@@ -65,7 +69,7 @@ async function handleGetUsers(r) {
         }));
 
     } catch (e) {
-        r.log(`Get users error: ${e.message}`);
+        r.log('Get users error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to fetch users" }));
     }
 }
@@ -98,7 +102,7 @@ async function handleApproveUser(r) {
         }));
 
     } catch (e) {
-        r.log(`Approve user error: ${e.message}`);
+        r.log('Approve user error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to approve user" }));
     }
 }
@@ -131,7 +135,7 @@ async function handleRejectUser(r) {
         }));
 
     } catch (e) {
-        r.log(`Reject user error: ${e.message}`);
+        r.log('Reject user error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to reject user" }));
     }
 }
@@ -163,7 +167,7 @@ async function handleGetUserDetail(r, userId) {
         }));
 
     } catch (e) {
-        r.log(`Get user detail error: ${e.message}`);
+        r.log('Get user detail error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to fetch user details" }));
     }
 }
@@ -174,9 +178,15 @@ async function handleGetStats(r) {
         
         const stats = {
             total_users: users.length,
-            approved_users: users.filter(u => u.is_approved === 'true' || u.is_approved === true).length,
-            pending_users: users.filter(u => u.is_approved === 'false' || u.is_approved === false).length,
-            admin_users: users.filter(u => u.is_admin === 'true' || u.is_admin === true).length
+            approved_users: users.filter(function(u) { 
+                return u.is_approved === 'true' || u.is_approved === true; 
+            }).length,
+            pending_users: users.filter(function(u) { 
+                return u.is_approved === 'false' || u.is_approved === false; 
+            }).length,
+            admin_users: users.filter(function(u) { 
+                return u.is_admin === 'true' || u.is_admin === true; 
+            }).length
         };
 
         r.return(200, JSON.stringify({
@@ -185,7 +195,7 @@ async function handleGetStats(r) {
         }));
 
     } catch (e) {
-        r.log(`Get stats error: ${e.message}`);
+        r.log('Get stats error: ' + e.message);
         r.return(500, JSON.stringify({ error: "Failed to fetch stats" }));
     }
 }

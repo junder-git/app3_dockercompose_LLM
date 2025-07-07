@@ -77,16 +77,21 @@ async function handleLogin(r) {
         }
 
         const data = JSON.parse(body);
-        const { username, password } = data;
+        const username = data.username;
+        const password = data.password;
 
         // Validate input
-        const [validUsername, userError] = utils.validateUsername(username);
+        const usernameValidation = utils.validateUsername(username);
+        const validUsername = usernameValidation[0];
+        const userError = usernameValidation[1];
         if (!validUsername) {
             r.return(400, JSON.stringify({ error: userError }));
             return;
         }
 
-        const [validPassword, passError] = utils.validatePassword(password);
+        const passwordValidation = utils.validatePassword(password);
+        const validPassword = passwordValidation[0];
+        const passError = passwordValidation[1];
         if (!validPassword) {
             r.return(400, JSON.stringify({ error: passError }));
             return;
@@ -130,7 +135,7 @@ async function handleLogin(r) {
         }));
 
     } catch (e) {
-        r.log(`Auth error: ${e.message}`);
+        r.log('Auth error: ' + e.message);
         r.return(500, JSON.stringify({ error: 'Internal server error' }));
     }
 }
@@ -149,16 +154,21 @@ async function handleRegister(r) {
         }
 
         const data = JSON.parse(body);
-        const { username, password } = data;
+        const username = data.username;
+        const password = data.password;
 
         // Validate input
-        const [validUsername, userError] = utils.validateUsername(username);
+        const usernameValidation = utils.validateUsername(username);
+        const validUsername = usernameValidation[0];
+        const userError = usernameValidation[1];
         if (!validUsername) {
             r.return(400, JSON.stringify({ error: userError }));
             return;
         }
 
-        const [validPassword, passError] = utils.validatePassword(password);
+        const passwordValidation = utils.validatePassword(password);
+        const validPassword = passwordValidation[0];
+        const passError = passwordValidation[1];
         if (!validPassword) {
             r.return(400, JSON.stringify({ error: passError }));
             return;
@@ -198,7 +208,7 @@ async function handleRegister(r) {
         }));
 
     } catch (e) {
-        r.log(`Register error: ${e.message}`);
+        r.log('Register error: ' + e.message);
         r.return(500, JSON.stringify({ error: 'Internal server error' }));
     }
 }
@@ -218,7 +228,7 @@ async function verifyTokenEndpoint(r) {
         }));
 
     } catch (e) {
-        r.log(`Token verification error: ${e.message}`);
+        r.log('Token verification error: ' + e.message);
         r.return(500, JSON.stringify({ error: 'Token verification failed' }));
     }
 }

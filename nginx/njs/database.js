@@ -75,7 +75,8 @@ async function getAllUsers() {
         const keys = keysText.trim().split('\n');
         const users = [];
         
-        for (const key of keys) {
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
             if (key && key.startsWith('user:')) {
                 const userData = await getUserByUsername(key.substring(5)); // Remove 'user:' prefix
                 if (userData) {
@@ -206,7 +207,8 @@ async function getUserChats(userId) {
         const keys = keysText.trim().split('\n');
         const chats = [];
         
-        for (const key of keys) {
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
             if (key && key.startsWith('chat:')) {
                 const chatRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
                 if (chatRes.ok) {
@@ -215,9 +217,9 @@ async function getUserChats(userId) {
                         const lines = chatText.trim().split('\n');
                         const chatData = {};
                         
-                        for (let i = 0; i < lines.length; i += 2) {
-                            if (i + 1 < lines.length) {
-                                chatData[lines[i]] = lines[i + 1];
+                        for (let j = 0; j < lines.length; j += 2) {
+                            if (j + 1 < lines.length) {
+                                chatData[lines[j]] = lines[j + 1];
                             }
                         }
                         
@@ -230,7 +232,9 @@ async function getUserChats(userId) {
         }
         
         // Sort by timestamp (newest first)
-        chats.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        chats.sort(function(a, b) {
+            return new Date(b.timestamp) - new Date(a.timestamp);
+        });
         
         return chats;
     } catch (e) {
