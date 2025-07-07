@@ -1,0 +1,51 @@
+<!-- rate_limited.html -->
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Limited</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i> Devstral AI
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="bi bi-house"></i> Home
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid">
+        <div class="row justify-content-center">
+            <div class="col-md-6 text-center">
+                <div class="error-page-container">
+                    <div class="robot-icon">⏰</div>
+                    <div class="error-code">429</div>
+                    <h1 class="error-message">Rate Limited</h1>
+                    <p class="error-description">
+                        You're sending requests too quickly. Please wait a moment before trying again.
+                        This helps us maintain service quality for everyone.
+                    </p>
+                    <div class="error-actions">
+                        <a href="/" class="error-btn">
+                            🏠 Go Home
+                        </a>
+                        <button class="error-btn secondary" onclick="setTimeout(() => window.location.reload(), 5000)">
+                            ⏳ Wait & Retry
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
+

@@ -1,0 +1,50 @@
+<!-- unauthorized.html -->
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unauthorized</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/css/styles.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i> Devstral AI
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/login">
+                    <i class="bi bi-box-arrow-in-right"></i> Login
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container-fluid">
+        <div class="row justify-content-center">
+            <div class="col-md-6 text-center">
+                <div class="error-page-container">
+                    <div class="robot-icon">🔒</div>
+                    <div class="error-code">403</div>
+                    <h1 class="error-message">Access Denied</h1>
+                    <p class="error-description">
+                        You don't have permission to access this resource.
+                        Please log in with appropriate credentials.
+                    </p>
+                    <div class="error-actions">
+                        <a href="/login" class="error-btn">
+                            🔑 Login
+                        </a>
+                        <a href="/" class="error-btn secondary">
+                            🏠 Go Home
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

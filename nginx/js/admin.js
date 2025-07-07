@@ -1,4 +1,4 @@
-V// admin.js - Admin Module
+// admin.js - Admin Module
 
 class AdminModule {
     constructor(app) {
@@ -408,4 +408,385 @@ class AdminModule {
             $('#database-stats').html(html);
         } catch (error) {
             console.error('❌ Error loading database stats:', error);
-            $('#database-stats').html('<p class="text-
+            $('#database-stats').html('<p class="text-danger">Failed to load database stats.</p>');
+        }
+    }
+
+    async viewUserDetail(userId) {
+        this.app.navigate(`user-detail/${userId}`);
+    }
+
+    async loadUserDetailPage(userId) {
+        try {
+            const user = await window.Database.getUserById(userId);
+            if (!user) {
+                throw new Error('User not found');
+            }
+
+            const sessions = await window.Database.getUserChatSessions(userId);
+            const messages = await window.Database.getUserMessages(userId, 50);
+
+            const html = `
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between align-items-center mb-4">
+                                <h2>
+                                    <button class="btn btn-outline-secondary me-3" onclick="window.DevstralApp.navigate('admin')">
+                                        <i class="bi bi-arrow-left"></i>
+                                    </button>
+                                    User Details: ${user.username}
+                                </h2>
+                                <div class="btn-group">
+                                    ${!user.is_admin ? `
+                                        <button class="btn btn-outline-warning" onclick="window.DevstralApp.modules.admin.clearUserData('${userId}', '${user.username}')">
+                                            <i class="bi bi-trash"></i> Clear Data
+                                        </button>
+                                        <button class="btn btn-outline-danger" onclick="window.DevstralApp.modules.admin.deleteUser('${userId}', '${user.username}')">
+                                            <i class="bi bi-person-x"></i> Delete User
+                                        </button>
+                                    ` : ''}
+                                    <button class="btn btn-outline-primary" onclick="window.DevstralApp.modules.admin.exportUserData('${userId}')">
+                                        <i class="bi bi-download"></i> Export Data
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="bi bi-person"></i> User Information</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-borderless">
+                                        <tr>
+                                            <td><strong>Username:</strong></td>
+                                            <td>${user.username}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>User ID:</strong></td>
+                                            <td>${user.id}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Status:</strong></td>
+                                            <td>
+                                                ${user.is_admin ? '<span class="badge bg-warning text-dark">Admin</span>' : ''}
+                                                ${user.is_approved ? '<span class="badge bg-success">Approved</span>' : '<span class="badge bg-secondary">Pending</span>'}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Created:</strong></td>
+                                            <td>${Utils.formatTimestamp(user.created_at)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Sessions:</strong></td>
+                                            <td>${sessions.length}</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Messages:</strong></td>
+                                            <td>${messages.length}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-8">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="bi bi-chat"></i> Recent Activity</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chat-history" style="max-height: 500px; overflow-y: auto;">
+                                        ${this.renderUserMessages(messages)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            $('#app-content').html(html);
+
+        } catch (error) {
+            console.error('❌ Error loading user detail:', error);
+            this.app.showError('Failed to load user details', error.message);
+        }
+    }
+
+    renderUserMessages(messages) {
+        if (messages.length === 0) {
+            return '<p class="text-muted">No messages found.</p>';
+        }
+
+        return messages.map(msg => `
+            <div class="message-item mb-3 p-3 border rounded">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="badge bg-${msg.role === 'user' ? 'primary' : 'secondary'}">${msg.role}</span>
+                    <small class="text-muted">${Utils.formatTimestamp(msg.timestamp)}</small>
+                </div>
+                <div class="message-content">
+                    ${Utils.escapeHtml(msg.content.substring(0, 200))}${msg.content.length > 200 ? '...' : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async approveUser(userId, username) {
+        try {
+            const result = await window.Database.approveUser(userId);
+            if (result.success) {
+                this.app.showFlashMessage(`User ${username} approved successfully`, 'success');
+                await this.loadAllData();
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            console.error('❌ Error approving user:', error);
+            this.app.showFlashMessage(`Failed to approve user: ${error.message}`, 'error');
+        }
+    }
+
+    async rejectUser(userId, username) {
+        Utils.confirmDialog(
+            'Reject User',
+            `Are you sure you want to reject and delete user "${username}"? This action cannot be undone.`,
+            async () => {
+                try {
+                    const result = await window.Database.rejectUser(userId);
+                    if (result.success) {
+                        this.app.showFlashMessage(`User ${username} rejected and deleted`, 'success');
+                        await this.loadAllData();
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error('❌ Error rejecting user:', error);
+                    this.app.showFlashMessage(`Failed to reject user: ${error.message}`, 'error');
+                }
+            }
+        );
+    }
+
+    async deleteUser(userId, username) {
+        Utils.confirmDialog(
+            'Delete User',
+            `Are you sure you want to permanently delete user "${username}" and all their data? This action cannot be undone.`,
+            async () => {
+                try {
+                    const result = await window.Database.deleteUser(userId);
+                    if (result.success) {
+                        this.app.showFlashMessage(result.message, 'success');
+                        await this.loadAllData();
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error('❌ Error deleting user:', error);
+                    this.app.showFlashMessage(`Failed to delete user: ${error.message}`, 'error');
+                }
+            }
+        );
+    }
+
+    async clearUserData(userId, username) {
+        Utils.confirmDialog(
+            'Clear User Data',
+            `Are you sure you want to clear all chat data for user "${username}"? This will delete all their messages and sessions but keep the user account.`,
+            async () => {
+                try {
+                    const result = await window.Database.clearAllUserData(userId);
+                    if (result.success) {
+                        this.app.showFlashMessage(result.message, 'success');
+                        await this.loadAllData();
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error('❌ Error clearing user data:', error);
+                    this.app.showFlashMessage(`Failed to clear user data: ${error.message}`, 'error');
+                }
+            }
+        );
+    }
+
+    async exportUserData(userId) {
+        try {
+            const result = await window.Database.exportUserData(userId);
+            if (result.success) {
+                const user = await window.Database.getUserById(userId);
+                const filename = `user_${user.username}_${new Date().toISOString().split('T')[0]}.json`;
+                Utils.downloadJSON(result.data, filename);
+                this.app.showFlashMessage('User data exported successfully', 'success');
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            console.error('❌ Error exporting user data:', error);
+            this.app.showFlashMessage(`Failed to export user data: ${error.message}`, 'error');
+        }
+    }
+
+    async exportSystemData() {
+        try {
+            const stats = await window.Database.getDatabaseStats();
+            const health = await window.AppInit.getSystemInfo();
+            
+            const systemData = {
+                export_timestamp: new Date().toISOString(),
+                database_stats: stats,
+                system_info: health,
+                users: stats.users
+            };
+
+            const filename = `system_export_${new Date().toISOString().split('T')[0]}.json`;
+            Utils.downloadJSON(systemData, filename);
+            this.app.showFlashMessage('System data exported successfully', 'success');
+        } catch (error) {
+            console.error('❌ Error exporting system data:', error);
+            this.app.showFlashMessage(`Failed to export system data: ${error.message}`, 'error');
+        }
+    }
+
+    async validateDataIntegrity() {
+        try {
+            Utils.showLoadingSpinner('#database-tools button:first-child', 'Validating...');
+            
+            const result = await window.Database.validateDataIntegrity();
+            
+            if (result.success) {
+                const message = result.issues_found > 0 
+                    ? `Found ${result.issues_found} integrity issues. Check console for details.`
+                    : 'Data integrity validation passed - no issues found.';
+                
+                const type = result.issues_found > 0 ? 'warning' : 'success';
+                this.app.showFlashMessage(message, type);
+                
+                if (result.issues_found > 0) {
+                    console.log('Data integrity issues:', result.issues);
+                }
+            } else {
+                throw new Error('Validation failed');
+            }
+        } catch (error) {
+            console.error('❌ Error validating data integrity:', error);
+            this.app.showFlashMessage(`Failed to validate data integrity: ${error.message}`, 'error');
+        } finally {
+            Utils.hideLoadingSpinner('#database-tools button:first-child');
+        }
+    }
+
+    async cleanupExpiredData() {
+        try {
+            Utils.showLoadingSpinner('#database-tools button:nth-child(2)', 'Cleaning...');
+            
+            const result = await window.Database.cleanupExpiredSessions();
+            
+            if (result.success) {
+                const message = result.cleaned_sessions > 0 
+                    ? `Cleaned up ${result.cleaned_sessions} expired sessions.`
+                    : 'No expired data found to clean up.';
+                
+                this.app.showFlashMessage(message, 'success');
+                await this.loadAllData();
+            } else {
+                throw new Error('Cleanup failed');
+            }
+        } catch (error) {
+            console.error('❌ Error cleaning up data:', error);
+            this.app.showFlashMessage(`Failed to cleanup data: ${error.message}`, 'error');
+        } finally {
+            Utils.hideLoadingSpinner('#database-tools button:nth-child(2)');
+        }
+    }
+
+    showResetSystemDialog() {
+        const modalContent = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>WARNING:</strong> This will permanently delete ALL data including users, messages, and system settings. This action cannot be undone!
+            </div>
+            <p>To confirm, type <strong>RESET_ALL_DATA</strong> in the field below:</p>
+            <input type="text" id="reset-confirmation" class="form-control" placeholder="Type RESET_ALL_DATA to confirm">
+        `;
+
+        Utils.showModal('Reset System', modalContent, [
+            {
+                text: 'Cancel',
+                type: 'secondary',
+                dismiss: true
+            },
+            {
+                text: 'RESET SYSTEM',
+                type: 'danger',
+                onclick: `window.DevstralApp.modules.admin.executeSystemReset()`
+            }
+        ]);
+    }
+
+    async executeSystemReset() {
+        const confirmation = $('#reset-confirmation').val();
+        
+        if (confirmation !== 'RESET_ALL_DATA') {
+            this.app.showFlashMessage('Invalid confirmation text', 'error');
+            return;
+        }
+
+        try {
+            const result = await window.AppInit.resetSystem(confirmation);
+            if (result.success) {
+                this.app.showFlashMessage('System reset successfully. Reloading...', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                throw new Error(result.message || 'Reset failed');
+            }
+        } catch (error) {
+            console.error('❌ Error resetting system:', error);
+            this.app.showFlashMessage(`Failed to reset system: ${error.message}`, 'error');
+        }
+    }
+
+    async refreshStats() {
+        try {
+            await this.loadAllData();
+            this.app.showFlashMessage('Data refreshed successfully', 'success', 2000);
+        } catch (error) {
+            console.error('❌ Error refreshing stats:', error);
+            this.app.showFlashMessage('Failed to refresh data', 'error');
+        }
+    }
+
+    startAutoRefresh() {
+        // Refresh every 30 seconds
+        this.refreshInterval = setInterval(() => {
+            this.loadSystemStats();
+            this.loadSystemHealth();
+        }, 30000);
+    }
+
+    stopAutoRefresh() {
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
+        }
+    }
+
+    // Cleanup when leaving admin page
+    cleanup() {
+        this.stopAutoRefresh();
+    }
+}
+
+// Make available globally
+window.AdminModule = AdminModule;
+
+// Export for module use
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = AdminModule;
+}
