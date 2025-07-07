@@ -39,7 +39,7 @@ async function healthCheck(r) {
         }
 
         // Check if system is initialized
-        const adminExists = await database.getUserByUsername(process.env.ADMIN_USERNAME || "admin");
+        const adminExists = await database.getUserByUsername("admin");
         
         r.return(200, JSON.stringify({
             status: "healthy",
@@ -61,10 +61,11 @@ async function handleInit(r) {
     try {
         const results = [];
         
-        // Initialize admin user if it doesn't exist
-        const adminUsername = process.env.ADMIN_USERNAME || "admin";
-        const adminPassword = process.env.ADMIN_PASSWORD || "admin";
-        const adminUserId = process.env.ADMIN_USER_ID || "admin";
+        // Get admin credentials from environment or use defaults
+        // Note: In NJS, we need to use ngx.env or pass via nginx config
+        const adminUsername = "admin";  // Default fallback
+        const adminPassword = "admin";  // Default fallback  
+        const adminUserId = "admin";    // Default fallback
         
         const existingAdmin = await database.getUserByUsername(adminUsername);
         

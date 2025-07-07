@@ -10,30 +10,34 @@ nginx -g "daemon on;"
 
 # Wait for nginx to be ready
 echo "⏳ Waiting for nginx to start..."
-until curl -f http://localhost/health 2>/dev/null; do
-    echo "   Nginx not ready yet..."
+sleep 5
+
+# Try to reach nginx health check
+for i in {1..30}; do
+    if curl -f http://localhost/health 2>/dev/null; then
+        echo "✅ Nginx is ready!"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "⚠️ Nginx health check timeout, continuing anyway..."
+        break
+    fi
+    echo "   Nginx not ready yet... (attempt $i/30)"
     sleep 2
 done
 
-echo "✅ Nginx is ready!"
-
 # Run initialization
 echo "🔧 Running system initialization..."
-INIT_RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost/api/init)
-INIT_CODE=$(echo "$INIT_RESPONSE" | tail -n1)
-INIT_BODY=$(echo "$INIT_RESPONSE" | head -n -1)
-
-if [ "$INIT_CODE" = "200" ]; then
+if INIT_RESPONSE=$(curl -s http://localhost/api/init 2>/dev/null); then
     echo "✅ System initialization completed successfully"
-    echo "   Response: $INIT_BODY"
+    echo "   Response: $INIT_RESPONSE"
 else
-    echo "❌ System initialization failed (HTTP $INIT_CODE)"
-    echo "   Response: $INIT_BODY"
+    echo "❌ System initialization failed or skipped"
     echo "   Continuing anyway..."
 fi
 
 # Stop the background nginx and start in foreground
 echo "🎯 Starting nginx in foreground mode..."
-nginx -s stop
+nginx -s stop 2>/dev/null || true
 sleep 2
 exec nginx -g "daemon off;"

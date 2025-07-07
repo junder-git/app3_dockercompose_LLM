@@ -57,6 +57,8 @@ RUN mkdir -p /etc/nginx/njs && \
 COPY njs/ /etc/nginx/njs/
 COPY html/ /usr/share/nginx/html/
 COPY static/ /usr/share/nginx/html/
+
+# Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Set permissions
@@ -65,7 +67,8 @@ RUN chmod -R 755 /usr/share/nginx/html/ && \
     chmod +x /usr/local/bin/entrypoint.sh && \
     chown -R nginx:nginx /usr/share/nginx/html/ && \
     chown -R nginx:nginx /var/cache/nginx && \
-    chown -R nginx:nginx /var/log/nginx
+    chown -R nginx:nginx /var/log/nginx && \
+    ls -la /usr/local/bin/entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
