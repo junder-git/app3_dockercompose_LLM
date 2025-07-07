@@ -1,4 +1,4 @@
-// nginx/njs/auth.js - Server-side authentication using njs (ES5 compatible)
+// nginx/njs/auth.js - Server-side authentication using njs (ES5 compatible) - FIXED
 
 import database from './database.js';
 import utils from './utils.js';
@@ -10,8 +10,8 @@ var config = {
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'admin',
     MAX_PENDING_USERS: parseInt(process.env.MAX_PENDING_USERS) || 2,
     MIN_USERNAME_LENGTH: 3,
-    MAX_USERNAME_LENGTH: 50,
-    MIN_PASSWORD_LENGTH: 6,
+    MAX_USERNAME_LENGTH: 14,
+    MIN_PASSWORD_LENGTH: 5,
     RATE_LIMIT_MAX: 100
 };
 
@@ -93,6 +93,47 @@ function validatePassword(password) {
     return { valid: true };
 }
 
+// Helper function to read request body
+function readRequestBody(r) {
+    return new Promise(function(resolve, reject) {
+        var body = '';
+        
+        // Check if request body is already available (synchronously)
+        if (r.requestText) {
+            resolve(r.requestText);
+            return;
+        }
+        
+        // For POST requests, we need to read the body
+        if (r.method === 'POST') {
+            try {
+                // Try to get the body directly if available
+                var directBody = r.requestBody || r.requestText || '';
+                if (directBody) {
+                    resolve(directBody);
+                    return;
+                }
+                
+                // If no direct access, try reading from variables
+                var contentLength = parseInt(r.headersIn['Content-Length'] || '0', 10);
+                if (contentLength === 0) {
+                    resolve('{}');
+                    return;
+                }
+                
+                // Fallback: assume empty body
+                resolve('{}');
+                
+            } catch (error) {
+                r.error('Error reading request body: ' + error.message);
+                reject(error);
+            }
+        } else {
+            resolve('{}');
+        }
+    });
+}
+
 // Main handler functions for nginx locations
 function handleLogin(r) {
     try {
@@ -100,29 +141,34 @@ function handleLogin(r) {
             return utils.sendError(r, 405, 'Method not allowed');
         }
         
-        var body;
-        try {
-            body = JSON.parse(r.requestBody);
-        } catch (error) {
-            return utils.sendError(r, 400, 'Invalid JSON');
-        }
-        
-        var username = body.username;
-        var password = body.password;
-        
-        // Server-side validation
-        var usernameValidation = validateUsername(username);
-        if (!usernameValidation.valid) {
-            return utils.sendError(r, 400, usernameValidation.message);
-        }
-        
-        var passwordValidation = validatePassword(password);
-        if (!passwordValidation.valid) {
-            return utils.sendError(r, 400, passwordValidation.message);
-        }
-        
-        // Get user from database
-        database.getUserByUsername(username).then(function(user) {
+        // Read request body
+        readRequestBody(r).then(function(bodyText) {
+            var body;
+            try {
+                body = JSON.parse(bodyText || '{}');
+            } catch (error) {
+                r.error('JSON parse error: ' + error.message + ', body: ' + bodyText);
+                return utils.sendError(r, 400, 'Invalid JSON: ' + error.message);
+            }
+            
+            var username = body.username;
+            var password = body.password;
+            
+            // Server-side validation
+            var usernameValidation = validateUsername(username);
+            if (!usernameValidation.valid) {
+                return utils.sendError(r, 400, usernameValidation.message);
+            }
+            
+            var passwordValidation = validatePassword(password);
+            if (!passwordValidation.valid) {
+                return utils.sendError(r, 400, passwordValidation.message);
+            }
+            
+            // Get user from database
+            return database.getUserByUsername(username);
+            
+        }).then(function(user) {
             if (!user) {
                 return utils.sendError(r, 401, 'Invalid credentials');
             }
@@ -159,13 +205,14 @@ function handleLogin(r) {
                     is_approved: user.is_approved
                 }
             });
+            
         }).catch(function(error) {
             r.error('Login error: ' + error.message);
             return utils.sendError(r, 500, 'Internal server error');
         });
         
     } catch (error) {
-        r.error('Login error: ' + error.message);
+        r.error('Login handler error: ' + error.message);
         return utils.sendError(r, 500, 'Internal server error');
     }
 }
@@ -176,35 +223,41 @@ function handleRegister(r) {
             return utils.sendError(r, 405, 'Method not allowed');
         }
         
-        var body;
-        try {
-            body = JSON.parse(r.requestBody);
-        } catch (error) {
-            return utils.sendError(r, 400, 'Invalid JSON');
-        }
-        
-        var username = body.username;
-        var password = body.password;
-        
-        // Server-side validation
-        var usernameValidation = validateUsername(username);
-        if (!usernameValidation.valid) {
-            return utils.sendError(r, 400, usernameValidation.message);
-        }
-        
-        var passwordValidation = validatePassword(password);
-        if (!passwordValidation.valid) {
-            return utils.sendError(r, 400, passwordValidation.message);
-        }
-        
-        // Check pending user limit (SERVER-SIDE ENFORCEMENT)
-        database.getPendingUsersCount().then(function(pendingCount) {
+        // Read request body
+        readRequestBody(r).then(function(bodyText) {
+            var body;
+            try {
+                body = JSON.parse(bodyText || '{}');
+            } catch (error) {
+                r.error('JSON parse error: ' + error.message + ', body: ' + bodyText);
+                return utils.sendError(r, 400, 'Invalid JSON: ' + error.message);
+            }
+            
+            var username = body.username;
+            var password = body.password;
+            
+            // Server-side validation
+            var usernameValidation = validateUsername(username);
+            if (!usernameValidation.valid) {
+                return utils.sendError(r, 400, usernameValidation.message);
+            }
+            
+            var passwordValidation = validatePassword(password);
+            if (!passwordValidation.valid) {
+                return utils.sendError(r, 400, passwordValidation.message);
+            }
+            
+            // Check pending user limit (SERVER-SIDE ENFORCEMENT)
+            return database.getPendingUsersCount();
+            
+        }).then(function(pendingCount) {
             if (pendingCount >= config.MAX_PENDING_USERS) {
                 return utils.sendError(r, 429, 'Registration temporarily closed');
             }
             
             // Check if username exists
             return database.getUserByUsername(username);
+            
         }).then(function(existingUser) {
             if (existingUser) {
                 return utils.sendError(r, 409, 'Username already exists');
@@ -222,18 +275,20 @@ function handleRegister(r) {
             };
             
             return database.saveUser(newUser);
+            
         }).then(function() {
             return utils.sendSuccess(r, {
                 success: true,
                 message: 'Registration successful, pending approval'
             });
+            
         }).catch(function(error) {
             r.error('Registration error: ' + error.message);
             return utils.sendError(r, 500, 'Internal server error');
         });
         
     } catch (error) {
-        r.error('Registration error: ' + error.message);
+        r.error('Registration handler error: ' + error.message);
         return utils.sendError(r, 500, 'Internal server error');
     }
 }
@@ -316,5 +371,6 @@ export default {
     getAdminUsername: getAdminUsername,
     getMaxPendingUsers: getMaxPendingUsers,
     hashPassword: hashPassword,
-    verifyPassword: verifyPassword
+    verifyPassword: verifyPassword,
+    readRequestBody: readRequestBody
 };
