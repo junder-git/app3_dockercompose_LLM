@@ -61,12 +61,12 @@ services:
     networks:
       - devstral-network
 
-  # Simple Redis (no HTTP wrapper needed)
+  # Redis - Direct access via redis2 module (no HTTP wrapper needed)
   redis:
     build: ./redis
     container_name: devstral-redis
     ports:
-      - "6379:6379"
+      - "6379:6379"  # Expose for debugging/monitoring
     volumes:
       - ./volumes/redis_data:/data
       - ./volumes/redis_logs:/var/log/redis
@@ -87,7 +87,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Nginx with njs
+  # Nginx with njs and redis2 module
   nginx:
     build: ./nginx
     container_name: devstral-nginx
@@ -95,6 +95,9 @@ services:
       - "80:80"
     environment:
       - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - MAX_PENDING_USERS=${MAX_PENDING_USERS}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
@@ -112,6 +115,11 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   devstral-network:

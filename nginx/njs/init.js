@@ -1,4 +1,4 @@
-// nginx/njs/init.js - Server-side application initialization for njs
+// nginx/njs/init.js - Server-side application initialization using redis2 module
 
 import utils from './utils.js';
 
@@ -10,33 +10,126 @@ const config = {
     USER_ID_COUNTER_START: 1000
 };
 
-// Redis HTTP wrapper
-const REDIS_HTTP_URL = 'http://redis:8001';
-
+// Redis operations using nginx subrequests to redis2 module
 async function sendRedisCommand(command) {
     try {
-        const response = await ngx.fetch(REDIS_HTTP_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ command: command })
+        const [cmd, ...args] = command;
+        const cmdUpper = cmd.toUpperCase();
+        
+        let url;
+        switch (cmdUpper) {
+            case 'PING':
+                url = '/redis-internal/ping';
+                break;
+                
+            case 'GET':
+                if (args.length !== 1) throw new Error('GET requires 1 argument');
+                url = `/redis-internal/get/${encodeURIComponent(args[0])}`;
+                break;
+                
+            case 'SET':
+                if (args.length !== 2) throw new Error('SET requires 2 arguments');
+                url = `/redis-internal/set/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                break;
+                
+            case 'HSET':
+                if (args.length !== 3) throw new Error('HSET requires 3 arguments');
+                url = `/redis-internal/hset/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}/${encodeURIComponent(args[2])}`;
+                break;
+                
+            case 'SADD':
+                if (args.length !== 2) throw new Error('SADD requires 2 arguments');
+                url = `/redis-internal/sadd/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                break;
+                
+            case 'INCR':
+                if (args.length !== 1) throw new Error('INCR requires 1 argument');
+                url = `/redis-internal/incr/${encodeURIComponent(args[0])}`;
+                break;
+                
+            case 'EXISTS':
+                if (args.length !== 1) throw new Error('EXISTS requires 1 argument');
+                url = `/redis-internal/exists/${encodeURIComponent(args[0])}`;
+                break;
+                
+            case 'FLUSHDB':
+                url = '/redis-internal/flushdb';
+                break;
+                
+            default:
+                throw new Error(`Unsupported command: ${cmdUpper}`);
+        }
+
+        // Use nginx subrequest to call redis2 module
+        const response = await ngx.fetch(url, {
+            method: 'GET'
         });
 
         if (!response.ok) {
             throw new Error(`Redis request failed: ${response.status}`);
         }
 
-        return await response.json();
+        const text = await response.text();
+        return parseRedisResponse(text, cmdUpper);
+        
     } catch (error) {
         throw new Error(`Redis operation failed: ${error.message}`);
+    }
+}
+
+function parseRedisResponse(text, command) {
+    if (!text || text.length === 0) {
+        return null;
+    }
+    
+    const firstChar = text[0];
+    const content = text.slice(1);
+    
+    switch (firstChar) {
+        case '+': // Simple string
+            return content.trim();
+            
+        case '-': // Error
+            throw new Error(content.trim());
+            
+        case ':': // Integer
+            return parseInt(content.trim(), 10);
+            
+        case '$': // Bulk string
+            const lines = text.split('\r\n');
+            const len = parseInt(lines[0].slice(1), 10);
+            if (len === -1) return null;
+            return lines[1] || '';
+            
+        default:
+            return text.trim();
+    }
+}
+
+// Multiple HSET operations for creating admin user
+async function createAdminUserData(userId, userData) {
+    try {
+        // Set each field individually using HSET
+        for (const [field, value] of Object.entries(userData)) {
+            await sendRedisCommand(['HSET', `user:${userId}`, field, value]);
+        }
+        
+        // Add to username index
+        await sendRedisCommand(['SET', `username:${userData.username}`, userId]);
+        
+        // Add to users set
+        await sendRedisCommand(['SADD', 'users', userId]);
+        
+        return true;
+    } catch (error) {
+        throw new Error(`Failed to create admin user: ${error.message}`);
     }
 }
 
 // Initialize the system
 async function initializeSystem() {
     try {
-        console.log('🚀 Initializing Devstral system...');
+        console.log('🚀 Initializing Devstral system with redis2...');
         
         // Test Redis connection
         await testRedisConnection();
@@ -65,7 +158,7 @@ async function testRedisConnection() {
         if (result !== 'PONG') {
             throw new Error('Redis ping failed');
         }
-        console.log('✅ Redis connection established');
+        console.log('✅ Redis connection established via redis2 module');
     } catch (error) {
         console.error('❌ Redis connection failed:', error);
         throw error;
@@ -113,18 +206,8 @@ async function createAdminUser() {
                 created_at: new Date().toISOString()
             };
             
-            // Save admin user
-            const args = ['HSET', `user:${config.ADMIN_USER_ID}`];
-            for (const [field, value] of Object.entries(adminData)) {
-                args.push(field, value);
-            }
-            await sendRedisCommand(args);
-            
-            // Add to username index
-            await sendRedisCommand(['SET', `username:${config.ADMIN_USERNAME}`, config.ADMIN_USER_ID]);
-            
-            // Add to users set
-            await sendRedisCommand(['SADD', 'users', config.ADMIN_USER_ID]);
+            // Save admin user using multiple HSET operations
+            await createAdminUserData(config.ADMIN_USER_ID, adminData);
             
             console.log('✅ Admin user created successfully');
             console.log(`📝 Username: ${config.ADMIN_USERNAME}`);
@@ -246,6 +329,26 @@ async function resetSystem(confirmationText) {
     }
 }
 
+// Get system information
+async function getSystemInfo() {
+    try {
+        const health = await performHealthCheck();
+        const userCounter = await sendRedisCommand(['GET', 'user_id_counter']);
+        
+        return {
+            health: health,
+            user_counter: userCounter,
+            redis_module: 'redis2',
+            timestamp: new Date().toISOString()
+        };
+    } catch (error) {
+        return {
+            error: error.message,
+            timestamp: new Date().toISOString()
+        };
+    }
+}
+
 // Handle initialization endpoint
 async function handleInitEndpoint(r) {
     try {
@@ -273,6 +376,9 @@ export default {
     initializeSystem,
     performHealthCheck,
     resetSystem,
+    getSystemInfo,
     handleInitEndpoint,
-    sendRedisCommand
+    sendRedisCommand,
+    testRedisConnection,
+    createAdminUser
 };

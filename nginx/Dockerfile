@@ -1,9 +1,32 @@
-# nginx/Dockerfile - Simple fixed version
+# nginx/Dockerfile - With redis2 module for direct Redis access
 
 FROM nginx:alpine
 
-# Install nginx-module-njs for server-side JavaScript
-RUN apk add --no-cache nginx-module-njs curl
+# Install dependencies for building nginx modules
+RUN apk add --no-cache \
+    nginx-module-njs \
+    curl \
+    build-base \
+    pcre-dev \
+    zlib-dev \
+    openssl-dev \
+    git
+
+# Build and install redis2 module
+WORKDIR /tmp
+RUN git clone https://github.com/openresty/redis2-nginx-module.git && \
+    wget http://nginx.org/download/nginx-$(nginx -v 2>&1 | grep -o '[0-9.]*').tar.gz && \
+    tar -xzf nginx-*.tar.gz && \
+    cd nginx-* && \
+    ./configure \
+        --add-dynamic-module=/tmp/redis2-nginx-module \
+        --with-compat && \
+    make modules && \
+    cp objs/ngx_http_redis2_module.so /usr/lib/nginx/modules/
+
+# Clean up build dependencies
+RUN apk del build-base pcre-dev zlib-dev openssl-dev git && \
+    rm -rf /tmp/*
 
 # Set working directory
 WORKDIR /usr/share/nginx/html
