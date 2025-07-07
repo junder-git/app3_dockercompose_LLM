@@ -1,6 +1,6 @@
 # nginx/Dockerfile - Fixed paths and setup
 
-FROM nginx:alpine
+FROM nginx:1.25.3-alpine
 
 # Try to install available nginx modules from packages
 RUN apk add --no-cache \
@@ -71,3 +71,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
+
+
+
+
