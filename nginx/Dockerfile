@@ -50,7 +50,8 @@ RUN mkdir -p /etc/nginx/njs && \
     mkdir -p /var/log/nginx && \
     curl -o /usr/share/nginx/html/js/lib/jquery.min.js https://code.jquery.com/jquery-3.7.1.min.js && \
     curl -o /usr/share/nginx/html/js/lib/bootstrap.min.js https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js && \
-    curl -o /usr/share/nginx/html/css/bootstrap.min.css https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css
+    curl -o /usr/share/nginx/html/css/bootstrap.min.css https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css && \
+    curl -o /usr/share/nginx/html/css/bootstrap-icons.min.css https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css
 
 # Copy your files - FIXED PATHS
 COPY njs/ /etc/nginx/njs/
