@@ -61,7 +61,7 @@ services:
     networks:
       - devstral-network
 
-  # Redis - Direct access via redis2 module (no HTTP wrapper needed)
+  # Redis - Direct access via redis2 module
   redis:
     build: ./redis
     container_name: devstral-redis
@@ -86,8 +86,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 30s
 
-  # Nginx with njs and redis2 module
+  # Nginx with njs and redis2 module - waits for Redis to be healthy
   nginx:
     build: ./nginx
     container_name: devstral-nginx
@@ -97,13 +98,16 @@ services:
       - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
       - MAX_PENDING_USERS=${MAX_PENDING_USERS}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
     depends_on:
-      - ollama
-      - redis
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - devstral-network
     deploy:
@@ -120,6 +124,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 45s
 
 networks:
   devstral-network:

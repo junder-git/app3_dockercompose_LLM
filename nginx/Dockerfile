@@ -57,10 +57,12 @@ RUN mkdir -p /etc/nginx/njs && \
 COPY njs/ /etc/nginx/njs/
 COPY html/ /usr/share/nginx/html/
 COPY static/ /usr/share/nginx/html/
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Set permissions
 RUN chmod -R 755 /usr/share/nginx/html/ && \
     chmod -R 755 /etc/nginx/njs/ && \
+    chmod +x /usr/local/bin/entrypoint.sh && \
     chown -R nginx:nginx /usr/share/nginx/html/ && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx
@@ -70,8 +72,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
-
+CMD ["/usr/local/bin/entrypoint.sh"]
 
 
 
