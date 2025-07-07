@@ -61,13 +61,12 @@ services:
     networks:
       - devstral-network
 
-  # Redis with HTTP Wrapper
+  # Simple Redis (no HTTP wrapper needed)
   redis:
     build: ./redis
     container_name: devstral-redis
     ports:
-      - "6379:6379"  # Redis
-      - "8001:8001"  # HTTP wrapper + RedisInsight
+      - "6379:6379"
     volumes:
       - ./volumes/redis_data:/data
       - ./volumes/redis_logs:/var/log/redis
@@ -88,7 +87,7 @@ services:
       timeout: 5s
       retries: 3
 
-  # Nginx Static File Server with API Proxying
+  # Nginx with njs
   nginx:
     build: ./nginx
     container_name: devstral-nginx
