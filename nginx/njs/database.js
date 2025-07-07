@@ -1,14 +1,15 @@
-// nginx/njs/database.js - Server-side Redis operations using redis2 module
+// nginx/njs/database.js - Server-side Redis operations using redis2 module (ES5 compatible)
 
 import utils from './utils.js';
 
 // Redis operations using nginx redis2 module
-async function sendRedisCommand(command) {
+function sendRedisCommand(command) {
     try {
-        const [cmd, ...args] = command;
-        const cmdUpper = cmd.toUpperCase();
+        var cmd = command[0];
+        var args = command.slice(1);
+        var cmdUpper = cmd.toUpperCase();
         
-        let url;
+        var url;
         switch (cmdUpper) {
             case 'PING':
                 url = '/redis-internal/ping';
@@ -16,62 +17,62 @@ async function sendRedisCommand(command) {
                 
             case 'GET':
                 if (args.length !== 1) throw new Error('GET requires 1 argument');
-                url = `/redis-internal/get/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/get/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'SET':
                 if (args.length !== 2) throw new Error('SET requires 2 arguments');
-                url = `/redis-internal/set/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                url = '/redis-internal/set/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]);
                 break;
                 
             case 'SETEX':
                 if (args.length !== 3) throw new Error('SETEX requires 3 arguments');
-                url = `/redis-internal/setex/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}/${encodeURIComponent(args[2])}`;
+                url = '/redis-internal/setex/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]) + '/' + encodeURIComponent(args[2]);
                 break;
                 
             case 'HGET':
                 if (args.length !== 2) throw new Error('HGET requires 2 arguments');
-                url = `/redis-internal/hget/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                url = '/redis-internal/hget/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]);
                 break;
                 
             case 'HSET':
                 if (args.length !== 3) throw new Error('HSET requires 3 arguments');
-                url = `/redis-internal/hset/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}/${encodeURIComponent(args[2])}`;
+                url = '/redis-internal/hset/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]) + '/' + encodeURIComponent(args[2]);
                 break;
                 
             case 'HGETALL':
                 if (args.length !== 1) throw new Error('HGETALL requires 1 argument');
-                url = `/redis-internal/hgetall/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/hgetall/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'SMEMBERS':
                 if (args.length !== 1) throw new Error('SMEMBERS requires 1 argument');
-                url = `/redis-internal/smembers/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/smembers/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'SADD':
                 if (args.length !== 2) throw new Error('SADD requires 2 arguments');
-                url = `/redis-internal/sadd/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                url = '/redis-internal/sadd/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]);
                 break;
                 
             case 'SREM':
                 if (args.length !== 2) throw new Error('SREM requires 2 arguments');
-                url = `/redis-internal/srem/${encodeURIComponent(args[0])}/${encodeURIComponent(args[1])}`;
+                url = '/redis-internal/srem/' + encodeURIComponent(args[0]) + '/' + encodeURIComponent(args[1]);
                 break;
                 
             case 'INCR':
                 if (args.length !== 1) throw new Error('INCR requires 1 argument');
-                url = `/redis-internal/incr/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/incr/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'EXISTS':
                 if (args.length !== 1) throw new Error('EXISTS requires 1 argument');
-                url = `/redis-internal/exists/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/exists/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'DEL':
                 if (args.length !== 1) throw new Error('DEL requires 1 argument');
-                url = `/redis-internal/del/${encodeURIComponent(args[0])}`;
+                url = '/redis-internal/del/' + encodeURIComponent(args[0]);
                 break;
                 
             case 'FLUSHDB':
@@ -85,21 +86,21 @@ async function sendRedisCommand(command) {
         }
 
         // Use nginx subrequest to call redis2 module
-        const response = await ngx.fetch(url, {
+        return ngx.fetch(url, {
             method: 'GET'
+        }).then(function(response) {
+            if (!response.ok) {
+                throw new Error('Redis request failed: ' + response.status);
+            }
+
+            return response.text();
+        }).then(function(text) {
+            // Parse redis2 response format
+            return parseRedisResponse(text, cmdUpper);
         });
-
-        if (!response.ok) {
-            throw new Error(`Redis request failed: ${response.status}`);
-        }
-
-        const text = await response.text();
-        
-        // Parse redis2 response format
-        return parseRedisResponse(text, cmdUpper);
         
     } catch (error) {
-        throw new Error(`Redis operation failed: ${error.message}`);
+        return Promise.reject(new Error('Redis operation failed: ' + error.message));
     }
 }
 
@@ -110,8 +111,8 @@ function parseRedisResponse(text, command) {
         return null;
     }
     
-    const firstChar = text[0];
-    const content = text.slice(1);
+    var firstChar = text[0];
+    var content = text.slice(1);
     
     switch (firstChar) {
         case '+': // Simple string
@@ -124,8 +125,8 @@ function parseRedisResponse(text, command) {
             return parseInt(content.trim(), 10);
             
         case '$': // Bulk string
-            const lines = text.split('\r\n');
-            const len = parseInt(lines[0].slice(1), 10);
+            var lines = text.split('\r\n');
+            var len = parseInt(lines[0].slice(1), 10);
             if (len === -1) return null; // Null bulk string
             return lines[1] || '';
             
@@ -139,21 +140,21 @@ function parseRedisResponse(text, command) {
 }
 
 function parseRedisArray(text, command) {
-    const lines = text.split('\r\n');
-    const count = parseInt(lines[0].slice(1), 10);
+    var lines = text.split('\r\n');
+    var count = parseInt(lines[0].slice(1), 10);
     
     if (count === -1) return null;
     if (count === 0) return [];
     
-    const result = [];
-    let lineIndex = 1;
+    var result = [];
+    var lineIndex = 1;
     
-    for (let i = 0; i < count; i++) {
+    for (var i = 0; i < count; i++) {
         if (lineIndex >= lines.length) break;
         
-        const type = lines[lineIndex][0];
+        var type = lines[lineIndex][0];
         if (type === '$') {
-            const len = parseInt(lines[lineIndex].slice(1), 10);
+            var len = parseInt(lines[lineIndex].slice(1), 10);
             lineIndex++;
             if (len === -1) {
                 result.push(null);
@@ -172,8 +173,8 @@ function parseRedisArray(text, command) {
     
     // Special handling for HGETALL - convert array to object
     if (command === 'HGETALL') {
-        const obj = {};
-        for (let i = 0; i < result.length; i += 2) {
+        var obj = {};
+        for (var i = 0; i < result.length; i += 2) {
             if (i + 1 < result.length) {
                 obj[result[i]] = result[i + 1];
             }
@@ -185,234 +186,300 @@ function parseRedisArray(text, command) {
 }
 
 // Basic Redis operations
-async function get(key) {
-    return await sendRedisCommand(['GET', key]);
+function get(key) {
+    return sendRedisCommand(['GET', key]);
 }
 
-async function set(key, value, ttl = null) {
-    const command = ttl ? ['SETEX', key, ttl, value] : ['SET', key, value];
-    return await sendRedisCommand(command);
+function set(key, value, ttl) {
+    var command = ttl ? ['SETEX', key, ttl, value] : ['SET', key, value];
+    return sendRedisCommand(command);
 }
 
-async function hget(key, field) {
-    return await sendRedisCommand(['HGET', key, field]);
+function hget(key, field) {
+    return sendRedisCommand(['HGET', key, field]);
 }
 
-async function hset(key, field, value) {
-    return await sendRedisCommand(['HSET', key, field, value]);
+function hset(key, field, value) {
+    return sendRedisCommand(['HSET', key, field, value]);
 }
 
-async function hgetall(key) {
-    return await sendRedisCommand(['HGETALL', key]);
+function hgetall(key) {
+    return sendRedisCommand(['HGETALL', key]);
 }
 
-async function sadd(key, value) {
-    return await sendRedisCommand(['SADD', key, value]);
+function sadd(key, value) {
+    return sendRedisCommand(['SADD', key, value]);
 }
 
-async function smembers(key) {
-    return await sendRedisCommand(['SMEMBERS', key]);
+function smembers(key) {
+    return sendRedisCommand(['SMEMBERS', key]);
 }
 
-async function incr(key) {
-    return await sendRedisCommand(['INCR', key]);
+function incr(key) {
+    return sendRedisCommand(['INCR', key]);
 }
 
-async function exists(key) {
-    return await sendRedisCommand(['EXISTS', key]);
+function exists(key) {
+    return sendRedisCommand(['EXISTS', key]);
 }
 
-async function del(key) {
-    return await sendRedisCommand(['DEL', key]);
+function del(key) {
+    return sendRedisCommand(['DEL', key]);
 }
 
 // User management functions
-async function getUserByUsername(username) {
-    const userId = await get(`username:${username}`);
-    if (!userId) return null;
-    
-    const userData = await hgetall(`user:${userId}`);
-    if (Object.keys(userData).length === 0) return null;
-    
-    return {
-        id: userData.id,
-        username: userData.username,
-        password_hash: userData.password_hash,
-        is_admin: userData.is_admin === 'true',
-        is_approved: userData.is_approved === 'true',
-        created_at: userData.created_at
-    };
+function getUserByUsername(username) {
+    return get('username:' + username).then(function(userId) {
+        if (!userId) return null;
+        
+        return hgetall('user:' + userId);
+    }).then(function(userData) {
+        if (!userData || Object.keys(userData).length === 0) return null;
+        
+        return {
+            id: userData.id,
+            username: userData.username,
+            password_hash: userData.password_hash,
+            is_admin: userData.is_admin === 'true',
+            is_approved: userData.is_approved === 'true',
+            created_at: userData.created_at
+        };
+    });
 }
 
-async function getUserById(userId) {
-    const userData = await hgetall(`user:${userId}`);
-    if (Object.keys(userData).length === 0) return null;
-    
-    return {
-        id: userData.id,
-        username: userData.username,
-        password_hash: userData.password_hash,
-        is_admin: userData.is_admin === 'true',
-        is_approved: userData.is_approved === 'true',
-        created_at: userData.created_at
-    };
+function getUserById(userId) {
+    return hgetall('user:' + userId).then(function(userData) {
+        if (!userData || Object.keys(userData).length === 0) return null;
+        
+        return {
+            id: userData.id,
+            username: userData.username,
+            password_hash: userData.password_hash,
+            is_admin: userData.is_admin === 'true',
+            is_approved: userData.is_approved === 'true',
+            created_at: userData.created_at
+        };
+    });
 }
 
-async function saveUser(user) {
+function saveUser(user) {
+    var promise;
+    
     // Generate ID if needed
     if (!user.id) {
-        user.id = String(await incr('user_id_counter'));
+        promise = incr('user_id_counter').then(function(newId) {
+            user.id = String(newId);
+            return user;
+        });
+    } else {
+        promise = Promise.resolve(user);
     }
-
-    // Convert user to storage format
-    const userData = {
-        id: String(user.id),
-        username: String(user.username),
-        password_hash: String(user.password_hash),
-        is_admin: String(user.is_admin),
-        is_approved: String(user.is_approved),
-        created_at: String(user.created_at)
-    };
-
-    // Save user data - hset one field at a time
-    for (const [field, value] of Object.entries(userData)) {
-        await hset(`user:${user.id}`, field, value);
-    }
-
-    // Add to username index
-    await set(`username:${user.username}`, user.id);
-
-    // Add to users set
-    await sadd('users', user.id);
-
-    return user;
-}
-
-async function getAllUsers() {
-    const userIds = await smembers('users') || [];
-    const users = [];
     
-    for (const userId of userIds) {
-        const user = await getUserById(userId);
-        if (user) {
-            users.push(user);
+    return promise.then(function(userWithId) {
+        // Convert user to storage format
+        var userData = {
+            id: String(userWithId.id),
+            username: String(userWithId.username),
+            password_hash: String(userWithId.password_hash),
+            is_admin: String(userWithId.is_admin),
+            is_approved: String(userWithId.is_approved),
+            created_at: String(userWithId.created_at)
+        };
+
+        // Save user data - hset one field at a time
+        var promises = [];
+        var fields = Object.keys(userData);
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            var value = userData[field];
+            promises.push(hset('user:' + userWithId.id, field, value));
         }
-    }
-    
-    return users;
+
+        return Promise.all(promises);
+    }).then(function() {
+        // Add to username index
+        return set('username:' + user.username, user.id);
+    }).then(function() {
+        // Add to users set
+        return sadd('users', user.id);
+    }).then(function() {
+        return user;
+    });
 }
 
-async function getPendingUsers() {
-    const allUsers = await getAllUsers();
-    return allUsers.filter(user => !user.is_approved && !user.is_admin);
+function getAllUsers() {
+    return smembers('users').then(function(userIds) {
+        if (!userIds || userIds.length === 0) return [];
+        
+        var promises = [];
+        for (var i = 0; i < userIds.length; i++) {
+            promises.push(getUserById(userIds[i]));
+        }
+        
+        return Promise.all(promises);
+    }).then(function(users) {
+        // Filter out null results
+        var validUsers = [];
+        for (var i = 0; i < users.length; i++) {
+            if (users[i]) {
+                validUsers.push(users[i]);
+            }
+        }
+        return validUsers;
+    });
 }
 
-async function getPendingUsersCount() {
-    const pendingUsers = await getPendingUsers();
-    return pendingUsers.length;
+function getPendingUsers() {
+    return getAllUsers().then(function(allUsers) {
+        var pendingUsers = [];
+        for (var i = 0; i < allUsers.length; i++) {
+            var user = allUsers[i];
+            if (!user.is_approved && !user.is_admin) {
+                pendingUsers.push(user);
+            }
+        }
+        return pendingUsers;
+    });
 }
 
-async function approveUser(userId) {
-    const user = await getUserById(userId);
-    if (!user) {
-        return { success: false, message: 'User not found' };
-    }
-    
-    await hset(`user:${userId}`, 'is_approved', 'true');
-    
-    return { 
-        success: true, 
-        message: `User ${user.username} approved successfully` 
-    };
+function getPendingUsersCount() {
+    return getPendingUsers().then(function(pendingUsers) {
+        return pendingUsers.length;
+    });
 }
 
-async function rejectUser(userId) {
-    const user = await getUserById(userId);
-    if (!user) {
-        return { success: false, message: 'User not found' };
-    }
-    
-    // Delete user data
-    await del(`user:${userId}`);
-    await del(`username:${user.username}`);
-    await sendRedisCommand(['SREM', 'users', userId]);
-    
-    return { 
-        success: true, 
-        message: `User ${user.username} rejected and deleted` 
-    };
+function approveUser(userId) {
+    return getUserById(userId).then(function(user) {
+        if (!user) {
+            return { success: false, message: 'User not found' };
+        }
+        
+        return hset('user:' + userId, 'is_approved', 'true');
+    }).then(function() {
+        return { 
+            success: true, 
+            message: 'User approved successfully' 
+        };
+    });
 }
 
-async function deleteUser(userId) {
-    const user = await getUserById(userId);
-    if (!user) {
-        return { success: false, message: 'User not found' };
-    }
-    
-    if (user.is_admin) {
-        return { success: false, message: 'Cannot delete admin user' };
-    }
-    
-    // Delete user data
-    await del(`user:${userId}`);
-    await del(`username:${user.username}`);
-    await sendRedisCommand(['SREM', 'users', userId]);
-    
-    // TODO: Delete user's chat sessions and messages
-    
-    return { 
-        success: true, 
-        message: `User ${user.username} deleted successfully` 
-    };
+function rejectUser(userId) {
+    return getUserById(userId).then(function(user) {
+        if (!user) {
+            return { success: false, message: 'User not found' };
+        }
+        
+        // Delete user data
+        var promises = [
+            del('user:' + userId),
+            del('username:' + user.username),
+            sendRedisCommand(['SREM', 'users', userId])
+        ];
+        
+        return Promise.all(promises);
+    }).then(function() {
+        return { 
+            success: true, 
+            message: 'User rejected and deleted' 
+        };
+    });
+}
+
+function deleteUser(userId) {
+    return getUserById(userId).then(function(user) {
+        if (!user) {
+            return { success: false, message: 'User not found' };
+        }
+        
+        if (user.is_admin) {
+            return { success: false, message: 'Cannot delete admin user' };
+        }
+        
+        // Delete user data
+        var promises = [
+            del('user:' + userId),
+            del('username:' + user.username),
+            sendRedisCommand(['SREM', 'users', userId])
+        ];
+        
+        return Promise.all(promises);
+    }).then(function() {
+        return { 
+            success: true, 
+            message: 'User deleted successfully' 
+        };
+    });
 }
 
 // Database statistics
-async function getDatabaseStats() {
-    const users = await getAllUsers();
-    const pendingCount = users.filter(u => !u.is_approved && !u.is_admin).length;
-    const approvedCount = users.filter(u => u.is_approved || u.is_admin).length;
-    
-    return {
-        user_count: users.length,
-        pending_count: pendingCount,
-        approved_count: approvedCount,
-        total_keys: users.length * 2, // Rough estimate: user data + username index
-        key_types: {
-            'user:*': users.length,
-            'username:*': users.length,
-            'system': 1
+function getDatabaseStats() {
+    return getAllUsers().then(function(users) {
+        var pendingCount = 0;
+        var approvedCount = 0;
+        
+        for (var i = 0; i < users.length; i++) {
+            var user = users[i];
+            if (!user.is_approved && !user.is_admin) {
+                pendingCount++;
+            } else {
+                approvedCount++;
+            }
         }
-    };
+        
+        return {
+            user_count: users.length,
+            pending_count: pendingCount,
+            approved_count: approvedCount,
+            total_keys: users.length * 2, // Rough estimate: user data + username index
+            key_types: {
+                'user:*': users.length,
+                'username:*': users.length,
+                'system': 1
+            }
+        };
+    });
 }
 
 // Handle complex Redis commands
-async function handleRedisCommand(r) {
+function handleRedisCommand(r) {
     try {
         if (r.method !== 'POST') {
             return utils.sendError(r, 405, 'Method not allowed');
         }
 
-        const body = JSON.parse(r.requestBody);
-        const command = body.command;
+        var body = JSON.parse(r.requestBody);
+        var command = body.command;
 
         if (!Array.isArray(command)) {
             return utils.sendError(r, 400, 'Command must be an array');
         }
 
         // Security: Only allow safe commands
-        const allowedCommands = [
+        var allowedCommands = [
             'GET', 'SET', 'HGET', 'HSET', 'HGETALL', 'SMEMBERS', 'SADD', 
             'SREM', 'ZADD', 'ZRANGE', 'ZREVRANGE', 'INCR', 'EXISTS', 'DEL',
             'MGET', 'MSET', 'HMGET', 'HMSET', 'KEYS', 'TYPE'
         ];
 
-        const cmd = command[0].toUpperCase();
-        if (!allowedCommands.includes(cmd)) {
-            return utils.sendError(r, 403, `Command ${cmd} not allowed`);
+        var cmd = command[0].toUpperCase();
+        var isAllowed = false;
+        for (var i = 0; i < allowedCommands.length; i++) {
+            if (allowedCommands[i] === cmd) {
+                isAllowed = true;
+                break;
+            }
+        }
+        
+        if (!isAllowed) {
+            return utils.sendError(r, 403, 'Command ' + cmd + ' not allowed');
         }
 
-        const result = await sendRedisCommand(command);
-        return utils.sendSuccess(r, result);
+        sendRedisCommand(command).then(function(result) {
+            return utils.sendSuccess(r, result);
+        }).catch(function(error) {
+            r.error('Redis command error: ' + error.message);
+            return utils.sendError(r, 500, 'Redis operation failed');
+        });
 
     } catch (error) {
         r.error('Redis command error: ' + error.message);
@@ -421,23 +488,38 @@ async function handleRedisCommand(r) {
 }
 
 // Handle database requests
-async function handleDatabaseRequest(r) {
+function handleDatabaseRequest(r) {
     try {
-        const pathParts = r.uri.split('/').filter(p => p);
-        const operation = pathParts[2]; // /api/database/{operation}
+        var pathParts = r.uri.split('/').filter(function(p) { return p; });
+        var operation = pathParts[2]; // /api/database/{operation}
         
         switch (operation) {
             case 'stats':
-                const stats = await getDatabaseStats();
-                return utils.sendSuccess(r, stats);
+                getDatabaseStats().then(function(stats) {
+                    return utils.sendSuccess(r, stats);
+                }).catch(function(error) {
+                    r.error('Database stats error: ' + error.message);
+                    return utils.sendError(r, 500, 'Database operation failed');
+                });
+                break;
                 
             case 'users':
-                const users = await getAllUsers();
-                return utils.sendSuccess(r, users);
+                getAllUsers().then(function(users) {
+                    return utils.sendSuccess(r, users);
+                }).catch(function(error) {
+                    r.error('Get users error: ' + error.message);
+                    return utils.sendError(r, 500, 'Database operation failed');
+                });
+                break;
                 
             case 'pending':
-                const pending = await getPendingUsers();
-                return utils.sendSuccess(r, pending);
+                getPendingUsers().then(function(pending) {
+                    return utils.sendSuccess(r, pending);
+                }).catch(function(error) {
+                    r.error('Get pending users error: ' + error.message);
+                    return utils.sendError(r, 500, 'Database operation failed');
+                });
+                break;
                 
             default:
                 return utils.sendError(r, 404, 'Database operation not found');
@@ -450,7 +532,7 @@ async function handleDatabaseRequest(r) {
 }
 
 // Handle chat requests
-async function handleChatRequest(r) {
+function handleChatRequest(r) {
     try {
         // TODO: Implement chat-specific database operations
         return utils.sendError(r, 501, 'Chat endpoints not implemented yet');
@@ -462,28 +544,28 @@ async function handleChatRequest(r) {
 }
 
 export default {
-    sendRedisCommand,
-    get,
-    set,
-    hget,
-    hset,
-    hgetall,
-    sadd,
-    smembers,
-    incr,
-    exists,
-    del,
-    getUserByUsername,
-    getUserById,
-    saveUser,
-    getAllUsers,
-    getPendingUsers,
-    getPendingUsersCount,
-    approveUser,
-    rejectUser,
-    deleteUser,
-    getDatabaseStats,
-    handleRedisCommand,
-    handleDatabaseRequest,
-    handleChatRequest
+    sendRedisCommand: sendRedisCommand,
+    get: get,
+    set: set,
+    hget: hget,
+    hset: hset,
+    hgetall: hgetall,
+    sadd: sadd,
+    smembers: smembers,
+    incr: incr,
+    exists: exists,
+    del: del,
+    getUserByUsername: getUserByUsername,
+    getUserById: getUserById,
+    saveUser: saveUser,
+    getAllUsers: getAllUsers,
+    getPendingUsers: getPendingUsers,
+    getPendingUsersCount: getPendingUsersCount,
+    approveUser: approveUser,
+    rejectUser: rejectUser,
+    deleteUser: deleteUser,
+    getDatabaseStats: getDatabaseStats,
+    handleRedisCommand: handleRedisCommand,
+    handleDatabaseRequest: handleDatabaseRequest,
+    handleChatRequest: handleChatRequest
 };

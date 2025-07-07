@@ -1,24 +1,24 @@
-// nginx/njs/app.js - Main application router with initialization
+// nginx/njs/app.js - Main application router with initialization (ES5 compatible)
 
 import auth from './auth.js';
 import init from './init.js';
 import utils from './utils.js';
 
-async function handleRequest(r) {
+function handleRequest(r) {
     try {
         // Handle CORS
         if (utils.handleCors(r)) {
             return;
         }
         
-        const uri = r.uri;
-        const method = r.method;
+        var uri = r.uri;
+        var method = r.method;
         
         // Route requests
-        if (uri.startsWith('/api/auth/')) {
-            return await handleAuthRoute(r);
+        if (uri.indexOf('/api/auth/') === 0) {
+            return handleAuthRoute(r);
         } else if (uri === '/api/init' || uri === '/api/system/init') {
-            return await init.handleInitEndpoint(r);
+            return init.handleInitEndpoint(r);
         } else if (uri === '/health') {
             return utils.healthCheck(r);
         } else {
@@ -31,21 +31,21 @@ async function handleRequest(r) {
     }
 }
 
-async function handleAuthRoute(r) {
-    const path = r.uri.replace('/api/auth/', '');
+function handleAuthRoute(r) {
+    var path = r.uri.replace('/api/auth/', '');
     
     switch (path) {
         case 'login':
-            return await auth.handleLogin(r);
+            return auth.handleLogin(r);
         case 'register':
-            return await auth.handleRegister(r);
+            return auth.handleRegister(r);
         case 'verify':
-            return await auth.verifyTokenEndpoint(r);
+            return auth.verifyTokenEndpoint(r);
         default:
             return utils.sendError(r, 404, 'Auth endpoint not found');
     }
 }
 
 export default {
-    handleRequest
+    handleRequest: handleRequest
 };

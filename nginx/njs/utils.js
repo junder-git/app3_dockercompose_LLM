@@ -1,18 +1,18 @@
-// nginx/njs/utils.js - Utility functions for njs
+// nginx/njs/utils.js - Utility functions for njs (ES5 compatible)
 
 // Base64 URL encoding/decoding for JWT
 function base64urlEncode(str) {
     // njs doesn't have btoa, so we implement basic base64
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    let result = '';
-    let i = 0;
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var result = '';
+    var i = 0;
     
     while (i < str.length) {
-        const a = str.charCodeAt(i++);
-        const b = i < str.length ? str.charCodeAt(i++) : 0;
-        const c = i < str.length ? str.charCodeAt(i++) : 0;
+        var a = str.charCodeAt(i++);
+        var b = i < str.length ? str.charCodeAt(i++) : 0;
+        var c = i < str.length ? str.charCodeAt(i++) : 0;
         
-        const bitmap = (a << 16) | (b << 8) | c;
+        var bitmap = (a << 16) | (b << 8) | c;
         
         result += chars.charAt((bitmap >> 18) & 63);
         result += chars.charAt((bitmap >> 12) & 63);
@@ -31,16 +31,16 @@ function base64urlDecode(str) {
         str += '=';
     }
     
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    let result = '';
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var result = '';
     
-    for (let i = 0; i < str.length; i += 4) {
-        const encoded1 = chars.indexOf(str[i]);
-        const encoded2 = chars.indexOf(str[i + 1]);
-        const encoded3 = chars.indexOf(str[i + 2]);
-        const encoded4 = chars.indexOf(str[i + 3]);
+    for (var i = 0; i < str.length; i += 4) {
+        var encoded1 = chars.indexOf(str[i]);
+        var encoded2 = chars.indexOf(str[i + 1]);
+        var encoded3 = chars.indexOf(str[i + 2]);
+        var encoded4 = chars.indexOf(str[i + 3]);
         
-        const bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
+        var bitmap = (encoded1 << 18) | (encoded2 << 12) | (encoded3 << 6) | encoded4;
         
         result += String.fromCharCode((bitmap >> 16) & 255);
         if (encoded3 !== 64) result += String.fromCharCode((bitmap >> 8) & 255);
@@ -54,9 +54,9 @@ function base64urlDecode(str) {
 function sha256(str) {
     // This is a simplified version - in production use njs crypto module if available
     // For now, return a simple hash for demonstration
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+        var char = str.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
         hash = hash & hash; // Convert to 32-bit integer
     }
@@ -67,8 +67,8 @@ function sha256(str) {
 function hmacSha256(data, key) {
     // Simplified HMAC implementation for njs
     // In production, use njs crypto module if available
-    const keyHash = sha256(key);
-    const dataHash = sha256(data + keyHash);
+    var keyHash = sha256(key);
+    var dataHash = sha256(data + keyHash);
     return dataHash;
 }
 
@@ -91,7 +91,7 @@ function sendError(r, statusCode, message) {
 
 // Health check endpoint
 function healthCheck(r) {
-    const health = {
+    var health = {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         server: 'nginx-njs',
@@ -102,24 +102,28 @@ function healthCheck(r) {
 }
 
 // Rate limiting check
-function checkRateLimit(r, userId, maxRequests = 100, windowSeconds = 60) {
+function checkRateLimit(r, userId, maxRequests, windowSeconds) {
     // This would integrate with nginx rate limiting
     // For now, always allow
+    maxRequests = maxRequests || 100;
+    windowSeconds = windowSeconds || 60;
     return true;
 }
 
 // Request validation
-function validateRequest(r, requiredFields = []) {
+function validateRequest(r, requiredFields) {
+    requiredFields = requiredFields || [];
     try {
-        const body = JSON.parse(r.requestBody || '{}');
+        var body = JSON.parse(r.requestBody || '{}');
         
-        for (const field of requiredFields) {
+        for (var i = 0; i < requiredFields.length; i++) {
+            var field = requiredFields[i];
             if (!body[field]) {
-                return { valid: false, message: `${field} is required` };
+                return { valid: false, message: field + ' is required' };
             }
         }
         
-        return { valid: true, body };
+        return { valid: true, body: body };
         
     } catch (error) {
         return { valid: false, message: 'Invalid JSON' };
@@ -128,7 +132,7 @@ function validateRequest(r, requiredFields = []) {
 
 // Escape HTML for XSS prevention
 function escapeHtml(text) {
-    const map = {
+    var map = {
         '&': '&amp;',
         '<': '&lt;',
         '>': '&gt;',
@@ -136,14 +140,15 @@ function escapeHtml(text) {
         "'": '&#x27;'
     };
     
-    return text.replace(/[&<>"']/g, (m) => map[m]);
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 }
 
 // Generate random string
-function generateRandomString(length = 16) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
+function generateRandomString(length) {
+    length = length || 16;
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var result = '';
+    for (var i = 0; i < length; i++) {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return result;
@@ -156,12 +161,12 @@ function formatTimestamp(timestamp) {
 
 // Input validation helpers
 function isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
 }
 
 function isValidUsername(username) {
-    const usernameRegex = /^[a-zA-Z0-9_-]{3,50}$/;
+    var usernameRegex = /^[a-zA-Z0-9_-]{3,50}$/;
     return usernameRegex.test(username);
 }
 
@@ -186,20 +191,20 @@ function handleCors(r) {
 }
 
 export default {
-    base64urlEncode,
-    base64urlDecode,
-    sha256,
-    hmacSha256,
-    sendSuccess,
-    sendError,
-    healthCheck,
-    checkRateLimit,
-    validateRequest,
-    escapeHtml,
-    generateRandomString,
-    formatTimestamp,
-    isValidEmail,
-    isValidUsername,
-    setCorsHeaders,
-    handleCors
+    base64urlEncode: base64urlEncode,
+    base64urlDecode: base64urlDecode,
+    sha256: sha256,
+    hmacSha256: hmacSha256,
+    sendSuccess: sendSuccess,
+    sendError: sendError,
+    healthCheck: healthCheck,
+    checkRateLimit: checkRateLimit,
+    validateRequest: validateRequest,
+    escapeHtml: escapeHtml,
+    generateRandomString: generateRandomString,
+    formatTimestamp: formatTimestamp,
+    isValidEmail: isValidEmail,
+    isValidUsername: isValidUsername,
+    setCorsHeaders: setCorsHeaders,
+    handleCors: handleCors
 };
