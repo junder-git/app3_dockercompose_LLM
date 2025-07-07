@@ -1,23 +1,138 @@
-// nginx/static/js/client.js - All client-side JavaScript functionality
+// nginx/static/js/client.js - Pure Vanilla JavaScript (No jQuery)
 
 window.DevstralClient = (function() {
     'use strict';
 
-    // Configuration
-    const config = {
-        MAX_PENDING_USERS: 2,
-        MIN_USERNAME_LENGTH: 3,
-        MAX_USERNAME_LENGTH: 50,
-        MIN_PASSWORD_LENGTH: 6,
-        MAX_MESSAGE_LENGTH: 5000
-    };
+    // =============================================================================
+    // UTILITY FUNCTIONS
+    // =============================================================================
+
+    function $(selector) {
+        return document.querySelector(selector);
+    }
+
+    function $$(selector) {
+        return document.querySelectorAll(selector);
+    }
+
+    function createElement(tag, className, innerHTML) {
+        var element = document.createElement(tag);
+        if (className) element.className = className;
+        if (innerHTML) element.innerHTML = innerHTML;
+        return element;
+    }
+
+    function addClass(element, className) {
+        if (element) element.classList.add(className);
+    }
+
+    function removeClass(element, className) {
+        if (element) element.classList.remove(className);
+    }
+
+    function hasClass(element, className) {
+        return element ? element.classList.contains(className) : false;
+    }
+
+    function on(element, event, callback) {
+        if (typeof element === 'string') element = $(element);
+        if (element) element.addEventListener(event, callback);
+    }
+
+    function off(element, event, callback) {
+        if (typeof element === 'string') element = $(element);
+        if (element) element.removeEventListener(event, callback);
+    }
+
+    function val(element, value) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return '';
+        
+        if (value !== undefined) {
+            element.value = value;
+            return element;
+        }
+        return element.value || '';
+    }
+
+    function text(element, textContent) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return '';
+        
+        if (textContent !== undefined) {
+            element.textContent = textContent;
+            return element;
+        }
+        return element.textContent || '';
+    }
+
+    function html(element, htmlContent) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return '';
+        
+        if (htmlContent !== undefined) {
+            element.innerHTML = htmlContent;
+            return element;
+        }
+        return element.innerHTML || '';
+    }
+
+    function append(parent, child) {
+        if (typeof parent === 'string') parent = $(parent);
+        if (typeof child === 'string') {
+            var temp = document.createElement('div');
+            temp.innerHTML = child;
+            child = temp.firstChild;
+        }
+        if (parent && child) parent.appendChild(child);
+    }
+
+    function remove(element) {
+        if (typeof element === 'string') element = $(element);
+        if (element && element.parentNode) {
+            element.parentNode.removeChild(element);
+        }
+    }
+
+    function prop(element, property, value) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return;
+        
+        if (value !== undefined) {
+            element[property] = value;
+            return element;
+        }
+        return element[property];
+    }
+
+    function attr(element, attribute, value) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return;
+        
+        if (value !== undefined) {
+            element.setAttribute(attribute, value);
+            return element;
+        }
+        return element.getAttribute(attribute);
+    }
+
+    function scrollTop(element, value) {
+        if (typeof element === 'string') element = $(element);
+        if (!element) return 0;
+        
+        if (value !== undefined) {
+            element.scrollTop = value;
+            return element;
+        }
+        return element.scrollTop;
+    }
 
     // =============================================================================
-    // AUTO-INITIALIZATION BASED ON PAGE
+    // AUTO-INITIALIZATION
     // =============================================================================
 
     function autoInit() {
-        const path = window.location.pathname;
+        var path = window.location.pathname;
         
         switch (path) {
             case '/':
@@ -41,37 +156,44 @@ window.DevstralClient = (function() {
     }
 
     // =============================================================================
-    // UTILITY FUNCTIONS
+    // FLASH MESSAGES
     // =============================================================================
 
-    function showFlashMessage(message, type = 'info') {
-        const alertClass = {
+    function showFlashMessage(message, type) {
+        type = type || 'info';
+        
+        var alertClass = {
             'success': 'alert-success',
             'error': 'alert-danger',
             'warning': 'alert-warning',
             'info': 'alert-info'
         }[type] || 'alert-info';
         
-        const icon = {
+        var icon = {
             'success': 'bi-check-circle',
             'error': 'bi-exclamation-triangle',
             'warning': 'bi-exclamation-triangle',
             'info': 'bi-info-circle'
         }[type] || 'bi-info-circle';
         
-        const alert = $(`
-            <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                <i class="bi ${icon}"></i> ${escapeHtml(message)}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `);
+        var alertDiv = createElement('div', 
+            'alert ' + alertClass + ' alert-dismissible fade show',
+            '<i class="bi ' + icon + '"></i> ' + escapeHtml(message) + 
+            '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>'
+        );
+        attr(alertDiv, 'role', 'alert');
         
-        $('#flash-messages').append(alert);
-        setTimeout(() => alert.alert('close'), 5000);
+        var container = $('#flash-messages');
+        if (container) {
+            append(container, alertDiv);
+            setTimeout(function() {
+                remove(alertDiv);
+            }, 5000);
+        }
     }
 
     function escapeHtml(text) {
-        const map = {
+        var map = {
             '&': '&amp;',
             '<': '&lt;',
             '>': '&gt;',
@@ -83,6 +205,10 @@ window.DevstralClient = (function() {
             return map[m];
         });
     }
+
+    // =============================================================================
+    // AUTH FUNCTIONS
+    // =============================================================================
 
     function getAuthToken() {
         return localStorage.getItem('auth_token') || '';
@@ -101,12 +227,8 @@ window.DevstralClient = (function() {
         window.location.href = '/';
     }
 
-    // =============================================================================
-    // AUTH FUNCTIONS
-    // =============================================================================
-
     function checkAuth() {
-        const token = getAuthToken();
+        var token = getAuthToken();
         if (!token) return Promise.resolve(false);
 
         return fetch('/api/auth/verify', {
@@ -114,13 +236,17 @@ window.DevstralClient = (function() {
                 'Authorization': 'Bearer ' + token
             }
         })
-        .then(response => {
+        .then(function(response) {
             if (response.ok) {
-                return response.json().then(data => data.user);
+                return response.json().then(function(data) {
+                    return data.user;
+                });
             }
             return false;
         })
-        .catch(() => false);
+        .catch(function() {
+            return false;
+        });
     }
 
     function login(username, password) {
@@ -134,8 +260,10 @@ window.DevstralClient = (function() {
                 password: password
             })
         })
-        .then(response => response.json())
-        .then(data => {
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
             if (data.token) {
                 setAuthToken(data.token);
                 return { success: true, user: data.user };
@@ -156,15 +284,17 @@ window.DevstralClient = (function() {
                 password: password
             })
         })
-        .then(response => response.json());
+        .then(function(response) {
+            return response.json();
+        });
     }
 
     // =============================================================================
     // CHAT FUNCTIONS
     // =============================================================================
 
-    let isStreaming = false;
-    let currentStreamingMessage = null;
+    var isStreaming = false;
+    var currentStreamingMessage = null;
 
     function sendMessage(message) {
         if (isStreaming) {
@@ -181,14 +311,15 @@ window.DevstralClient = (function() {
         addMessageToChat(message, 'user');
 
         // Clear input
-        $('#message-input').val('');
+        val('#message-input', '');
 
         // Show typing indicator
-        const typingId = addTypingIndicator();
+        var typingId = addTypingIndicator();
 
         // Send to API
         isStreaming = true;
-        $('#send-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i>');
+        prop('#send-btn', 'disabled', true);
+        html('#send-btn', '<i class="bi bi-hourglass-split"></i>');
 
         fetch('/api/ollama/api/chat', {
             method: 'POST',
@@ -207,9 +338,9 @@ window.DevstralClient = (function() {
                 stream: true
             })
         })
-        .then(response => {
+        .then(function(response) {
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                throw new Error('HTTP ' + response.status);
             }
 
             // Remove typing indicator
@@ -219,42 +350,47 @@ window.DevstralClient = (function() {
             currentStreamingMessage = addMessageToChat('', 'assistant');
             return handleStreamingResponse(response);
         })
-        .catch(error => {
+        .catch(function(error) {
             removeTypingIndicator(typingId);
             showFlashMessage('Error sending message: ' + error.message, 'error');
             console.error('Chat error:', error);
         })
-        .finally(() => {
+        .finally(function() {
             isStreaming = false;
             currentStreamingMessage = null;
-            $('#send-btn').prop('disabled', false).html('<i class="bi bi-send"></i>');
+            prop('#send-btn', 'disabled', false);
+            html('#send-btn', '<i class="bi bi-send"></i>');
         });
     }
 
     function handleStreamingResponse(response) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
 
         function processStream() {
-            return reader.read().then(({ done, value }) => {
+            return reader.read().then(function(result) {
+                var done = result.done;
+                var value = result.value;
+                
                 if (done) {
                     return;
                 }
 
                 buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep incomplete line in buffer
+                var lines = buffer.split('\n');
+                buffer = lines.pop();
 
-                for (const line of lines) {
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i];
                     if (line.trim()) {
                         try {
-                            const data = JSON.parse(line);
+                            var data = JSON.parse(line);
                             if (data.message && data.message.content) {
                                 appendToStreamingMessage(data.message.content);
                             }
                             if (data.done) {
-                                return; // Stream complete
+                                return;
                             }
                         } catch (e) {
                             console.warn('Failed to parse streaming response:', line);
@@ -270,20 +406,18 @@ window.DevstralClient = (function() {
     }
 
     function addMessageToChat(content, role) {
-        const timestamp = new Date().toLocaleTimeString();
-        const messageClass = role === 'user' ? 'user-message' : 'assistant-message';
+        var timestamp = new Date().toLocaleTimeString();
+        var messageClass = role === 'user' ? 'user-message' : 'assistant-message';
         
-        const messageId = 'msg-' + Date.now();
-        const messageHtml = `
-            <div id="${messageId}" class="message ${messageClass}">
-                <div class="message-content">
-                    ${role === 'user' ? escapeHtml(content) : renderMarkdown(content)}
-                </div>
-                <span class="message-timestamp">${timestamp}</span>
-            </div>
-        `;
+        var messageId = 'msg-' + Date.now();
+        var messageHtml = '<div id="' + messageId + '" class="message ' + messageClass + '">' +
+            '<div class="message-content">' +
+            (role === 'user' ? escapeHtml(content) : renderMarkdown(content)) +
+            '</div>' +
+            '<span class="message-timestamp">' + timestamp + '</span>' +
+            '</div>';
         
-        $('#chat-messages').append(messageHtml);
+        append('#chat-messages', messageHtml);
         scrollToBottom();
         
         return messageId;
@@ -292,66 +426,52 @@ window.DevstralClient = (function() {
     function appendToStreamingMessage(content) {
         if (!currentStreamingMessage) return;
 
-        const $message = $('#' + currentStreamingMessage);
-        const $content = $message.find('.message-content');
-        const currentText = $content.data('raw-content') || '';
-        const newText = currentText + content;
+        var messageEl = $('#' + currentStreamingMessage);
+        var contentEl = messageEl ? messageEl.querySelector('.message-content') : null;
+        if (!contentEl) return;
         
-        $content.data('raw-content', newText);
-        $content.html(renderMarkdown(newText));
+        var currentText = contentEl.getAttribute('data-raw-content') || '';
+        var newText = currentText + content;
+        
+        attr(contentEl, 'data-raw-content', newText);
+        html(contentEl, renderMarkdown(newText));
         
         scrollToBottom();
     }
 
     function addTypingIndicator() {
-        const typingId = 'typing-' + Date.now();
-        const typingHtml = `
-            <div id="${typingId}" class="message assistant-message">
-                <div class="message-content">
-                    <div class="typing-indicator">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                </div>
-            </div>
-        `;
+        var typingId = 'typing-' + Date.now();
+        var typingHtml = '<div id="' + typingId + '" class="message assistant-message">' +
+            '<div class="message-content">' +
+            '<div class="typing-indicator">' +
+            '<span></span><span></span><span></span>' +
+            '</div></div></div>';
         
-        $('#chat-messages').append(typingHtml);
+        append('#chat-messages', typingHtml);
         scrollToBottom();
         
         return typingId;
     }
 
     function removeTypingIndicator(typingId) {
-        $('#' + typingId).remove();
+        remove('#' + typingId);
     }
 
     function scrollToBottom() {
-        const $messages = $('#chat-messages');
-        $messages.scrollTop($messages[0].scrollHeight);
+        var messages = $('#chat-messages');
+        if (messages) {
+            scrollTop(messages, messages.scrollHeight);
+        }
     }
 
-    // Simple markdown rendering
     function renderMarkdown(text) {
         if (!text) return '';
         
-        // Escape HTML first
-        let html = escapeHtml(text);
-        
-        // Bold **text**
+        var html = escapeHtml(text);
         html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
-        // Italic *text*
         html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        
-        // Code blocks ```code```
         html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-        
-        // Inline code `code`
         html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-        
-        // Line breaks
         html = html.replace(/\n/g, '<br>');
         
         return html;
@@ -364,27 +484,24 @@ window.DevstralClient = (function() {
     function initIndex() {
         console.log('🏠 Index page loaded');
         
-        // Check if user is already authenticated
-        checkAuth().then(user => {
+        checkAuth().then(function(user) {
             if (user) {
-                // User is authenticated, update nav links
-                $('#nav-links').html(`
-                    <a class="nav-link" href="/chat">
-                        <i class="bi bi-chat-dots"></i> Chat
-                    </a>
-                    <a class="nav-link" href="#" onclick="DevstralClient.logout()">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </a>
-                `);
+                html('#nav-links', 
+                    '<a class="nav-link" href="/chat">' +
+                    '<i class="bi bi-chat-dots"></i> Chat</a>' +
+                    '<a class="nav-link" href="#" onclick="DevstralClient.logout()">' +
+                    '<i class="bi bi-box-arrow-right"></i> Logout</a>'
+                );
                 
-                // Update action buttons
-                $('.text-center').last().html(`
-                    <a href="/chat" class="btn btn-primary btn-lg">
-                        <i class="bi bi-chat-dots"></i> Continue Chatting
-                    </a>
-                `);
+                var actionButtons = document.querySelector('.text-center:last-child');
+                if (actionButtons) {
+                    html(actionButtons,
+                        '<a href="/chat" class="btn btn-primary btn-lg">' +
+                        '<i class="bi bi-chat-dots"></i> Continue Chatting</a>'
+                    );
+                }
             }
-        }).catch(error => {
+        }).catch(function(error) {
             console.log('Not authenticated, showing default options');
         });
     }
@@ -392,43 +509,43 @@ window.DevstralClient = (function() {
     function initLogin() {
         console.log('🔐 Login page loaded');
         
-        // Check if already authenticated
-        checkAuth().then(user => {
+        checkAuth().then(function(user) {
             if (user) {
                 window.location.href = '/chat';
             }
         });
         
-        // Handle login form submission
-        $('#loginForm').on('submit', function(e) {
+        on('#loginForm', 'submit', function(e) {
             e.preventDefault();
             
-            const username = $('#username').val().trim();
-            const password = $('#password').val();
+            var username = val('#username').trim();
+            var password = val('#password');
             
             if (!username || !password) {
                 showFlashMessage('Username and password are required', 'error');
                 return;
             }
             
-            // Disable form
-            $('#login-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Logging in...');
+            var loginBtn = $('#login-btn');
+            prop(loginBtn, 'disabled', true);
+            html(loginBtn, '<i class="bi bi-hourglass-split"></i> Logging in...');
             
-            // Attempt login
-            login(username, password).then(result => {
+            login(username, password).then(function(result) {
                 if (result.success) {
                     showFlashMessage('Login successful! Redirecting...', 'success');
-                    setTimeout(() => {
+                    setTimeout(function() {
                         window.location.href = '/chat';
                     }, 1000);
                 } else {
                     showFlashMessage(result.error, 'error');
-                    $('#login-btn').prop('disabled', false).html('<i class="bi bi-box-arrow-in-right"></i> Login');
+                    prop(loginBtn, 'disabled', false);
+                    html(loginBtn, '<i class="bi bi-box-arrow-in-right"></i> Login');
                 }
-            }).catch(error => {
+            }).catch(function(error) {
                 console.error('Login error:', error);
                 showFlashMessage('Login failed: ' + error.message, 'error');
-                $('#login-btn').prop('disabled', false).html('<i class="bi bi-box-arrow-in-right"></i> Login');
+                prop(loginBtn, 'disabled', false);
+                html(loginBtn, '<i class="bi bi-box-arrow-in-right"></i> Login');
             });
         });
     }
@@ -436,62 +553,62 @@ window.DevstralClient = (function() {
     function initRegister() {
         console.log('📝 Register page loaded');
         
-        // Check if already authenticated
-        checkAuth().then(user => {
+        checkAuth().then(function(user) {
             if (user) {
                 window.location.href = '/chat';
             }
         });
         
-        // Show registration form
         showRegistrationForm();
         
         function showRegistrationForm() {
-            $('#registration-info').html(`
-                <div class="alert alert-info" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Registration requires admin approval.</strong><br>
-                    After registering, please wait for an administrator to approve your account before you can log in.
-                </div>
-            `);
+            html('#registration-info',
+                '<div class="alert alert-info" role="alert">' +
+                '<i class="bi bi-info-circle"></i> ' +
+                '<strong>Registration requires admin approval.</strong><br>' +
+                'After registering, please wait for an administrator to approve your account before you can log in.' +
+                '</div>'
+            );
             
-            $('#registerForm').show();
-            setupFormValidation();
+            var regForm = $('#registerForm');
+            if (regForm) {
+                regForm.style.display = 'block';
+                setupFormValidation();
+            }
         }
         
         function setupFormValidation() {
-            // Password confirmation validation
-            $('#confirmPassword').on('input', function() {
-                const password = $('#password').val();
-                const confirmPassword = $(this).val();
+            on('#confirmPassword', 'input', function() {
+                var password = val('#password');
+                var confirmPassword = val(this);
                 
                 if (confirmPassword && password !== confirmPassword) {
-                    $(this).addClass('is-invalid');
+                    addClass(this, 'is-invalid');
+                    removeClass(this, 'is-valid');
                 } else if (confirmPassword) {
-                    $(this).removeClass('is-invalid').addClass('is-valid');
+                    removeClass(this, 'is-invalid');
+                    addClass(this, 'is-valid');
                 }
             });
             
-            // Form submission
-            $('#registerForm').on('submit', function(e) {
+            on('#registerForm', 'submit', function(e) {
                 e.preventDefault();
                 handleRegistration();
             });
         }
         
         function handleRegistration() {
-            const username = $('#username').val().trim();
-            const password = $('#password').val();
-            const confirmPassword = $('#confirmPassword').val();
+            var username = val('#username').trim();
+            var password = val('#password');
+            var confirmPassword = val('#confirmPassword');
             
-            // Basic validation
-            if (!username || username.length < config.MIN_USERNAME_LENGTH) {
-                showFlashMessage(`Username must be at least ${config.MIN_USERNAME_LENGTH} characters`, 'error');
+            if (!username || username.length < 3) {
+                showFlashMessage('Username must be at least 3 characters', 'error');
                 return;
             }
             
-            if (!password || password.length < config.MIN_PASSWORD_LENGTH) {
-                showFlashMessage(`Password must be at least ${config.MIN_PASSWORD_LENGTH} characters`, 'error');
+            if (!password || password.length < 6) {
+                showFlashMessage('Password must be at least 6 characters', 'error');
                 return;
             }
             
@@ -500,25 +617,29 @@ window.DevstralClient = (function() {
                 return;
             }
             
-            // Disable form
-            $('#register-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Registering...');
+            var registerBtn = $('#register-btn');
+            prop(registerBtn, 'disabled', true);
+            html(registerBtn, '<i class="bi bi-hourglass-split"></i> Registering...');
             
-            // Attempt registration
-            register(username, password).then(data => {
+            register(username, password).then(function(data) {
                 if (data.success) {
                     showFlashMessage('Registration successful! Your account is pending admin approval.', 'success');
                     
-                    // Clear form
-                    $('#registerForm')[0].reset();
-                    $('.is-valid, .is-invalid').removeClass('is-valid is-invalid');
+                    $('#registerForm').reset();
+                    var validElements = $$('.is-valid, .is-invalid');
+                    for (var i = 0; i < validElements.length; i++) {
+                        removeClass(validElements[i], 'is-valid');
+                        removeClass(validElements[i], 'is-invalid');
+                    }
                 } else {
                     showFlashMessage(data.error || 'Registration failed', 'error');
                 }
-            }).catch(error => {
+            }).catch(function(error) {
                 console.error('Registration error:', error);
                 showFlashMessage('Registration failed: ' + error.message, 'error');
-            }).finally(() => {
-                $('#register-btn').prop('disabled', false).html('<i class="bi bi-person-plus"></i> Register (Pending Approval)');
+            }).finally(function() {
+                prop(registerBtn, 'disabled', false);
+                html(registerBtn, '<i class="bi bi-person-plus"></i> Register (Pending Approval)');
             });
         }
     }
@@ -526,60 +647,60 @@ window.DevstralClient = (function() {
     function initChat() {
         console.log('💬 Chat page loaded');
         
-        // Check authentication
-        checkAuth().then(user => {
+        checkAuth().then(function(user) {
             if (!user) {
                 window.location.href = '/login';
                 return;
             }
             
-            // Update user info in navbar
-            $('#username-display').text(user.username);
-            
-            // Setup chat interface
+            text('#username-display', user.username);
             setupChatInterface();
             
-        }).catch(error => {
+        }).catch(function(error) {
             console.error('Auth check failed:', error);
             window.location.href = '/login';
         });
         
         function setupChatInterface() {
-            // Handle message input
-            $('#message-input').on('keydown', function(e) {
+            on('#message-input', 'keydown', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    const message = $(this).val().trim();
+                    var message = val(this).trim();
                     if (message) {
                         sendMessage(message);
                     }
                 }
             });
             
-            // Handle send button
-            $('#send-btn').on('click', function() {
-                const message = $('#message-input').val().trim();
+            on('#send-btn', 'click', function() {
+                var message = val('#message-input').trim();
                 if (message) {
                     sendMessage(message);
                 }
             });
             
-            // Auto-resize textarea
-            $('#message-input').on('input', function() {
+            on('#message-input', 'input', function() {
                 this.style.height = 'auto';
                 this.style.height = Math.min(this.scrollHeight, 150) + 'px';
             });
             
-            // Focus on input
-            $('#message-input').focus();
+            var messageInput = $('#message-input');
+            if (messageInput) {
+                messageInput.focus();
+            }
+            
+            // Set initial timestamp
+            var timestamp = $('.message-timestamp');
+            if (timestamp) {
+                text(timestamp, new Date().toLocaleTimeString());
+            }
         }
     }
 
     function initAdmin() {
         console.log('👑 Admin page loaded');
         
-        // Check authentication and admin status
-        checkAuth().then(user => {
+        checkAuth().then(function(user) {
             if (!user) {
                 window.location.href = '/login';
                 return;
@@ -590,24 +711,21 @@ window.DevstralClient = (function() {
                 return;
             }
             
-            // Setup admin interface
             setupAdminInterface();
             
-        }).catch(error => {
+        }).catch(function(error) {
             console.error('Auth check failed:', error);
             window.location.href = '/login';
         });
         
         function setupAdminInterface() {
-            // TODO: Implement admin functionality
-            $('#app-content').html(`
-                <div class="row">
-                    <div class="col-12">
-                        <h2><i class="bi bi-gear"></i> Admin Dashboard</h2>
-                        <p>Admin functionality is being implemented...</p>
-                    </div>
-                </div>
-            `);
+            html('#app-content',
+                '<div class="row">' +
+                '<div class="col-12">' +
+                '<h2><i class="bi bi-gear"></i> Admin Dashboard</h2>' +
+                '<p>Admin functionality is being implemented...</p>' +
+                '</div></div>'
+            );
         }
     }
 
@@ -616,24 +734,18 @@ window.DevstralClient = (function() {
     // =============================================================================
 
     return {
-        // Utility functions
         showFlashMessage: showFlashMessage,
         logout: logout,
-        
-        // Page initialization
         initIndex: initIndex,
         initLogin: initLogin,
         initRegister: initRegister,
         initChat: initChat,
         initAdmin: initAdmin,
-        
-        // Auth functions
         checkAuth: checkAuth,
         login: login,
         register: register,
-        
-        // Chat functions
-        sendMessage: sendMessage
+        sendMessage: sendMessage,
+        autoInit: autoInit
     };
 
 })();
@@ -642,605 +754,6 @@ window.DevstralClient = (function() {
 window.logout = DevstralClient.logout;
 
 // Auto-initialize when DOM is ready
-$(document).ready(function() {
+document.addEventListener('DOMContentLoaded', function() {
     DevstralClient.autoInit();
 });
-
-    // =============================================================================
-    // UTILITY FUNCTIONS
-    // =============================================================================
-
-    function showFlashMessage(message, type = 'info') {
-        const alertClass = {
-            'success': 'alert-success',
-            'error': 'alert-danger',
-            'warning': 'alert-warning',
-            'info': 'alert-info'
-        }[type] || 'alert-info';
-        
-        const icon = {
-            'success': 'bi-check-circle',
-            'error': 'bi-exclamation-triangle',
-            'warning': 'bi-exclamation-triangle',
-            'info': 'bi-info-circle'
-        }[type] || 'bi-info-circle';
-        
-        const alert = $(`
-            <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                <i class="bi ${icon}"></i> ${escapeHtml(message)}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `);
-        
-        $('#flash-messages').append(alert);
-        setTimeout(() => alert.alert('close'), 5000);
-    }
-
-    function escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#x27;'
-        };
-        
-        return String(text).replace(/[&<>"']/g, function(m) {
-            return map[m];
-        });
-    }
-
-    function getAuthToken() {
-        return localStorage.getItem('auth_token') || '';
-    }
-
-    function setAuthToken(token) {
-        if (token) {
-            localStorage.setItem('auth_token', token);
-        } else {
-            localStorage.removeItem('auth_token');
-        }
-    }
-
-    function logout() {
-        setAuthToken(null);
-        window.location.href = '/';
-    }
-
-    // =============================================================================
-    // AUTH FUNCTIONS
-    // =============================================================================
-
-    function checkAuth() {
-        const token = getAuthToken();
-        if (!token) return Promise.resolve(false);
-
-        return fetch('/api/auth/verify', {
-            headers: {
-                'Authorization': 'Bearer ' + token
-            }
-        })
-        .then(response => {
-            if (response.ok) {
-                return response.json().then(data => data.user);
-            }
-            return false;
-        })
-        .catch(() => false);
-    }
-
-    function login(username, password) {
-        return fetch('/api/auth/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                username: username,
-                password: password
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.token) {
-                setAuthToken(data.token);
-                return { success: true, user: data.user };
-            } else {
-                return { success: false, error: data.error || 'Login failed' };
-            }
-        });
-    }
-
-    function register(username, password) {
-        return fetch('/api/auth/register', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                username: username,
-                password: password
-            })
-        })
-        .then(response => response.json());
-    }
-
-    // =============================================================================
-    // CHAT FUNCTIONS
-    // =============================================================================
-
-    let isStreaming = false;
-    let currentStreamingMessage = null;
-
-    function sendMessage(message) {
-        if (isStreaming) {
-            showFlashMessage('Please wait for the current response to complete', 'warning');
-            return;
-        }
-
-        if (!message.trim()) {
-            showFlashMessage('Please enter a message', 'warning');
-            return;
-        }
-
-        // Add user message to chat
-        addMessageToChat(message, 'user');
-
-        // Clear input
-        $('#message-input').val('');
-
-        // Show typing indicator
-        const typingId = addTypingIndicator();
-
-        // Send to API
-        isStreaming = true;
-        $('#send-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i>');
-
-        fetch('/api/ollama/api/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + getAuthToken()
-            },
-            body: JSON.stringify({
-                model: 'devstral',
-                messages: [
-                    {
-                        role: 'user',
-                        content: message
-                    }
-                ],
-                stream: true
-            })
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            // Remove typing indicator
-            removeTypingIndicator(typingId);
-
-            // Start streaming response
-            currentStreamingMessage = addMessageToChat('', 'assistant');
-            return handleStreamingResponse(response);
-        })
-        .catch(error => {
-            removeTypingIndicator(typingId);
-            showFlashMessage('Error sending message: ' + error.message, 'error');
-            console.error('Chat error:', error);
-        })
-        .finally(() => {
-            isStreaming = false;
-            currentStreamingMessage = null;
-            $('#send-btn').prop('disabled', false).html('<i class="bi bi-send"></i>');
-        });
-    }
-
-    function handleStreamingResponse(response) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        function processStream() {
-            return reader.read().then(({ done, value }) => {
-                if (done) {
-                    return;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep incomplete line in buffer
-
-                for (const line of lines) {
-                    if (line.trim()) {
-                        try {
-                            const data = JSON.parse(line);
-                            if (data.message && data.message.content) {
-                                appendToStreamingMessage(data.message.content);
-                            }
-                            if (data.done) {
-                                return; // Stream complete
-                            }
-                        } catch (e) {
-                            console.warn('Failed to parse streaming response:', line);
-                        }
-                    }
-                }
-
-                return processStream();
-            });
-        }
-
-        return processStream();
-    }
-
-    function addMessageToChat(content, role) {
-        const timestamp = new Date().toLocaleTimeString();
-        const messageClass = role === 'user' ? 'user-message' : 'assistant-message';
-        
-        const messageId = 'msg-' + Date.now();
-        const messageHtml = `
-            <div id="${messageId}" class="message ${messageClass}">
-                <div class="message-content">
-                    ${role === 'user' ? escapeHtml(content) : renderMarkdown(content)}
-                </div>
-                <span class="message-timestamp">${timestamp}</span>
-            </div>
-        `;
-        
-        $('#chat-messages').append(messageHtml);
-        scrollToBottom();
-        
-        return messageId;
-    }
-
-    function appendToStreamingMessage(content) {
-        if (!currentStreamingMessage) return;
-
-        const $message = $('#' + currentStreamingMessage);
-        const $content = $message.find('.message-content');
-        const currentText = $content.data('raw-content') || '';
-        const newText = currentText + content;
-        
-        $content.data('raw-content', newText);
-        $content.html(renderMarkdown(newText));
-        
-        scrollToBottom();
-    }
-
-    function addTypingIndicator() {
-        const typingId = 'typing-' + Date.now();
-        const typingHtml = `
-            <div id="${typingId}" class="message assistant-message">
-                <div class="message-content">
-                    <div class="typing-indicator">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        $('#chat-messages').append(typingHtml);
-        scrollToBottom();
-        
-        return typingId;
-    }
-
-    function removeTypingIndicator(typingId) {
-        $('#' + typingId).remove();
-    }
-
-    function scrollToBottom() {
-        const $messages = $('#chat-messages');
-        $messages.scrollTop($messages[0].scrollHeight);
-    }
-
-    // Simple markdown rendering
-    function renderMarkdown(text) {
-        if (!text) return '';
-        
-        // Escape HTML first
-        let html = escapeHtml(text);
-        
-        // Bold **text**
-        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
-        // Italic *text*
-        html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        
-        // Code blocks ```code```
-        html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-        
-        // Inline code `code`
-        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-        
-        // Line breaks
-        html = html.replace(/\n/g, '<br>');
-        
-        return html;
-    }
-
-    // =============================================================================
-    // PAGE INITIALIZATION FUNCTIONS
-    // =============================================================================
-
-    function initIndex() {
-        console.log('🏠 Index page loaded');
-        
-        // Check if user is already authenticated
-        checkAuth().then(user => {
-            if (user) {
-                // User is authenticated, update nav links
-                $('#nav-links').html(`
-                    <a class="nav-link" href="/chat">
-                        <i class="bi bi-chat-dots"></i> Chat
-                    </a>
-                    <a class="nav-link" href="#" onclick="DevstralClient.logout()">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </a>
-                `);
-                
-                // Update action buttons
-                $('.text-center').last().html(`
-                    <a href="/chat" class="btn btn-primary btn-lg">
-                        <i class="bi bi-chat-dots"></i> Continue Chatting
-                    </a>
-                `);
-            }
-        }).catch(error => {
-            console.log('Not authenticated, showing default options');
-        });
-    }
-
-    function initLogin() {
-        console.log('🔐 Login page loaded');
-        
-        // Check if already authenticated
-        checkAuth().then(user => {
-            if (user) {
-                window.location.href = '/chat';
-            }
-        });
-        
-        // Handle login form submission
-        $('#loginForm').on('submit', function(e) {
-            e.preventDefault();
-            
-            const username = $('#username').val().trim();
-            const password = $('#password').val();
-            
-            if (!username || !password) {
-                showFlashMessage('Username and password are required', 'error');
-                return;
-            }
-            
-            // Disable form
-            $('#login-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Logging in...');
-            
-            // Attempt login
-            login(username, password).then(result => {
-                if (result.success) {
-                    showFlashMessage('Login successful! Redirecting...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/chat';
-                    }, 1000);
-                } else {
-                    showFlashMessage(result.error, 'error');
-                    $('#login-btn').prop('disabled', false).html('<i class="bi bi-box-arrow-in-right"></i> Login');
-                }
-            }).catch(error => {
-                console.error('Login error:', error);
-                showFlashMessage('Login failed: ' + error.message, 'error');
-                $('#login-btn').prop('disabled', false).html('<i class="bi bi-box-arrow-in-right"></i> Login');
-            });
-        });
-    }
-
-    function initRegister() {
-        console.log('📝 Register page loaded');
-        
-        // Check if already authenticated
-        checkAuth().then(user => {
-            if (user) {
-                window.location.href = '/chat';
-            }
-        });
-        
-        // Show registration form
-        showRegistrationForm();
-        
-        function showRegistrationForm() {
-            $('#registration-info').html(`
-                <div class="alert alert-info" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Registration requires admin approval.</strong><br>
-                    After registering, please wait for an administrator to approve your account before you can log in.
-                </div>
-            `);
-            
-            $('#registerForm').show();
-            setupFormValidation();
-        }
-        
-        function setupFormValidation() {
-            // Password confirmation validation
-            $('#confirmPassword').on('input', function() {
-                const password = $('#password').val();
-                const confirmPassword = $(this).val();
-                
-                if (confirmPassword && password !== confirmPassword) {
-                    $(this).addClass('is-invalid');
-                } else if (confirmPassword) {
-                    $(this).removeClass('is-invalid').addClass('is-valid');
-                }
-            });
-            
-            // Form submission
-            $('#registerForm').on('submit', function(e) {
-                e.preventDefault();
-                handleRegistration();
-            });
-        }
-        
-        function handleRegistration() {
-            const username = $('#username').val().trim();
-            const password = $('#password').val();
-            const confirmPassword = $('#confirmPassword').val();
-            
-            // Basic validation
-            if (!username || username.length < config.MIN_USERNAME_LENGTH) {
-                showFlashMessage(`Username must be at least ${config.MIN_USERNAME_LENGTH} characters`, 'error');
-                return;
-            }
-            
-            if (!password || password.length < config.MIN_PASSWORD_LENGTH) {
-                showFlashMessage(`Password must be at least ${config.MIN_PASSWORD_LENGTH} characters`, 'error');
-                return;
-            }
-            
-            if (password !== confirmPassword) {
-                showFlashMessage('Passwords do not match', 'error');
-                return;
-            }
-            
-            // Disable form
-            $('#register-btn').prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Registering...');
-            
-            // Attempt registration
-            register(username, password).then(data => {
-                if (data.success) {
-                    showFlashMessage('Registration successful! Your account is pending admin approval.', 'success');
-                    
-                    // Clear form
-                    $('#registerForm')[0].reset();
-                    $('.is-valid, .is-invalid').removeClass('is-valid is-invalid');
-                } else {
-                    showFlashMessage(data.error || 'Registration failed', 'error');
-                }
-            }).catch(error => {
-                console.error('Registration error:', error);
-                showFlashMessage('Registration failed: ' + error.message, 'error');
-            }).finally(() => {
-                $('#register-btn').prop('disabled', false).html('<i class="bi bi-person-plus"></i> Register (Pending Approval)');
-            });
-        }
-    }
-
-    function initChat() {
-        console.log('💬 Chat page loaded');
-        
-        // Check authentication
-        checkAuth().then(user => {
-            if (!user) {
-                window.location.href = '/login';
-                return;
-            }
-            
-            // Update user info in navbar
-            $('#username-display').text(user.username);
-            
-            // Setup chat interface
-            setupChatInterface();
-            
-        }).catch(error => {
-            console.error('Auth check failed:', error);
-            window.location.href = '/login';
-        });
-        
-        function setupChatInterface() {
-            // Handle message input
-            $('#message-input').on('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    const message = $(this).val().trim();
-                    if (message) {
-                        sendMessage(message);
-                    }
-                }
-            });
-            
-            // Handle send button
-            $('#send-btn').on('click', function() {
-                const message = $('#message-input').val().trim();
-                if (message) {
-                    sendMessage(message);
-                }
-            });
-            
-            // Auto-resize textarea
-            $('#message-input').on('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 150) + 'px';
-            });
-            
-            // Focus on input
-            $('#message-input').focus();
-        }
-    }
-
-    function initAdmin() {
-        console.log('👑 Admin page loaded');
-        
-        // Check authentication and admin status
-        checkAuth().then(user => {
-            if (!user) {
-                window.location.href = '/login';
-                return;
-            }
-            
-            if (!user.isAdmin) {
-                window.location.href = '/unauthorized.html';
-                return;
-            }
-            
-            // Setup admin interface
-            setupAdminInterface();
-            
-        }).catch(error => {
-            console.error('Auth check failed:', error);
-            window.location.href = '/login';
-        });
-        
-        function setupAdminInterface() {
-            // TODO: Implement admin functionality
-            $('#app-content').html(`
-                <div class="row">
-                    <div class="col-12">
-                        <h2><i class="bi bi-gear"></i> Admin Dashboard</h2>
-                        <p>Admin functionality is being implemented...</p>
-                    </div>
-                </div>
-            `);
-        }
-    }
-
-    // =============================================================================
-    // PUBLIC API
-    // =============================================================================
-
-    return {
-        // Utility functions
-        showFlashMessage: showFlashMessage,
-        logout: logout,
-        
-        // Page initialization
-        initIndex: initIndex,
-        initLogin: initLogin,
-        initRegister: initRegister,
-        initChat: initChat,
-        initAdmin: initAdmin,
-        
-        // Auth functions
-        checkAuth: checkAuth,
-        login: login,
-        register: register,
-        
-        // Chat functions
-        sendMessage: sendMessage
-    };
-
-// Global logout function for navbar
-window.logout = DevstralClient.logout;

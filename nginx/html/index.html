@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Devstral AI Chat</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/css/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="/css/styles.css" rel="stylesheet">
 </head>
 <body>
@@ -95,6 +95,74 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/client.js"></script>
+    <script>
+        // Simple flash message system
+        function showFlashMessage(message, type = 'info') {
+            const alertClass = {
+                'success': 'alert-success',
+                'error': 'alert-danger',
+                'warning': 'alert-warning',
+                'info': 'alert-info'
+            }[type] || 'alert-info';
+            
+            const icon = {
+                'success': 'bi-check-circle',
+                'error': 'bi-exclamation-triangle',
+                'warning': 'bi-exclamation-triangle',
+                'info': 'bi-info-circle'
+            }[type] || 'bi-info-circle';
+            
+            const alert = $(`
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="bi ${icon}"></i> ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `);
+            
+            $('#flash-messages').append(alert);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => alert.alert('close'), 5000);
+        }
+
+        $(document).ready(function() {
+            console.log('🏠 Index page loaded');
+            
+            // Check if user is already authenticated
+            fetch('/api/auth/verify', {
+                headers: {
+                    'Authorization': 'Bearer ' + (localStorage.getItem('auth_token') || '')
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // User is authenticated, update nav links
+                    $('#nav-links').html(`
+                        <a class="nav-link" href="/chat">
+                            <i class="bi bi-chat-dots"></i> Chat
+                        </a>
+                        <a class="nav-link" href="#" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </a>
+                    `);
+                    
+                    // Update action buttons
+                    $('.text-center').last().html(`
+                        <a href="/chat" class="btn btn-primary btn-lg">
+                            <i class="bi bi-chat-dots"></i> Continue Chatting
+                        </a>
+                    `);
+                }
+            })
+            .catch(error => {
+                console.log('Not authenticated, showing default options');
+            });
+        });
+
+        function logout() {
+            localStorage.removeItem('auth_token');
+            window.location.href = '/';
+        }
+    </script>
 </body>
 </html>
