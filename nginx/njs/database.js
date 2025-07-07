@@ -1,37 +1,34 @@
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 
-const users = {}; // Example in-memory storage
-const tokens = {}; // Example in-memory token map
-
-export async function getUserByUsername(username) {
-  return users[username] || null;
-}
-
-export async function verifyPassword(inputPassword, hash) {
-  return bcrypt.compare(inputPassword, hash);
-}
-
-export async function hashPassword(password) {
-  return bcrypt.hash(password, 10);
-}
-
-export async function saveUser(user) {
-  users[user.username] = user;
-  return true;
-}
-
-export async function generateToken(user) {
-  const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, 'secret', { expiresIn: '1h' });
-  tokens[token] = user;
-  return token;
-}
-
-export async function getUserByToken(token) {
-  try {
-    const decoded = jwt.verify(token, 'secret');
-    return users[decoded.username] || null;
-  } catch (e) {
+async function getUserByUsername(username) {
+    var key = "user:" + username;
+    var res = await ngx.fetch("/redis-internal/hgetall/" + key);
+    if (res.ok) {
+        var data = await res.json();
+        if (data && data.username) {
+            return data;
+        }
+    }
     return null;
-  }
+}
+
+async function verifyPassword(inputPassword, storedHash) {
+    return inputPassword === storedHash;
+}
+
+async function saveUser(user) {
+    var key = "user:" + user.username;
+    var fields = [
+        "id", user.id,
+        "username", user.username,
+        "password_hash", user.password_hash,
+        "is_admin", user.is_admin ? "true" : "false"
+    ];
+    var query = fields.join("/");
+    var res = await ngx.fetch("/redis-internal/hset/" + key + "/" + query);
+    return res.ok;
+}
+
+async function saveToken(token, username) {
+    var res = await ngx.fetch("/redis-internal/setex/token:" + token + "/3600/" + username);
+    return res.ok;
 }
