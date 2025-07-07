@@ -1,9 +1,12 @@
-# nginx/Dockerfile - Static file server with all application files
+# nginx/Dockerfile - Nginx with njs JavaScript runtime
 
 FROM nginx:alpine
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install nginx-module-njs for server-side JavaScript
+RUN apk add --no-cache \
+    nginx-module-njs \
+    curl \
+    && rm -rf /var/cache/apk/*
 
 # Set working directory
 WORKDIR /usr/share/nginx/html
@@ -13,15 +16,19 @@ RUN rm /etc/nginx/conf.d/default.conf && \
     rm /etc/nginx/nginx.conf && \
     rm -rf /usr/share/nginx/html/*
 
-# Copy NGINX configuration
+# Copy NGINX configuration with njs
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # Create directory structure
-RUN mkdir -p /usr/share/nginx/html/css && \
+RUN mkdir -p /etc/nginx/njs && \
+    mkdir -p /usr/share/nginx/html/css && \
     mkdir -p /usr/share/nginx/html/js && \
     mkdir -p /usr/share/nginx/html/assets && \
     mkdir -p /var/cache/nginx && \
     mkdir -p /var/log/nginx
+
+# Copy server-side JavaScript modules (for njs)
+COPY njs/ /etc/nginx/njs/
 
 # Copy static files
 COPY static/css/ /usr/share/nginx/html/css/
@@ -37,16 +44,17 @@ RUN cp /usr/share/nginx/html/404.html /usr/share/nginx/html/ && \
 
 # Set proper permissions
 RUN chmod -R 755 /usr/share/nginx/html/ && \
+    chmod -R 755 /etc/nginx/njs/ && \
     chown -R nginx:nginx /usr/share/nginx/html/ && \
     chown -R nginx:nginx /var/cache/nginx && \
     chown -R nginx:nginx /var/log/nginx
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/ || exit 1
+    CMD curl -f http://localhost/health || exit 1
 
 # Expose port
 EXPOSE 80
 
-# Start NGINX
+# Start NGINX with njs
 CMD ["nginx", "-g", "daemon off;"]
