@@ -65,13 +65,20 @@ async function verifyRequest(r) {
 
 async function handleLogin(r) {
     try {
+        r.log('Login request received, method: ' + r.method);
+        
         if (r.method !== 'POST') {
+            r.log('Invalid method: ' + r.method);
             r.return(405, JSON.stringify({ error: 'Method not allowed' }));
             return;
         }
 
         const body = r.requestBody;
+        r.log('Request body length: ' + (body ? body.length : 'null'));
+        r.log('Request body: ' + (body || 'empty'));
+        
         if (!body) {
+            r.log('No request body received');
             r.return(400, JSON.stringify({ error: 'Request body required' }));
             return;
         }
@@ -79,6 +86,8 @@ async function handleLogin(r) {
         const data = JSON.parse(body);
         const username = data.username;
         const password = data.password;
+        
+        r.log('Parsed username: ' + username);
 
         // Validate input
         const usernameValidation = utils.validateUsername(username);
@@ -100,21 +109,28 @@ async function handleLogin(r) {
         // Get user from database
         const user = await database.getUserByUsername(username);
         if (!user) {
+            r.log('User not found: ' + username);
             r.return(401, JSON.stringify({ error: 'Invalid credentials' }));
             return;
         }
 
+        r.log('User found, checking password');
+
         // Check password (in production, use proper password hashing)
         if (user.password_hash !== password) {
+            r.log('Password mismatch');
             r.return(401, JSON.stringify({ error: 'Invalid credentials' }));
             return;
         }
 
         // Check if user is approved
         if (user.is_approved !== 'true' && user.is_approved !== true) {
+            r.log('User not approved');
             r.return(403, JSON.stringify({ error: 'Account pending approval' }));
             return;
         }
+
+        r.log('Login successful, generating token');
 
         // Generate token
         const token = generateToken({

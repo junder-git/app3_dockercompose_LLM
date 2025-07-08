@@ -1,4 +1,4 @@
-// nginx/njs/utils.js - Updated with initialization logic
+// nginx/njs/utils.js - NJS compatible utility functions
 import database from "./database.js";
 import models from "./models.js";
 
@@ -29,7 +29,7 @@ function validatePassword(password) {
 async function healthCheck(r) {
     try {
         // Check Redis connection
-        const redisRes = await ngx.fetch("/redis-internal/ping");
+        var redisRes = await ngx.fetch("/redis-internal/PING");
         if (!redisRes.ok) {
             r.return(503, JSON.stringify({ 
                 status: "unhealthy", 
@@ -39,7 +39,7 @@ async function healthCheck(r) {
         }
 
         // Check if system is initialized
-        const adminExists = await database.getUserByUsername("admin");
+        var adminExists = await database.getUserByUsername("admin");
         
         r.return(200, JSON.stringify({
             status: "healthy",
@@ -59,18 +59,17 @@ async function healthCheck(r) {
 
 async function handleInit(r) {
     try {
-        const results = [];
+        var results = [];
         
         // Get admin credentials from environment or use defaults
-        // Note: In NJS, we need to use ngx.env or pass via nginx config
-        const adminUsername = "admin";  // Default fallback
-        const adminPassword = "admin";  // Default fallback  
-        const adminUserId = "admin";    // Default fallback
+        var adminUsername = "admin";  // Default fallback
+        var adminPassword = "admin";  // Default fallback  
+        var adminUserId = "admin";    // Default fallback
         
-        const existingAdmin = await database.getUserByUsername(adminUsername);
+        var existingAdmin = await database.getUserByUsername(adminUsername);
         
         if (!existingAdmin) {
-            const adminUser = new models.User({
+            var adminUser = new models.User({
                 id: adminUserId,
                 username: adminUsername,
                 password_hash: adminPassword, // In production, hash this properly
@@ -79,14 +78,14 @@ async function handleInit(r) {
                 created_at: new Date().toISOString()
             });
 
-            const saved = await database.saveUser(adminUser.toDict());
+            var saved = await database.saveUser(adminUser.toDict());
             if (saved) {
-                results.push(`Admin user '${adminUsername}' created successfully`);
+                results.push("Admin user '" + adminUsername + "' created successfully");
             } else {
-                results.push(`Failed to create admin user '${adminUsername}'`);
+                results.push("Failed to create admin user '" + adminUsername + "'");
             }
         } else {
-            results.push(`Admin user '${adminUsername}' already exists`);
+            results.push("Admin user '" + adminUsername + "' already exists");
         }
 
         // Initialize any other required data here
@@ -100,7 +99,7 @@ async function handleInit(r) {
         }));
 
     } catch (e) {
-        r.log(`Initialization error: ${e.message}`);
+        r.log('Initialization error: ' + e.message);
         r.return(500, JSON.stringify({ 
             success: false,
             error: "System initialization failed",
