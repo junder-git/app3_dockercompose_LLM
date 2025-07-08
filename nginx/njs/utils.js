@@ -1,5 +1,4 @@
-// nginx/njs/utils.js - Minimal fix, keep original working structure
-import database from "./database.js";
+// nginx/njs/utils.js - Removed database dependency
 import models from "./models.js";
 
 function sanitizeHtml(text) {
@@ -28,24 +27,32 @@ function validatePassword(password) {
 
 async function healthCheck(r) {
     try {
-        // Check Redis connection
-        var redisRes = await ngx.fetch("/redis-internal/PING");
-        if (!redisRes.ok) {
-            r.return(503, JSON.stringify({ 
-                status: "unhealthy", 
-                error: "Redis connection failed" 
-            }));
-            return;
-        }
-
-        // Check if system is initialized
-        var adminExists = await database.getUserByUsername("admin");
+        // Check Redis connection via internal endpoint
+        var redisRes = await ngx.fetch("/redis/get?key=health_check", {
+            headers: { 'Authorization': 'Bearer internal' }
+        });
         
-        r.return(200, JSON.stringify({
-            status: "healthy",
+        var redisStatus = redisRes.ok ? "connected" : "failed";
+
+        // Check if admin user exists
+        var adminRes = await ngx.fetch("/redis/hgetall?key=user:admin", {
+            headers: { 'Authorization': 'Bearer internal' }
+        });
+        
+        var adminExists = false;
+        if (adminRes.ok) {
+            var adminData = await adminRes.json();
+            adminExists = adminData.success && adminData.data.username;
+        }
+        
+        var status = redisStatus === "connected" ? "healthy" : "unhealthy";
+        var statusCode = status === "healthy" ? 200 : 503;
+        
+        r.return(statusCode, JSON.stringify({
+            status: status,
             timestamp: new Date().toISOString(),
             services: {
-                redis: "connected",
+                redis: redisStatus,
                 admin_user: adminExists ? "exists" : "missing"
             }
         }));
@@ -61,27 +68,64 @@ async function handleInit(r) {
     try {
         var results = [];
         
-        // Get admin credentials from environment or use defaults
-        var adminUsername = "admin";  // Default fallback
-        var adminPassword = "admin";  // Default fallback  
-        var adminUserId = "admin";    // Default fallback
+        var adminUsername = "admin";
+        var adminPassword = "admin";
+        var adminUserId = "admin";
         
-        var existingAdmin = await database.getUserByUsername(adminUsername);
+        // Check if admin user exists
+        var existingAdminRes = await ngx.fetch("/redis/hgetall?key=user:" + adminUsername, {
+            headers: { 'Authorization': 'Bearer internal' }
+        });
         
-        if (!existingAdmin) {
-            // Create admin user using the User model properly
+        var adminExists = false;
+        if (existingAdminRes.ok) {
+            var adminData = await existingAdminRes.json();
+            adminExists = adminData.success && adminData.data.username;
+        }
+        
+        if (!adminExists) {
+            // Create admin user using Redis direct access
             var adminUser = new models.User({
                 id: adminUserId,
                 username: adminUsername,
-                password_hash: adminPassword, // In production, hash this properly
+                password_hash: adminPassword,
                 is_admin: true,
                 is_approved: true,
                 created_at: new Date().toISOString()
             });
 
-            // Convert to dictionary format for saving
             var userDict = adminUser.toDict();
-            var saved = await database.saveUser(userDict);
+            
+            // Save admin user to Redis
+            var fields = [
+                ['id', userDict.id],
+                ['username', userDict.username],
+                ['password_hash', userDict.password_hash],
+                ['is_admin', 'true'],
+                ['is_approved', 'true'],
+                ['created_at', userDict.created_at]
+            ];
+
+            var saved = true;
+            for (var i = 0; i < fields.length; i++) {
+                var fieldRes = await ngx.fetch("/redis/hset", {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer internal'
+                    },
+                    body: JSON.stringify({
+                        key: "user:" + adminUsername,
+                        field: fields[i][0],
+                        value: fields[i][1]
+                    })
+                });
+                
+                if (!fieldRes.ok) {
+                    saved = false;
+                    break;
+                }
+            }
             
             if (saved) {
                 results.push("Admin user '" + adminUsername + "' created successfully");
@@ -91,9 +135,6 @@ async function handleInit(r) {
         } else {
             results.push("Admin user '" + adminUsername + "' already exists");
         }
-
-        // Initialize any other required data here
-        // For example, default settings, system configuration, etc.
 
         r.return(200, JSON.stringify({
             success: true,
