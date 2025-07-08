@@ -6,14 +6,15 @@ FROM openresty/openresty:1.25.3.1-0-alpine-fat
 RUN apk add --no-cache \
     curl \
     wget \
-    nginx-module-njs
+    nginx-module-njs \
+    nginx-module-set-misc
 
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
 
 # Remove default configuration and content
-RUN rm /etc/nginx/conf.d/default.conf && \
-    rm /usr/local/openresty/nginx/conf/nginx.conf && \
+RUN rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true && \
+    rm -f /usr/local/openresty/nginx/conf/nginx.conf && \
     rm -rf /usr/local/openresty/nginx/html/*
 
 # Create directories
