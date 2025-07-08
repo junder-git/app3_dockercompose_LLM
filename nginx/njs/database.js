@@ -1,4 +1,4 @@
-// nginx/njs/database.js - Updated with better Redis debugging
+// nginx/njs/database.js - Updated Redis communication
 async function getUserById(user_id) {
     try {
         var key = "user:" + user_id;
@@ -77,7 +77,7 @@ async function getAllUsers() {
         
         for (var i = 0; i < keys.length; i++) {
             var key = keys[i];
-            if (key && key.indexOf('user:') === 0) {
+            if (key && key.startsWith('user:')) {
                 var userData = await getUserByUsername(key.substring(5)); // Remove 'user:' prefix
                 if (userData) {
                     users.push(userData);
@@ -141,35 +141,12 @@ async function saveUser(userDict) {
     try {
         var key = "user:" + userDict.username;
         
-        console.log('DEBUG: Saving user with key:', key);
+        // Debug logging
+        console.log('DEBUG: Attempting to save user');
+        console.log('DEBUG: Key:', key);
         console.log('DEBUG: User data:', JSON.stringify(userDict));
         
-        // Test Redis connection first
-        var pingRes = await ngx.fetch("/redis-internal/PING");
-        console.log('DEBUG: Redis PING response status:', pingRes.status);
-        if (!pingRes.ok) {
-            console.log('DEBUG: Redis ping failed');
-            return false;
-        }
-        
-        var pingText = await pingRes.text();
-        console.log('DEBUG: Redis PING response:', pingText);
-        
-        // Try a simple SET first to test
-        var testKey = "test:" + Date.now();
-        var testRes = await ngx.fetch("/redis-internal/SET/" + testKey + "/testvalue");
-        console.log('DEBUG: Test SET response status:', testRes.status);
-        
-        if (!testRes.ok) {
-            console.log('DEBUG: Test SET failed');
-            return false;
-        }
-        
-        // Clean up test key
-        await ngx.fetch("/redis-internal/DEL/" + testKey);
-        
-        // Build HSET command with all fields - try a different approach
-        // Use HMSET instead of HSET for multiple fields
+        // Build HSET command with all fields
         var fields = [
             "id", userDict.id,
             "username", userDict.username,
@@ -181,32 +158,24 @@ async function saveUser(userDict) {
         
         console.log('DEBUG: Fields array:', JSON.stringify(fields));
         
-        // Try HMSET command
-        var command = "HMSET/" + key;
-        for (var i = 0; i < fields.length; i += 2) {
-            command += "/" + encodeURIComponent(fields[i]) + "/" + encodeURIComponent(fields[i + 1]);
-        }
-        
+        // Use HSET with multiple field-value pairs
+        var command = "HSET/" + key + "/" + fields.join("/");
         console.log('DEBUG: Redis command:', command);
         
         var res = await ngx.fetch("/redis-internal/" + command);
-        console.log('DEBUG: HMSET response status:', res.status);
+        console.log('DEBUG: Redis response status:', res.status);
+        console.log('DEBUG: Redis response ok:', res.ok);
         
         if (res.ok) {
             var responseText = await res.text();
-            console.log('DEBUG: HMSET response text:', responseText);
-            
-            // Verify the user was saved by trying to read it back
-            var verifyRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
-            if (verifyRes.ok) {
-                var verifyText = await verifyRes.text();
-                console.log('DEBUG: Verification read:', verifyText);
-            }
+            console.log('DEBUG: Redis response text:', responseText);
+        } else {
+            console.log('DEBUG: Redis request failed');
         }
         
         return res.ok;
     } catch (e) {
-        console.log('DEBUG: Save user error:', e.message);
+        console.log('DEBUG: saveUser error:', e.message);
         return false;
     }
 }
@@ -232,11 +201,7 @@ async function saveChat(chatId, userId, message, response) {
             "timestamp", chatData.timestamp
         ];
         
-        var command = "HSET/" + key;
-        for (var i = 0; i < fields.length; i += 2) {
-            command += "/" + encodeURIComponent(fields[i]) + "/" + encodeURIComponent(fields[i + 1]);
-        }
-        
+        var command = "HSET/" + key + "/" + fields.join("/");
         var res = await ngx.fetch("/redis-internal/" + command);
         
         return res.ok;
@@ -263,7 +228,7 @@ async function getUserChats(userId) {
         
         for (var i = 0; i < keys.length; i++) {
             var key = keys[i];
-            if (key && key.indexOf('chat:') === 0) {
+            if (key && key.startsWith('chat:')) {
                 var chatRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
                 if (chatRes.ok) {
                     var chatText = await chatRes.text();
