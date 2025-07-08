@@ -1,4 +1,4 @@
-// nginx/static/js/client.js - SECURE VERSION (No admin functions)
+// nginx/static/js/client.js - SECURE VERSION (Fixed syntax errors)
 
 const DevstralClient = (() => {
   'use strict';
@@ -361,7 +361,7 @@ const DevstralClient = (() => {
             'Accept': 'text/plain'
           },
           body: JSON.stringify({
-            model: "llama2", // Configure your model
+            model: "devstral", // Use the model from your .env
             messages: [
               {
                 role: "user",
@@ -390,11 +390,15 @@ const DevstralClient = (() => {
         append(messagesContainer, currentStreamingMessage);
 
         let accumulatedResponse = '';
+        let streamEnded = false;
 
-        while (true) {
+        while (!streamEnded) {
           const { done, value } = await reader.read();
           
-          if (done) break;
+          if (done) {
+            streamEnded = true;
+            break;
+          }
           
           const chunk = decoder.decode(value);
           const lines = chunk.split('\n');
@@ -413,21 +417,19 @@ const DevstralClient = (() => {
                 }
                 
                 if (data.done) {
-                  isStreaming = false;
-                  currentStreamingMessage = null;
-                  prop(sendBtn, 'disabled', false);
-                  
-                  // Save conversation
-                  if (accumulatedResponse) {
-                    await saveConversationToRedis(user.id, message, accumulatedResponse);
-                  }
-                  return;
+                  streamEnded = true;
+                  break;
                 }
               } catch (e) {
                 console.error('Error parsing streaming data:', e);
               }
             }
           }
+        }
+
+        // Save conversation after streaming is complete
+        if (accumulatedResponse) {
+          await saveConversationToRedis(user.id, message, accumulatedResponse);
         }
 
       } catch (error) {
@@ -441,6 +443,7 @@ const DevstralClient = (() => {
         }
       } finally {
         isStreaming = false;
+        currentStreamingMessage = null;
         prop(sendBtn, 'disabled', false);
         scrollTop(messagesContainer, messagesContainer.scrollHeight);
       }
