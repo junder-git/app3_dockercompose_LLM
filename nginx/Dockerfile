@@ -28,15 +28,17 @@ RUN curl -o /usr/local/openresty/nginx/html/js/lib/jquery.min.js https://code.jq
     curl -o /usr/local/openresty/nginx/html/js/lib/bootstrap.min.js https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js && \
     curl -o /usr/local/openresty/nginx/html/css/bootstrap.min.css https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css
 
-# Copy NGINX configuration and Lua files
+# Copy NGINX configuration, Lua files, and startup script
 COPY nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
 COPY lua/ /usr/local/openresty/nginx/lua/
 COPY html/ /usr/local/openresty/nginx/html/
 COPY static/ /usr/local/openresty/nginx/html/
+COPY startup.sh /usr/local/bin/startup.sh
 
 # Set proper permissions
 RUN chmod -R 755 /usr/local/openresty/nginx/html/ && \
     chmod -R 755 /usr/local/openresty/nginx/lua/ && \
+    chmod +x /usr/local/bin/startup.sh && \
     chown -R nobody:nobody /usr/local/openresty/nginx/html/ && \
     chown -R nobody:nobody /usr/local/openresty/nginx/lua/ && \
     chown -R nobody:nobody /var/cache/nginx && \
@@ -49,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 80
 
-# Start OpenResty
-CMD ["/usr/local/openresty/bin/openresty", "-g", "daemon off;"]
+# Start with initialization
+CMD ["/usr/local/bin/startup.sh"]
