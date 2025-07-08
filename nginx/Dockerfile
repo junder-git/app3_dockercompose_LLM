@@ -2,12 +2,10 @@
 
 FROM openresty/openresty:1.25.3.1-0-alpine-fat
 
-# Install additional dependencies including NJS
+# Install additional dependencies (OpenResty has built-in modules)
 RUN apk add --no-cache \
     curl \
-    wget \
-    nginx-module-njs \
-    nginx-module-set-misc
+    wget
 
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
@@ -18,7 +16,7 @@ RUN rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true && \
     rm -rf /usr/local/openresty/nginx/html/*
 
 # Create directories
-RUN mkdir -p /etc/nginx/njs && \
+RUN mkdir -p /usr/local/openresty/nginx/lua && \
     mkdir -p /usr/local/openresty/nginx/html/css && \
     mkdir -p /usr/local/openresty/nginx/html/js/lib && \
     mkdir -p /usr/local/openresty/nginx/html/assets && \
@@ -30,18 +28,17 @@ RUN curl -o /usr/local/openresty/nginx/html/js/lib/jquery.min.js https://code.jq
     curl -o /usr/local/openresty/nginx/html/js/lib/bootstrap.min.js https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js && \
     curl -o /usr/local/openresty/nginx/html/css/bootstrap.min.css https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css
 
-# Copy NGINX configuration (adjust paths for OpenResty)
+# Copy NGINX configuration and Lua files
 COPY nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
-
-# Copy NJS files
-COPY njs/ /etc/nginx/njs/
+COPY lua/ /usr/local/openresty/nginx/lua/
 COPY html/ /usr/local/openresty/nginx/html/
 COPY static/ /usr/local/openresty/nginx/html/
 
 # Set proper permissions
 RUN chmod -R 755 /usr/local/openresty/nginx/html/ && \
-    chmod -R 755 /etc/nginx/njs/ && \
+    chmod -R 755 /usr/local/openresty/nginx/lua/ && \
     chown -R nobody:nobody /usr/local/openresty/nginx/html/ && \
+    chown -R nobody:nobody /usr/local/openresty/nginx/lua/ && \
     chown -R nobody:nobody /var/cache/nginx && \
     chown -R nobody:nobody /var/log/nginx
 
