@@ -1,5 +1,12 @@
--- nginx/lua/auth.lua - OpenResty Lua authentication
+-- nginx/lua/auth.lua - OpenResty Lua authentication with environment variables
 local cjson = require "cjson"
+
+-- Get configuration from environment variables
+local MIN_USERNAME_LENGTH = tonumber(os.getenv("MIN_USERNAME_LENGTH")) or 3
+local MAX_USERNAME_LENGTH = tonumber(os.getenv("MAX_USERNAME_LENGTH")) or 50
+local MIN_PASSWORD_LENGTH = tonumber(os.getenv("MIN_PASSWORD_LENGTH")) or 6
+local MAX_PASSWORD_LENGTH = tonumber(os.getenv("MAX_PASSWORD_LENGTH")) or 128
+local SESSION_LIFETIME_DAYS = tonumber(os.getenv("SESSION_LIFETIME_DAYS")) or 7
 
 -- Helper functions
 local function generate_token(user)
@@ -7,7 +14,7 @@ local function generate_token(user)
         user_id = user.id,
         username = user.username,
         is_admin = user.is_admin,
-        exp = ngx.time() + (7 * 24 * 60 * 60) -- 7 days
+        exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60) -- configurable session lifetime
     }
     return ngx.encode_base64(cjson.encode(payload))
 end
@@ -28,14 +35,14 @@ local function validate_username(username)
     if not username or username == "" then
         return false, "Username is required"
     end
-    if #username < 3 then
-        return false, "Username too short"
+    if #username < MIN_USERNAME_LENGTH then
+        return false, "Username must be at least " .. MIN_USERNAME_LENGTH .. " characters"
     end
-    if #username > 32 then
-        return false, "Username too long"
+    if #username > MAX_USERNAME_LENGTH then
+        return false, "Username must be less than " .. MAX_USERNAME_LENGTH .. " characters"
     end
     if not string.match(username, "^[a-zA-Z0-9_-]+$") then
-        return false, "Invalid characters"
+        return false, "Username can only contain letters, numbers, underscore, and dash"
     end
     return true, ""
 end
@@ -44,11 +51,11 @@ local function validate_password(password)
     if not password or password == "" then
         return false, "Password is required"
     end
-    if #password < 6 then
-        return false, "Password too short"
+    if #password < MIN_PASSWORD_LENGTH then
+        return false, "Password must be at least " .. MIN_PASSWORD_LENGTH .. " characters"
     end
-    if #password > 64 then
-        return false, "Password too long"
+    if #password > MAX_PASSWORD_LENGTH then
+        return false, "Password must be less than " .. MAX_PASSWORD_LENGTH .. " characters"
     end
     return true, ""
 end

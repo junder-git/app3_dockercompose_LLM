@@ -1,28 +1,36 @@
--- nginx/lua/init.lua - System initialization
+-- nginx/lua/init.lua - System initialization with environment variables
 local cjson = require "cjson"
 
+-- Get admin credentials from environment variables
+local admin_username = os.getenv("ADMIN_USERNAME") or "admin"
+local admin_password = os.getenv("ADMIN_PASSWORD") or "admin"
+local admin_user_id = os.getenv("ADMIN_USER_ID") or "admin"
+
+-- Log the values being used (for debugging - remove in production)
+ngx.log(ngx.ERR, "Creating admin user: " .. admin_username .. " with ID: " .. admin_user_id)
+
 -- Check if admin user exists
-local res = ngx.location.capture("/redis-internal/exists/user:admin")
+local res = ngx.location.capture("/redis-internal/exists/user:" .. admin_username)
 if res.status == 200 and res.body:match("1") then
     ngx.say(cjson.encode({
         success = true,
-        message = "Admin user already exists"
+        message = "Admin user '" .. admin_username .. "' already exists"
     }))
     return
 end
 
--- Create admin user
+-- Create admin user with environment variables
 local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 local fields = {
-    "id", "admin",
-    "username", "admin", 
-    "password_hash", "admin",
+    "id", admin_user_id,
+    "username", admin_username, 
+    "password_hash", admin_password,
     "is_admin", "true",
     "is_approved", "true",
     "created_at", timestamp
 }
 
-local cmd = "hset/user:admin"
+local cmd = "hset/user:" .. admin_username
 for i = 1, #fields do
     cmd = cmd .. "/" .. fields[i]
 end
@@ -31,16 +39,17 @@ res = ngx.location.capture("/redis-internal/" .. cmd)
 if res.status == 200 then
     ngx.say(cjson.encode({
         success = true,
-        message = "Admin user created successfully",
+        message = "Admin user '" .. admin_username .. "' created successfully",
         credentials = {
-            username = "admin",
-            password = "admin"
+            username = admin_username,
+            password = admin_password,
+            user_id = admin_user_id
         }
     }))
 else
     ngx.status = 500
     ngx.say(cjson.encode({
         success = false,
-        error = "Failed to create admin user"
+        error = "Failed to create admin user '" .. admin_username .. "'"
     }))
 end
