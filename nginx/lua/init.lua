@@ -2,8 +2,8 @@
 local cjson = require "cjson"
 
 -- Get admin credentials from environment variables
-local admin_username = os.getenv("ADMIN_USERNAME") or "admin"
-local admin_password = os.getenv("ADMIN_PASSWORD") or "admin"
+local admin_username = os.getenv("ADMIN_USERNAME") or "admin1"
+local admin_password = os.getenv("ADMIN_PASSWORD") or "admin1"
 local admin_user_id = os.getenv("ADMIN_USER_ID") or "admin"
 
 -- Log the values being used
