@@ -1,23 +1,23 @@
-// nginx/njs/database.js - Updated Redis communication
+// nginx/njs/database.js - Updated with better Redis debugging
 async function getUserById(user_id) {
     try {
-        const key = "user:" + user_id;
-        const res = await ngx.fetch("/redis-internal/HGETALL/" + key);
+        var key = "user:" + user_id;
+        var res = await ngx.fetch("/redis-internal/HGETALL/" + key);
         
         if (!res.ok) {
             return null;
         }
         
-        const text = await res.text();
+        var text = await res.text();
         if (!text || text.trim() === "") {
             return null;
         }
         
         // Parse Redis HGETALL response (field1\nvalue1\nfield2\nvalue2...)
-        const lines = text.trim().split('\n');
-        const user_data = {};
+        var lines = text.trim().split('\n');
+        var user_data = {};
         
-        for (let i = 0; i < lines.length; i += 2) {
+        for (var i = 0; i < lines.length; i += 2) {
             if (i + 1 < lines.length) {
                 user_data[lines[i]] = lines[i + 1];
             }
@@ -31,23 +31,23 @@ async function getUserById(user_id) {
 
 async function getUserByUsername(username) {
     try {
-        const key = "user:" + username;
-        const res = await ngx.fetch("/redis-internal/HGETALL/" + key);
+        var key = "user:" + username;
+        var res = await ngx.fetch("/redis-internal/HGETALL/" + key);
         
         if (!res.ok) {
             return null;
         }
         
-        const text = await res.text();
+        var text = await res.text();
         if (!text || text.trim() === "") {
             return null;
         }
         
         // Parse Redis HGETALL response
-        const lines = text.trim().split('\n');
-        const user_data = {};
+        var lines = text.trim().split('\n');
+        var user_data = {};
         
-        for (let i = 0; i < lines.length; i += 2) {
+        for (var i = 0; i < lines.length; i += 2) {
             if (i + 1 < lines.length) {
                 user_data[lines[i]] = lines[i + 1];
             }
@@ -62,23 +62,23 @@ async function getUserByUsername(username) {
 async function getAllUsers() {
     try {
         // Get all user keys
-        const keysRes = await ngx.fetch("/redis-internal/KEYS/user:*");
+        var keysRes = await ngx.fetch("/redis-internal/KEYS/user:*");
         if (!keysRes.ok) {
             return [];
         }
         
-        const keysText = await keysRes.text();
+        var keysText = await keysRes.text();
         if (!keysText || keysText.trim() === "") {
             return [];
         }
         
-        const keys = keysText.trim().split('\n');
-        const users = [];
+        var keys = keysText.trim().split('\n');
+        var users = [];
         
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
-            if (key && key.startsWith('user:')) {
-                const userData = await getUserByUsername(key.substring(5)); // Remove 'user:' prefix
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if (key && key.indexOf('user:') === 0) {
+                var userData = await getUserByUsername(key.substring(5)); // Remove 'user:' prefix
                 if (userData) {
                     users.push(userData);
                 }
@@ -93,21 +93,21 @@ async function getAllUsers() {
 
 async function approveUser(user_id) {
     try {
-        const key = "user:" + user_id;
+        var key = "user:" + user_id;
         
         // Check if user exists
-        const existsRes = await ngx.fetch("/redis-internal/EXISTS/" + key);
+        var existsRes = await ngx.fetch("/redis-internal/EXISTS/" + key);
         if (!existsRes.ok) {
             return false;
         }
         
-        const exists = await existsRes.text();
+        var exists = await existsRes.text();
         if (exists.trim() !== "1") {
             return false;
         }
         
         // Set is_approved to true
-        const setRes = await ngx.fetch("/redis-internal/HSET/" + key + "/is_approved/true");
+        var setRes = await ngx.fetch("/redis-internal/HSET/" + key + "/is_approved/true");
         return setRes.ok;
     } catch (e) {
         return false;
@@ -116,21 +116,21 @@ async function approveUser(user_id) {
 
 async function rejectUser(user_id) {
     try {
-        const key = "user:" + user_id;
+        var key = "user:" + user_id;
         
         // Check if user exists
-        const existsRes = await ngx.fetch("/redis-internal/EXISTS/" + key);
+        var existsRes = await ngx.fetch("/redis-internal/EXISTS/" + key);
         if (!existsRes.ok) {
             return false;
         }
         
-        const exists = await existsRes.text();
+        var exists = await existsRes.text();
         if (exists.trim() !== "1") {
             return false;
         }
         
         // Delete the user
-        const delRes = await ngx.fetch("/redis-internal/DEL/" + key);
+        var delRes = await ngx.fetch("/redis-internal/DEL/" + key);
         return delRes.ok;
     } catch (e) {
         return false;
@@ -139,10 +139,38 @@ async function rejectUser(user_id) {
 
 async function saveUser(userDict) {
     try {
-        const key = "user:" + userDict.username;
+        var key = "user:" + userDict.username;
         
-        // Build HSET command with all fields
-        const fields = [
+        console.log('DEBUG: Saving user with key:', key);
+        console.log('DEBUG: User data:', JSON.stringify(userDict));
+        
+        // Test Redis connection first
+        var pingRes = await ngx.fetch("/redis-internal/PING");
+        console.log('DEBUG: Redis PING response status:', pingRes.status);
+        if (!pingRes.ok) {
+            console.log('DEBUG: Redis ping failed');
+            return false;
+        }
+        
+        var pingText = await pingRes.text();
+        console.log('DEBUG: Redis PING response:', pingText);
+        
+        // Try a simple SET first to test
+        var testKey = "test:" + Date.now();
+        var testRes = await ngx.fetch("/redis-internal/SET/" + testKey + "/testvalue");
+        console.log('DEBUG: Test SET response status:', testRes.status);
+        
+        if (!testRes.ok) {
+            console.log('DEBUG: Test SET failed');
+            return false;
+        }
+        
+        // Clean up test key
+        await ngx.fetch("/redis-internal/DEL/" + testKey);
+        
+        // Build HSET command with all fields - try a different approach
+        // Use HMSET instead of HSET for multiple fields
+        var fields = [
             "id", userDict.id,
             "username", userDict.username,
             "password_hash", userDict.password_hash,
@@ -151,22 +179,44 @@ async function saveUser(userDict) {
             "created_at", userDict.created_at
         ];
         
-        // Use HSET with multiple field-value pairs
-        const command = "HSET/" + key + "/" + fields.join("/");
-        const res = await ngx.fetch("/redis-internal/" + command);
+        console.log('DEBUG: Fields array:', JSON.stringify(fields));
+        
+        // Try HMSET command
+        var command = "HMSET/" + key;
+        for (var i = 0; i < fields.length; i += 2) {
+            command += "/" + encodeURIComponent(fields[i]) + "/" + encodeURIComponent(fields[i + 1]);
+        }
+        
+        console.log('DEBUG: Redis command:', command);
+        
+        var res = await ngx.fetch("/redis-internal/" + command);
+        console.log('DEBUG: HMSET response status:', res.status);
+        
+        if (res.ok) {
+            var responseText = await res.text();
+            console.log('DEBUG: HMSET response text:', responseText);
+            
+            // Verify the user was saved by trying to read it back
+            var verifyRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
+            if (verifyRes.ok) {
+                var verifyText = await verifyRes.text();
+                console.log('DEBUG: Verification read:', verifyText);
+            }
+        }
         
         return res.ok;
     } catch (e) {
+        console.log('DEBUG: Save user error:', e.message);
         return false;
     }
 }
 
 async function saveChat(chatId, userId, message, response) {
     try {
-        const key = "chat:" + chatId;
-        const timestamp = new Date().toISOString();
+        var key = "chat:" + chatId;
+        var timestamp = new Date().toISOString();
         
-        const chatData = {
+        var chatData = {
             id: chatId,
             user_id: userId,
             message: message,
@@ -174,7 +224,7 @@ async function saveChat(chatId, userId, message, response) {
             timestamp: timestamp
         };
         
-        const fields = [
+        var fields = [
             "id", chatData.id,
             "user_id", chatData.user_id,
             "message", chatData.message,
@@ -182,8 +232,12 @@ async function saveChat(chatId, userId, message, response) {
             "timestamp", chatData.timestamp
         ];
         
-        const command = "HSET/" + key + "/" + fields.join("/");
-        const res = await ngx.fetch("/redis-internal/" + command);
+        var command = "HSET/" + key;
+        for (var i = 0; i < fields.length; i += 2) {
+            command += "/" + encodeURIComponent(fields[i]) + "/" + encodeURIComponent(fields[i + 1]);
+        }
+        
+        var res = await ngx.fetch("/redis-internal/" + command);
         
         return res.ok;
     } catch (e) {
@@ -194,30 +248,30 @@ async function saveChat(chatId, userId, message, response) {
 async function getUserChats(userId) {
     try {
         // Get all chat keys for this user
-        const keysRes = await ngx.fetch("/redis-internal/KEYS/chat:*");
+        var keysRes = await ngx.fetch("/redis-internal/KEYS/chat:*");
         if (!keysRes.ok) {
             return [];
         }
         
-        const keysText = await keysRes.text();
+        var keysText = await keysRes.text();
         if (!keysText || keysText.trim() === "") {
             return [];
         }
         
-        const keys = keysText.trim().split('\n');
-        const chats = [];
+        var keys = keysText.trim().split('\n');
+        var chats = [];
         
-        for (let i = 0; i < keys.length; i++) {
-            const key = keys[i];
-            if (key && key.startsWith('chat:')) {
-                const chatRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if (key && key.indexOf('chat:') === 0) {
+                var chatRes = await ngx.fetch("/redis-internal/HGETALL/" + key);
                 if (chatRes.ok) {
-                    const chatText = await chatRes.text();
+                    var chatText = await chatRes.text();
                     if (chatText && chatText.trim() !== "") {
-                        const lines = chatText.trim().split('\n');
-                        const chatData = {};
+                        var lines = chatText.trim().split('\n');
+                        var chatData = {};
                         
-                        for (let j = 0; j < lines.length; j += 2) {
+                        for (var j = 0; j < lines.length; j += 2) {
                             if (j + 1 < lines.length) {
                                 chatData[lines[j]] = lines[j + 1];
                             }

@@ -1,10 +1,11 @@
 function User(data) {
-    this.id = data.id ? data.id : "";
-    this.username = data.username ? data.username : "";
-    this.password_hash = data.password_hash ? data.password_hash : "";
-    this.is_admin = data.is_admin ? data.is_admin : false;
-    this.is_approved = data.is_approved ? data.is_approved : false;
-    this.created_at = data.created_at ? data.created_at : "";
+    data = data || {};
+    this.id = data.id || "";
+    this.username = data.username || "";
+    this.password_hash = data.password_hash || "";
+    this.is_admin = data.is_admin || false;
+    this.is_approved = data.is_approved || false;
+    this.created_at = data.created_at || "";
 }
 
 User.prototype.toDict = function () {
