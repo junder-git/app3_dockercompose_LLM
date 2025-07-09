@@ -94,7 +94,7 @@
                 if (response.ok) {
                     const adminHtml = await response.text();
                     DevstralCommon.html('#app-content', adminHtml);
-                    DevstralCommon.showFlashMessage('Admin dashboard loaded successfully', 'success');
+                    //DevstralCommon.showFlashMessage('Admin dashboard loaded successfully', 'success');
                     
                     // Attach event listeners for admin actions
                     attachAdminEventListeners();
