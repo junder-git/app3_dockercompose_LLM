@@ -72,6 +72,64 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/client.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        // Login page specific JavaScript
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🔐 Login page loaded');
+            
+            // Initialize auth
+            DevstralCommon.initAuth();
+            
+            // Check if already authenticated
+            const user = await DevstralCommon.checkAuth();
+            if (user) {
+                console.log('User already authenticated, redirecting');
+                window.location.href = user.is_admin ? '/admin' : '/chat';
+                return;
+            }
+
+            // Setup login form
+            const form = DevstralCommon.$('#loginForm');
+            if (form) {
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const username = DevstralCommon.val('#username').trim();
+                    const password = DevstralCommon.val('#password').trim();
+                    
+                    if (!username || !password) {
+                        DevstralCommon.showFlashMessage('Please enter both username and password', 'error');
+                        return;
+                    }
+
+                    const btn = DevstralCommon.$('#login-btn');
+                    const originalText = DevstralCommon.text(btn);
+                    DevstralCommon.text(btn, 'Logging in...');
+                    DevstralCommon.prop(btn, 'disabled', true);
+
+                    try {
+                        const result = await DevstralCommon.login(username, password);
+                        
+                        if (result.success) {
+                            DevstralCommon.showFlashMessage('Login successful!', 'success');
+                            console.log('Login successful, redirecting...');
+                            
+                            setTimeout(() => {
+                                window.location.href = result.user.is_admin ? '/admin' : '/chat';
+                            }, 500);
+                        } else {
+                            DevstralCommon.showFlashMessage(result.error, 'error');
+                        }
+                    } catch (error) {
+                        DevstralCommon.showFlashMessage('Login failed: ' + error.message, 'error');
+                    } finally {
+                        DevstralCommon.text(btn, originalText);
+                        DevstralCommon.prop(btn, 'disabled', false);
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

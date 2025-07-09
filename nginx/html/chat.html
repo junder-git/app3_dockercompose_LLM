@@ -56,14 +56,178 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/client.js"></script>
+    <script src="/js/common.js"></script>
     <script>
-        // Set welcome message timestamp when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            const welcomeTimestamp = document.getElementById('welcome-timestamp');
-            if (welcomeTimestamp) {
-                welcomeTimestamp.textContent = new Date().toLocaleTimeString();
+        // Chat page specific JavaScript
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('💬 Chat page loaded');
+            
+            // Initialize auth
+            DevstralCommon.initAuth();
+            
+            // Check authentication
+            const user = await DevstralCommon.checkAuth();
+            if (!user) {
+                console.log('No user authenticated, redirecting to login');
+                window.location.href = '/login';
+                return;
             }
+
+            console.log('Chat initialized for user:', user.username);
+            DevstralCommon.text('#username-display', user.username);
+
+            // Set welcome message timestamp
+            const welcomeTimestamp = DevstralCommon.$('#welcome-timestamp');
+            if (welcomeTimestamp) {
+                DevstralCommon.text(welcomeTimestamp, new Date().toLocaleTimeString());
+            }
+
+            // Initialize chat functionality
+            const messagesContainer = DevstralCommon.$('#chat-messages');
+            const messageInput = DevstralCommon.$('#message-input');
+            const sendBtn = DevstralCommon.$('#send-btn');
+
+            if (!messagesContainer || !messageInput || !sendBtn) {
+                console.error('Chat elements not found');
+                DevstralCommon.showFlashMessage('Chat interface not properly loaded', 'error');
+                return;
+            }
+
+            let isStreaming = false;
+
+            // Chat message sending function
+            const sendChatMessage = async (message) => {
+                const token = DevstralCommon.getAuthToken();
+                if (!token) {
+                    throw new Error('No authentication token');
+                }
+
+                console.log('Sending chat message:', message);
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: "devstral",
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: message
+                                }
+                            ],
+                            stream: false
+                        })
+                    });
+
+                    console.log('Chat response status:', response.status);
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Chat error response:', errorText);
+                        throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    }
+
+                    const responseData = await response.json();
+                    console.log('Chat response data:', responseData);
+
+                    return responseData;
+                } catch (error) {
+                    console.error('Chat error:', error);
+                    throw error;
+                }
+            };
+
+            // Send message function
+            const sendMessage = async () => {
+                const message = DevstralCommon.val(messageInput).trim();
+                if (!message || isStreaming) return;
+
+                if (message.length > 5000) {
+                    DevstralCommon.showFlashMessage('Message too long (max 5000 characters)', 'error');
+                    return;
+                }
+
+                DevstralCommon.val(messageInput, '');
+                DevstralCommon.prop(sendBtn, 'disabled', true);
+                isStreaming = true;
+
+                // Add user message
+                const userMsg = document.createElement('div');
+                userMsg.className = 'message user-message';
+                userMsg.innerHTML = `
+                    <div class="message-content">
+                        <div class="user-text">${message}</div>
+                    </div>
+                    <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+                `;
+                DevstralCommon.append(messagesContainer, userMsg);
+                DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
+
+                // Add loading message
+                const loadingMsg = document.createElement('div');
+                loadingMsg.className = 'message assistant-message';
+                loadingMsg.innerHTML = `
+                    <div class="message-content">
+                        <div class="ai-response">Thinking...</div>
+                    </div>
+                    <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+                `;
+                DevstralCommon.append(messagesContainer, loadingMsg);
+                DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
+
+                try {
+                    const responseData = await sendChatMessage(message);
+                    
+                    let finalResponse = '';
+                    if (responseData.message && responseData.message.content) {
+                        finalResponse = responseData.message.content;
+                    } else if (responseData.response) {
+                        finalResponse = responseData.response;
+                    } else {
+                        finalResponse = 'I received your message but couldn\'t process it properly.';
+                    }
+
+                    // Update loading message with response
+                    const responseDiv = loadingMsg.querySelector('.ai-response');
+                    if (responseDiv) {
+                        responseDiv.textContent = finalResponse;
+                    }
+
+                } catch (error) {
+                    console.error('Chat error:', error);
+                    DevstralCommon.showFlashMessage('Chat Error: ' + error.message, 'error');
+                    
+                    // Update loading message with error
+                    const responseDiv = loadingMsg.querySelector('.ai-response');
+                    if (responseDiv) {
+                        responseDiv.innerHTML = `
+                            <div class="alert alert-danger">
+                                <strong>Error:</strong> ${error.message}
+                            </div>
+                        `;
+                    }
+                } finally {
+                    isStreaming = false;
+                    DevstralCommon.prop(sendBtn, 'disabled', false);
+                    DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
+                }
+            };
+
+            // Event listeners
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            DevstralCommon.showFlashMessage('Chat initialized successfully!', 'success');
         });
     </script>
 </body>

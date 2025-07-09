@@ -93,6 +93,73 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/client.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        // Register page specific JavaScript
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('📝 Register page loaded');
+            
+            // Initialize auth
+            DevstralCommon.initAuth();
+            
+            // Check if already authenticated
+            const user = await DevstralCommon.checkAuth();
+            if (user) {
+                window.location.href = user.is_admin ? '/admin' : '/chat';
+                return;
+            }
+
+            // Show registration form
+            const form = DevstralCommon.$('#registerForm');
+            if (form) {
+                form.style.display = 'block';
+                
+                form.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const username = DevstralCommon.val('#username').trim();
+                    const password = DevstralCommon.val('#password').trim();
+                    const confirmPassword = DevstralCommon.val('#confirmPassword').trim();
+                    
+                    if (!username || !password || !confirmPassword) {
+                        DevstralCommon.showFlashMessage('Please fill in all fields', 'error');
+                        return;
+                    }
+
+                    if (password !== confirmPassword) {
+                        DevstralCommon.showFlashMessage('Passwords do not match', 'error');
+                        return;
+                    }
+
+                    const btn = DevstralCommon.$('#register-btn');
+                    const originalText = DevstralCommon.text(btn);
+                    DevstralCommon.text(btn, 'Creating account...');
+                    DevstralCommon.prop(btn, 'disabled', true);
+
+                    try {
+                        const result = await DevstralCommon.register(username, password);
+                        
+                        if (result.success) {
+                            DevstralCommon.showFlashMessage('Account created! Pending admin approval.', 'success');
+                            form.style.display = 'none';
+                            DevstralCommon.html('#registration-info', `
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Account created successfully! Your account is pending admin approval.
+                                </div>
+                            `);
+                        } else {
+                            DevstralCommon.showFlashMessage(result.error, 'error');
+                        }
+                    } catch (error) {
+                        DevstralCommon.showFlashMessage('Registration failed: ' + error.message, 'error');
+                    } finally {
+                        DevstralCommon.text(btn, originalText);
+                        DevstralCommon.prop(btn, 'disabled', false);
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

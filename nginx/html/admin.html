@@ -49,6 +49,187 @@
     </main>
 
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/client.js"></script>
+    <script src="/js/common.js"></script>
+    <script>
+        // Admin page specific JavaScript
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('⚡ Admin page loaded');
+            
+            // Initialize auth
+            DevstralCommon.initAuth();
+            
+            // Show loading indicator
+            const loadingDiv = DevstralCommon.$('#loading-indicator');
+            if (loadingDiv) {
+                loadingDiv.style.display = 'flex';
+            }
+
+            // Check authentication
+            const user = await DevstralCommon.checkAuth();
+            
+            if (!user) {
+                console.log('No user authenticated, redirecting to login');
+                window.location.href = '/login';
+                return;
+            }
+
+            if (!user.is_admin) {
+                console.log('User is not admin, redirecting to unauthorized');
+                window.location.href = '/unauthorised';
+                return;
+            }
+
+            console.log('Admin page initialized for user:', user.username);
+            DevstralCommon.text('#username-display', user.username);
+            
+            // Load admin content from server
+            try {
+                const response = await fetch('/api/admin/dashboard', {
+                    headers: {
+                        'Authorization': 'Bearer ' + DevstralCommon.getAuthToken(),
+                        'Accept': 'text/html'
+                    }
+                });
+
+                if (response.ok) {
+                    const adminHtml = await response.text();
+                    DevstralCommon.html('#app-content', adminHtml);
+                    DevstralCommon.showFlashMessage('Admin dashboard loaded successfully', 'success');
+                    
+                    // Attach event listeners for admin actions
+                    attachAdminEventListeners();
+                    
+                } else if (response.status === 403) {
+                    DevstralCommon.showFlashMessage('Access denied - insufficient privileges', 'error');
+                    setTimeout(() => window.location.href = '/unauthorised', 2000);
+                } else {
+                    DevstralCommon.showFlashMessage('Failed to load admin dashboard', 'error');
+                    
+                    // Show basic admin interface if server-side fails
+                    DevstralCommon.html('#app-content', `
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="alert alert-success">
+                                            <i class="bi bi-check-circle"></i> 
+                                            Admin authentication successful! Welcome, <strong>${user.username}</strong>.
+                                        </div>
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle"></i> 
+                                            Server-side admin functionality unavailable. Basic admin interface loaded.
+                                        </div>
+                                        <p>You have administrator privileges on this system.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `);
+                }
+            } catch (error) {
+                console.error('Admin dashboard error:', error);
+                DevstralCommon.showFlashMessage('Error loading admin dashboard: ' + error.message, 'error');
+                
+                // Show basic admin interface on error
+                DevstralCommon.html('#app-content', `
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="alert alert-success">
+                                        <i class="bi bi-check-circle"></i> 
+                                        Admin authentication successful! Welcome, <strong>${user.username}</strong>.
+                                    </div>
+                                    <div class="alert alert-warning">
+                                        <i class="bi bi-exclamation-triangle"></i> 
+                                        Connection error. Basic admin interface loaded.
+                                    </div>
+                                    <p>You have administrator privileges on this system.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `);
+            } finally {
+                // Hide loading indicator
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
+            }
+        });
+
+        // Function to attach event listeners for admin actions
+        function attachAdminEventListeners() {
+            const appContent = DevstralCommon.$('#app-content');
+            if (!appContent) return;
+
+            // Event delegation for dynamically loaded admin content
+            appContent.addEventListener('click', async (e) => {
+                const target = e.target.closest('button');
+                if (!target) return;
+
+                const action = target.dataset.action;
+                const userId = target.dataset.userId;
+
+                if (action === 'approve' && userId) {
+                    e.preventDefault();
+                    await performAdminAction('approve', userId);
+                } else if (action === 'reject' && userId) {
+                    e.preventDefault();
+                    if (confirm('Are you sure you want to reject and delete this user?')) {
+                        await performAdminAction('reject', userId);
+                    }
+                }
+            });
+        }
+
+        // Function to perform admin actions
+        async function performAdminAction(action, userId) {
+            if (!userId || typeof userId !== 'string') {
+                DevstralCommon.showFlashMessage('Invalid user ID', 'error');
+                return;
+            }
+
+            const endpoint = action === 'approve' ? '/api/admin/users/approve' : '/api/admin/users/reject';
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + DevstralCommon.getAuthToken(),
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ user_id: userId })
+                });
+
+                if (response.status === 401) {
+                    DevstralCommon.logout();
+                    return;
+                } else if (response.status === 403) {
+                    window.location.href = '/unauthorised';
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    DevstralCommon.showFlashMessage(`User ${action}d successfully`, 'success');
+                    // Reload the admin dashboard
+                    window.location.reload();
+                } else {
+                    DevstralCommon.showFlashMessage(`Failed to ${action} user: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Admin action error:', error);
+                DevstralCommon.showFlashMessage(`Failed to ${action} user: ${error.message}`, 'error');
+            }
+        }
+    </script>
 </body>
 </html>
