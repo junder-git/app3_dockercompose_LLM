@@ -1,4 +1,4 @@
--- nginx/lua/chat.lua - Single chat per user implementation
+-- nginx/lua/chat.lua - Single chat per user implementation with fixed Redis save
 local cjson = require "cjson"
 
 -- Auth verification function
@@ -115,7 +115,7 @@ local function get_user_chat_id(user_id)
     return "chat_" .. user_id
 end
 
--- Save chat to Redis (single chat per user)
+-- FIXED: Save chat to Redis without URL encoding for messages
 local function handle_save_chat()
     ngx.log(ngx.INFO, "Chat: Handling save request")
     
@@ -157,27 +157,33 @@ local function handle_save_chat()
     local user_chat_id = get_user_chat_id(payload.user_id)
     local chat_key = "chat:" .. user_chat_id
     
-    -- Prepare chat data for Redis
+    -- FIXED: Prepare chat data for Redis without URL encoding messages
     local messages_json = cjson.encode(chat_data.messages)
     local title = chat_data.title or "My Chat"
     local timestamp = ngx.utctime()
     
     ngx.log(ngx.INFO, "Chat: Saving to Redis key: " .. chat_key)
+    ngx.log(ngx.INFO, "Chat: Messages JSON length: " .. #messages_json)
     
-    -- Save chat data to Redis
-    local save_result = ngx.location.capture("/redis-internal/hmset/" .. chat_key .. 
-        "/id/" .. user_chat_id ..
-        "/user_id/" .. payload.user_id ..
-        "/title/" .. ngx.escape_uri(title) ..
-        "/messages/" .. ngx.escape_uri(messages_json) ..
-        "/created_at/" .. timestamp ..
-        "/updated_at/" .. timestamp)
+    -- FIXED: Store messages directly without URL encoding
+    -- Use Redis HSET multiple times instead of HMSET to avoid command line length issues
+    local chat_id_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/id/" .. user_chat_id)
+    local user_id_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/user_id/" .. payload.user_id)
+    local title_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/title/" .. ngx.escape_uri(title))
+    local created_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/created_at/" .. timestamp)
+    local updated_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/updated_at/" .. timestamp)
+    
+    -- Save messages separately using a different approach to handle large JSON
+    local messages_result = ngx.location.capture("/redis-internal/hset/" .. chat_key .. "/messages/" .. messages_json)
 
-    ngx.log(ngx.INFO, "Chat: Redis HMSET status: " .. save_result.status)
+    ngx.log(ngx.INFO, "Chat: Redis HSET results - id:" .. chat_id_result.status .. " user_id:" .. user_id_result.status .. " messages:" .. messages_result.status)
     
-    if save_result.status ~= 200 then
-        ngx.log(ngx.ERR, "Chat: Redis HMSET failed with status: " .. save_result.status)
-        ngx.log(ngx.ERR, "Chat: Redis HMSET response: " .. tostring(save_result.body))
+    if chat_id_result.status ~= 200 or user_id_result.status ~= 200 or messages_result.status ~= 200 then
+        ngx.log(ngx.ERR, "Chat: Redis HSET failed")
+        if messages_result.status ~= 200 then
+            ngx.log(ngx.ERR, "Chat: Messages save failed with status: " .. messages_result.status)
+            ngx.log(ngx.ERR, "Chat: Messages response: " .. tostring(messages_result.body))
+        end
         send_error_response(500, "Failed to save chat to Redis")
         return
     end
@@ -189,7 +195,7 @@ local function handle_save_chat()
     })
 end
 
--- Load user's single chat from Redis
+-- FIXED: Load user's single chat from Redis without URL decoding messages
 local function handle_load_chat()
     ngx.log(ngx.INFO, "Chat: Handling load request")
     
@@ -229,10 +235,10 @@ local function handle_load_chat()
         return
     end
 
-    -- Parse messages JSON
+    -- FIXED: Parse messages JSON without URL decoding
     local messages = {}
     if chat_data.messages then
-        local ok, parsed_messages = pcall(cjson.decode, ngx.unescape_uri(chat_data.messages))
+        local ok, parsed_messages = pcall(cjson.decode, chat_data.messages)
         if ok then
             messages = parsed_messages
         else
@@ -245,13 +251,13 @@ local function handle_load_chat()
     local response_data = {
         id = chat_data.id,
         user_id = chat_data.user_id,
-        title = ngx.unescape_uri(chat_data.title or "My Chat"),
+        title = ngx.unescape_uri(chat_data.title or "My Chat"),  -- Title still uses URL encoding
         messages = messages,
         created_at = chat_data.created_at,
         updated_at = chat_data.updated_at
     }
 
-    ngx.log(ngx.INFO, "Chat: Successfully loaded chat " .. user_chat_id)
+    ngx.log(ngx.INFO, "Chat: Successfully loaded chat " .. user_chat_id .. " with " .. #messages .. " messages")
     ngx.header.content_type = "application/json"
     ngx.say(cjson.encode(response_data))
 end

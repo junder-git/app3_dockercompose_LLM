@@ -49,5 +49,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 80
 
-# Start OpenResty directly - init_worker_by_lua handles admin user creation
+# Start OpenResty directly
 CMD ["/usr/local/openresty/bin/openresty", "-g", "daemon off;"]
