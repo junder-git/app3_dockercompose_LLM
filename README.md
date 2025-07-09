@@ -1,4 +1,6 @@
 ## Useful commands  
+
+IM pretty sure all admin endpoints and actions require admin token, also there was summin else...
 ```docker-compose up --build -d```  
   
 # Devstral AI Chat - High Performance Docker Stack  
