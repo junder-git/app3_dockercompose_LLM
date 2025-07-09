@@ -1,4 +1,4 @@
--- nginx/lua/auth.lua - Fixed authentication with proper debugging
+-- nginx/lua/auth.lua - Fixed authentication with proper Redis RESP parsing
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -60,10 +60,13 @@ local function validate_password(password)
     return true, ""
 end
 
+-- Fixed Redis RESP parser for HGETALL
 local function parse_redis_hgetall(body)
     if not body or body == "" or body == "$-1" then
         return {}
     end
+    
+    ngx.log(ngx.ERR, "Raw Redis HGETALL body: " .. body)
     
     local lines = {}
     for line in body:gmatch("[^\r\n]+") do
@@ -72,13 +75,40 @@ local function parse_redis_hgetall(body)
         end
     end
     
+    ngx.log(ngx.ERR, "Split lines count: " .. #lines)
+    
     local result = {}
-    for i = 1, #lines, 2 do
-        if lines[i] and lines[i+1] then
-            result[lines[i]] = lines[i+1]
-        end
+    local i = 1
+    
+    -- Skip the first line (array count like "*12")
+    if lines[i] and string.match(lines[i], "^%*%d+$") then
+        i = i + 1
     end
     
+    -- Parse key-value pairs, skipping Redis RESP format markers
+    while i <= #lines do
+        -- Skip length indicators (like "$2", "$8", etc.)
+        if lines[i] and string.match(lines[i], "^%$%d+$") then
+            i = i + 1
+            if lines[i] then
+                local key = lines[i]
+                i = i + 1
+                
+                -- Skip next length indicator
+                if lines[i] and string.match(lines[i], "^%$%d+$") then
+                    i = i + 1
+                    if lines[i] then
+                        local value = lines[i]
+                        result[key] = value
+                        ngx.log(ngx.ERR, "Parsed: " .. key .. " = " .. value)
+                    end
+                end
+            end
+        end
+        i = i + 1
+    end
+    
+    ngx.log(ngx.ERR, "Final parsed result: " .. cjson.encode(result))
     return result
 end
 
