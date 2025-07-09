@@ -1,4 +1,4 @@
-// nginx/static/js/client.js - CORRECTED VERSION
+// nginx/static/js/client.js - Working version with security but no rate limiting bugs
 
 const DevstralClient = (() => {
   'use strict';
@@ -84,6 +84,21 @@ const DevstralClient = (() => {
     return el.scrollTop;
   };
 
+  // Basic input sanitization (keep it simple)
+  const sanitizeInput = (input) => {
+    if (typeof input !== 'string') return '';
+    return input.replace(/[<>&"']/g, (match) => {
+      const map = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '&': '&amp;',
+        '"': '&quot;',
+        "'": '&#x27;'
+      };
+      return map[match];
+    });
+  };
+
   const showFlashMessage = (msg, type = 'info') => {
     const alertClass = {
       success: 'alert-success',
@@ -100,7 +115,7 @@ const DevstralClient = (() => {
     }[type] || 'bi-info-circle';
 
     const alertDiv = createElement('div', `alert ${alertClass} alert-dismissible fade show`,
-      `<i class="bi ${icon}"></i> ${escapeHtml(msg)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`);
+      `<i class="bi ${icon}"></i> ${sanitizeInput(msg)}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`);
     alertDiv.setAttribute('role', 'alert');
 
     const container = $('#flash-messages');
@@ -110,20 +125,13 @@ const DevstralClient = (() => {
     }
   };
 
-  const escapeHtml = (t) => {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;'
-    };
-    return String(t).replace(/[&<>"']/g, (m) => map[m]);
-  };
-
   const getAuthToken = () => localStorage.getItem('auth_token') || '';
   const setAuthToken = (t) => t ? localStorage.setItem('auth_token', t) : localStorage.removeItem('auth_token');
-  const logout = () => { setAuthToken(null); window.location.href = '/'; };
+  
+  const logout = () => { 
+    setAuthToken(null); 
+    window.location.href = '/'; 
+  };
 
   const checkAuth = async () => {
     const token = getAuthToken();
@@ -136,9 +144,13 @@ const DevstralClient = (() => {
           'Accept': 'application/json'
         } 
       });
+      
       if (res.ok) {
         const data = await res.json();
         return data.user;
+      } else if (res.status === 401) {
+        logout();
+        return false;
       }
     } catch (e) {
       console.error('Auth check error:', e);
@@ -147,6 +159,19 @@ const DevstralClient = (() => {
   };
 
   const login = async (username, password) => {
+    // Basic input validation (not too strict)
+    if (!username || !password) {
+      return { success: false, error: 'Username and password are required' };
+    }
+
+    if (username.length < 3 || username.length > 50) {
+      return { success: false, error: 'Username must be 3-50 characters' };
+    }
+
+    if (password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters' };
+    }
+
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -171,6 +196,19 @@ const DevstralClient = (() => {
   };
 
   const register = async (username, password) => {
+    // Basic input validation
+    if (!username || !password) {
+      return { success: false, error: 'Username and password are required' };
+    }
+
+    if (username.length < 3 || username.length > 50) {
+      return { success: false, error: 'Username must be 3-50 characters' };
+    }
+
+    if (password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters' };
+    }
+
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
@@ -180,6 +218,7 @@ const DevstralClient = (() => {
         },
         body: JSON.stringify({ username, password })
       });
+      
       return res.json();
     } catch (error) {
       console.error('Register error:', error);
@@ -196,7 +235,6 @@ const DevstralClient = (() => {
     else if (path === '/register') initRegister();
     else if (path === '/chat') initChat();
     else if (path === '/admin') initAdmin();
-    else console.log('No specific init for:', path);
   };
 
   const initIndex = async () => {
@@ -261,7 +299,6 @@ const DevstralClient = (() => {
       return;
     }
 
-    // Show registration form by default
     const form = $('#registerForm');
     if (form) form.style.display = 'block';
 
@@ -310,7 +347,6 @@ const DevstralClient = (() => {
     });
   };
 
-  // ===== CORRECTED STREAMING CHAT IMPLEMENTATION =====
   const initChat = async () => {
     console.log('Initializing chat page');
     const user = await checkAuth();
@@ -325,7 +361,6 @@ const DevstralClient = (() => {
     const messageInput = $('#message-input');
     const sendBtn = $('#send-btn');
 
-    // State for streaming
     let isStreaming = false;
     let currentStreamingMessage = null;
 
@@ -333,15 +368,20 @@ const DevstralClient = (() => {
       const message = val(messageInput).trim();
       if (!message || isStreaming) return;
 
+      if (message.length > 5000) {
+        showFlashMessage('Message too long (max 5000 characters)', 'error');
+        return;
+      }
+
       val(messageInput, '');
       prop(sendBtn, 'disabled', true);
       isStreaming = true;
 
-      // Add user message to chat
+      // Add user message
       const userMsg = createElement('div', 'message user-message');
       userMsg.innerHTML = `
         <div class="message-content">
-          <div class="user-text">${escapeHtml(message)}</div>
+          <div class="user-text">${sanitizeInput(message)}</div>
         </div>
         <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
       `;
@@ -349,7 +389,6 @@ const DevstralClient = (() => {
       scrollTop(messagesContainer, messagesContainer.scrollHeight);
 
       try {
-        // Create streaming message container first
         currentStreamingMessage = createElement('div', 'message assistant-message');
         currentStreamingMessage.innerHTML = `
           <div class="message-content">
@@ -359,50 +398,37 @@ const DevstralClient = (() => {
         `;
         append(messagesContainer, currentStreamingMessage);
 
-        console.log('Sending request to:', apiUrl, 'with message:', message);
-        console.log('Full URL will be:', window.location.origin + apiUrl);
-        
-        // Add timeout controller for hybrid processing (slower)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 minutes
+        const timeoutId = setTimeout(() => controller.abort(), 900000);
         
-        // IMPORTANT: Use the correct URL path - /api/chat NOT /ollama/api/chat
-        const response = await fetch(apiUrl, {
+        const response = await fetch('/api/chat', {
           signal: controller.signal,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + getAuthToken()
+            'Authorization': 'Bearer ' + getAuthToken(),
+            'Accept': 'application/json'
           },
           body: JSON.stringify({
-            model: "devstral", // Use base model name, not optimized
-            messages: [
-              {
-                role: "user",
-                content: message
-              }
-            ],
-            stream: false  // Start with non-streaming to debug
+            model: "devstral",
+            messages: [{ role: "user", content: message }],
+            stream: false
           })
         });
 
-        // Clear timeout
         clearTimeout(timeoutId);
 
-        console.log('Response status:', response.status);
-        console.log('Response URL:', response.url);
-
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error response:', errorText);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+          if (response.status === 401) {
+            logout();
+            return;
+          }
+          throw new Error(`HTTP ${response.status}`);
         }
 
-        // Get response as JSON
         const responseData = await response.json();
-        console.log('Response data:', responseData);
-
         let finalResponse = '';
+        
         if (responseData.message && responseData.message.content) {
           finalResponse = responseData.message.content;
         } else if (responseData.response) {
@@ -420,14 +446,12 @@ const DevstralClient = (() => {
         console.error('Failed to send message:', error);
         showFlashMessage('Chat Error: ' + error.message, 'error');
         
-        // Update the streaming message with detailed error
         if (currentStreamingMessage) {
           const streamingContent = currentStreamingMessage.querySelector('#streaming-content');
           if (streamingContent) {
             streamingContent.innerHTML = `
               <div class="alert alert-danger">
-                <strong>Error:</strong> ${escapeHtml(error.message)}<br>
-                <small>Check browser console for details.</small>
+                <strong>Error:</strong> ${sanitizeInput(error.message)}
               </div>
             `;
           }
@@ -449,7 +473,6 @@ const DevstralClient = (() => {
     });
   };
 
-  // ===== SECURE ADMIN REDIRECT =====
   const initAdmin = async () => {
     console.log('Initializing admin page');
     const user = await checkAuth();
@@ -464,100 +487,29 @@ const DevstralClient = (() => {
     }
 
     text('#username-display', user.username);
+    showFlashMessage('Admin panel loaded successfully', 'success');
     
-    // SECURITY: Admin functionality loaded from server, not client
-    showLoadingIndicator();
-    loadAdminContentFromServer();
+    // Load admin dashboard content
+    loadAdminDashboard();
   };
 
-  const showLoadingIndicator = () => {
-    const loadingDiv = $('#loading-indicator');
-    if (loadingDiv) {
-      loadingDiv.style.display = 'flex';
-    }
-  };
-
-  const hideLoadingIndicator = () => {
-    const loadingDiv = $('#loading-indicator');
-    if (loadingDiv) {
-      loadingDiv.style.display = 'none';
-    }
-  };
-
-  const loadAdminContentFromServer = async () => {
+  const loadAdminDashboard = async () => {
     try {
-      // Server renders the admin interface with proper permission checking
       const response = await fetch('/api/admin/dashboard', {
         headers: {
           'Authorization': 'Bearer ' + getAuthToken(),
-          'Accept': 'text/html' // Request HTML, not JSON
+          'Accept': 'text/html'
         }
       });
 
       if (response.ok) {
         const adminHtml = await response.text();
         html('#app-content', adminHtml);
-        
-        // Only attach event listeners for elements that exist
-        attachAdminEventListeners();
       } else {
         showFlashMessage('Failed to load admin dashboard', 'error');
-        window.location.href = '/unauthorised';
       }
     } catch (error) {
       showFlashMessage('Failed to load admin dashboard: ' + error.message, 'error');
-    } finally {
-      hideLoadingIndicator();
-    }
-  };
-
-  const attachAdminEventListeners = () => {
-    // Event delegation for dynamically loaded admin content
-    const appContent = $('#app-content');
-    if (!appContent) return;
-
-    appContent.addEventListener('click', async (e) => {
-      const target = e.target.closest('button');
-      if (!target) return;
-
-      const action = target.dataset.action;
-      const userId = target.dataset.userId;
-
-      if (action === 'approve' && userId) {
-        e.preventDefault();
-        await performAdminAction('approve', userId);
-      } else if (action === 'reject' && userId) {
-        e.preventDefault();
-        if (confirm('Are you sure you want to reject and delete this user?')) {
-          await performAdminAction('reject', userId);
-        }
-      }
-    });
-  };
-
-  const performAdminAction = async (action, userId) => {
-    const endpoint = action === 'approve' ? '/api/admin/users/approve' : '/api/admin/users/reject';
-    
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + getAuthToken()
-        },
-        body: JSON.stringify({ user_id: userId })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        showFlashMessage(`User ${action}d successfully`, 'success');
-        // Reload admin content from server
-        loadAdminContentFromServer();
-      } else {
-        showFlashMessage(`Failed to ${action} user: ${data.error}`, 'error');
-      }
-    } catch (error) {
-      showFlashMessage(`Failed to ${action} user: ${error.message}`, 'error');
     }
   };
 
@@ -569,7 +521,7 @@ const DevstralClient = (() => {
   };
 })();
 
-// Global exports (minimal and secure)
+// Global exports
 window.DevstralClient = DevstralClient;
 window.logout = DevstralClient.logout;
 

@@ -1,4 +1,4 @@
--- nginx/lua/auth.lua - Fixed authentication with proper Redis RESP parsing
+-- nginx/lua/auth.lua - Fixed version with corrected regex pattern
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -8,33 +8,25 @@ local MIN_PASSWORD_LENGTH = tonumber(os.getenv("MIN_PASSWORD_LENGTH")) or 6
 local MAX_PASSWORD_LENGTH = tonumber(os.getenv("MAX_PASSWORD_LENGTH")) or 128
 local SESSION_LIFETIME_DAYS = tonumber(os.getenv("SESSION_LIFETIME_DAYS")) or 7
 
--- Helper functions
-local function generate_token(user)
-    local payload = {
-        user_id = user.id,
-        username = user.username,
-        is_admin = user.is_admin,
-        exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60)
-    }
-    return ngx.encode_base64(cjson.encode(payload))
-end
-
-local function verify_token(token)
-    local ok, payload = pcall(function()
-        return cjson.decode(ngx.decode_base64(token))
-    end)
-    
-    if not ok or not payload.exp or payload.exp < ngx.time() then
-        return nil
+-- FIXED: Corrected sanitize_input function with proper regex pattern
+local function sanitize_input(input)
+    if not input or type(input) ~= "string" then
+        return ""
     end
-    
-    return payload
+    -- Fixed regex pattern - properly escaped brackets
+    local sanitized = string.gsub(input, "[<>&\"']", "")
+    -- Remove null bytes and control characters
+    sanitized = string.gsub(sanitized, "[\0-\31\127-\255]", "")
+    return sanitized
 end
 
 local function validate_username(username)
-    if not username or username == "" then
-        return false, "Username is required"
+    if not username or type(username) ~= "string" then
+        return false, "Username must be a string"
     end
+    
+    username = sanitize_input(username)
+    
     if #username < MIN_USERNAME_LENGTH then
         return false, "Username must be at least " .. MIN_USERNAME_LENGTH .. " characters"
     end
@@ -44,12 +36,12 @@ local function validate_username(username)
     if not string.match(username, "^[a-zA-Z0-9_-]+$") then
         return false, "Username can only contain letters, numbers, underscore, and dash"
     end
-    return true, ""
+    return true, username
 end
 
 local function validate_password(password)
-    if not password or password == "" then
-        return false, "Password is required"
+    if not password or type(password) ~= "string" then
+        return false, "Password must be a string"
     end
     if #password < MIN_PASSWORD_LENGTH then
         return false, "Password must be at least " .. MIN_PASSWORD_LENGTH .. " characters"
@@ -57,16 +49,51 @@ local function validate_password(password)
     if #password > MAX_PASSWORD_LENGTH then
         return false, "Password must be less than " .. MAX_PASSWORD_LENGTH .. " characters"
     end
-    return true, ""
+    return true, password
 end
 
--- Fixed Redis RESP parser for HGETALL
+-- Enhanced token generation
+local function generate_token(user)
+    local payload = {
+        user_id = user.id,
+        username = user.username,
+        is_admin = user.is_admin,
+        exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60),
+        iat = ngx.time()
+    }
+    return ngx.encode_base64(cjson.encode(payload))
+end
+
+-- Enhanced token verification
+local function verify_token(token)
+    if not token or type(token) ~= "string" then
+        return nil, "Invalid token format"
+    end
+    
+    local ok, payload = pcall(function()
+        return cjson.decode(ngx.decode_base64(token))
+    end)
+    
+    if not ok then
+        return nil, "Invalid token encoding"
+    end
+    
+    if not payload.exp or not payload.iat then
+        return nil, "Invalid token structure"
+    end
+    
+    if payload.exp < ngx.time() then
+        return nil, "Token expired"
+    end
+    
+    return payload, nil
+end
+
+-- FIXED: Simplified Redis RESP parser (removed debug logging to reduce noise)
 local function parse_redis_hgetall(body)
     if not body or body == "" or body == "$-1" then
         return {}
     end
-    
-    ngx.log(ngx.ERR, "Raw Redis HGETALL body: " .. body)
     
     local lines = {}
     for line in body:gmatch("[^\r\n]+") do
@@ -75,32 +102,27 @@ local function parse_redis_hgetall(body)
         end
     end
     
-    ngx.log(ngx.ERR, "Split lines count: " .. #lines)
-    
     local result = {}
     local i = 1
     
-    -- Skip the first line (array count like "*12")
+    -- Skip array count
     if lines[i] and string.match(lines[i], "^%*%d+$") then
         i = i + 1
     end
     
-    -- Parse key-value pairs, skipping Redis RESP format markers
+    -- Parse key-value pairs
     while i <= #lines do
-        -- Skip length indicators (like "$2", "$8", etc.)
         if lines[i] and string.match(lines[i], "^%$%d+$") then
             i = i + 1
             if lines[i] then
                 local key = lines[i]
                 i = i + 1
                 
-                -- Skip next length indicator
                 if lines[i] and string.match(lines[i], "^%$%d+$") then
                     i = i + 1
                     if lines[i] then
                         local value = lines[i]
                         result[key] = value
-                        ngx.log(ngx.ERR, "Parsed: " .. key .. " = " .. value)
                     end
                 end
             end
@@ -108,14 +130,52 @@ local function parse_redis_hgetall(body)
         i = i + 1
     end
     
-    ngx.log(ngx.ERR, "Final parsed result: " .. cjson.encode(result))
     return result
+end
+
+-- FIXED: Enhanced error response with proper error handling
+local function send_error_response(status, message)
+    ngx.status = status
+    ngx.header.content_type = "application/json"
+    ngx.header["X-Content-Type-Options"] = "nosniff"
+    
+    local response = {
+        error = tostring(message), -- Convert to string to avoid sanitization issues
+        timestamp = ngx.utctime()
+    }
+    
+    ngx.say(cjson.encode(response))
+    ngx.log(ngx.WARN, "Auth error: " .. tostring(message) .. " from " .. ngx.var.remote_addr)
+end
+
+-- Enhanced success response
+local function send_success_response(data)
+    ngx.header.content_type = "application/json"
+    ngx.header["X-Content-Type-Options"] = "nosniff"
+    
+    local response = {
+        success = true,
+        timestamp = ngx.utctime()
+    }
+    
+    -- Merge data into response
+    for k, v in pairs(data) do
+        response[k] = v
+    end
+    
+    ngx.say(cjson.encode(response))
 end
 
 local function handle_login()
     if ngx.var.request_method ~= "POST" then
-        ngx.status = 405
-        ngx.say('{"error": "Method not allowed"}')
+        send_error_response(405, "Method not allowed")
+        return
+    end
+
+    -- Check content type
+    local content_type = ngx.var.content_type
+    if not content_type or not string.match(content_type, "application/json") then
+        send_error_response(400, "Invalid content type")
         return
     end
 
@@ -123,76 +183,63 @@ local function handle_login()
     local body = ngx.req.get_body_data()
     
     if not body then
-        ngx.status = 400
-        ngx.say('{"error": "Request body required"}')
+        send_error_response(400, "Request body required")
+        return
+    end
+
+    -- Limit request body size
+    if #body > 1024 then
+        send_error_response(400, "Request body too large")
         return
     end
 
     local ok, data = pcall(cjson.decode, body)
     if not ok then
-        ngx.status = 400
-        ngx.say('{"error": "Invalid JSON"}')
+        send_error_response(400, "Invalid JSON")
         return
     end
 
-    local username = data.username
-    local password = data.password
-
-    -- Debug logging
-    ngx.log(ngx.ERR, "Login attempt for username: " .. (username or "nil"))
-
-    -- Validate input
-    local valid, err = validate_username(username)
+    -- Input validation
+    local valid, username = validate_username(data.username)
     if not valid then
-        ngx.status = 400
-        ngx.say(cjson.encode({error = err}))
+        send_error_response(400, username)
         return
     end
 
-    valid, err = validate_password(password)
+    valid, password = validate_password(data.password)
     if not valid then
-        ngx.status = 400
-        ngx.say(cjson.encode({error = err}))
+        send_error_response(400, password)
         return
     end
 
-    -- Get user from Redis using hgetall
+    -- Get user from Redis
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. username)
-    ngx.log(ngx.ERR, "Redis hgetall response status: " .. res.status)
-    ngx.log(ngx.ERR, "Redis hgetall response body: " .. (res.body or "nil"))
     
     if res.status ~= 200 then
-        ngx.status = 401
-        ngx.say('{"error": "Invalid credentials"}')
+        ngx.log(ngx.ERR, "Redis error: " .. res.status)
+        send_error_response(401, "Invalid credentials")
         return
     end
 
-    -- Parse Redis response
     local user = parse_redis_hgetall(res.body)
     
-    ngx.log(ngx.ERR, "Parsed user data: " .. cjson.encode(user))
-
     if not user.username or user.username ~= username then
-        ngx.log(ngx.ERR, "User not found in Redis or username mismatch")
-        ngx.status = 401
-        ngx.say('{"error": "Invalid credentials"}')
+        ngx.log(ngx.WARN, "Login attempt for non-existent user: " .. username)
+        send_error_response(401, "Invalid credentials")
         return
     end
 
-    -- Check password (direct comparison for now - should use proper hashing in production)
-    ngx.log(ngx.ERR, "Comparing passwords - provided: " .. password .. ", stored: " .. (user.password_hash or "nil"))
+    -- Password comparison
     if user.password_hash ~= password then
-        ngx.log(ngx.ERR, "Password mismatch")
-        ngx.status = 401
-        ngx.say('{"error": "Invalid credentials"}')
+        ngx.log(ngx.WARN, "Failed login attempt for user: " .. username)
+        send_error_response(401, "Invalid credentials")
         return
     end
 
-    -- Check if approved
+    -- Check if user is approved
     if user.is_approved ~= "true" then
-        ngx.log(ngx.ERR, "User not approved: " .. (user.is_approved or "nil"))
-        ngx.status = 403
-        ngx.say('{"error": "Account pending approval"}')
+        ngx.log(ngx.INFO, "Login attempt for unapproved user: " .. username)
+        send_error_response(403, "Account pending approval")
         return
     end
 
@@ -203,22 +250,28 @@ local function handle_login()
         is_admin = user.is_admin == "true"
     })
 
-    ngx.log(ngx.ERR, "Login successful for user: " .. username)
-    ngx.say(cjson.encode({
-        success = true,
+    ngx.log(ngx.INFO, "Successful login for user: " .. username)
+    
+    send_success_response({
         token = token,
         user = {
             id = user.id,
             username = user.username,
             is_admin = user.is_admin == "true"
         }
-    }))
+    })
 end
 
 local function handle_register()
     if ngx.var.request_method ~= "POST" then
-        ngx.status = 405
-        ngx.say('{"error": "Method not allowed"}')
+        send_error_response(405, "Method not allowed")
+        return
+    end
+
+    -- Check content type
+    local content_type = ngx.var.content_type
+    if not content_type or not string.match(content_type, "application/json") then
+        send_error_response(400, "Invalid content type")
         return
     end
 
@@ -226,119 +279,121 @@ local function handle_register()
     local body = ngx.req.get_body_data()
     
     if not body then
-        ngx.status = 400
-        ngx.say('{"error": "Request body required"}')
+        send_error_response(400, "Request body required")
+        return
+    end
+
+    -- Limit request body size
+    if #body > 1024 then
+        send_error_response(400, "Request body too large")
         return
     end
 
     local ok, data = pcall(cjson.decode, body)
     if not ok then
-        ngx.status = 400
-        ngx.say('{"error": "Invalid JSON"}')
+        send_error_response(400, "Invalid JSON")
         return
     end
 
-    local username = data.username
-    local password = data.password
-
-    -- Validate input
-    local valid, err = validate_username(username)
+    -- Input validation
+    local valid, username = validate_username(data.username)
     if not valid then
-        ngx.status = 400
-        ngx.say(cjson.encode({error = err}))
+        send_error_response(400, username)
         return
     end
 
-    valid, err = validate_password(password)
+    valid, password = validate_password(data.password)
     if not valid then
-        ngx.status = 400
-        ngx.say(cjson.encode({error = err}))
+        send_error_response(400, password)
         return
     end
 
-    -- Check if user exists
+    -- Check if user already exists
     local res = ngx.location.capture("/redis-internal/exists/user:" .. username)
     if res.status == 200 and res.body:match("1") then
-        ngx.status = 409
-        ngx.say('{"error": "Username already exists"}')
+        send_error_response(409, "Username already exists")
         return
     end
 
-    -- Create user
-    local user_id = tostring(ngx.time() * 1000)
+    -- Create user with secure defaults
+    local user_id = tostring(ngx.time() * 1000 + math.random(1000, 9999))
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     
-    -- Use hmset with all fields at once
     local res = ngx.location.capture("/redis-internal/hmset/user:" .. username .. 
         "/id/" .. user_id ..
         "/username/" .. username ..
         "/password_hash/" .. password ..
         "/is_admin/false" ..
         "/is_approved/false" ..
-        "/created_at/" .. timestamp)
+        "/created_at/" .. timestamp ..
+        "/last_login/" .. timestamp)
     
     if res.status ~= 200 then
-        ngx.status = 500
-        ngx.say('{"error": "Failed to create user"}')
+        ngx.log(ngx.ERR, "Failed to create user: " .. username)
+        send_error_response(500, "Failed to create user")
         return
     end
 
+    ngx.log(ngx.INFO, "User registration successful: " .. username)
+    
     ngx.status = 201
-    ngx.say(cjson.encode({
-        success = true,
+    send_success_response({
         message = "User created successfully. Pending admin approval.",
         user = {
             id = user_id,
             username = username,
             is_approved = false
         }
-    }))
+    })
 end
 
 local function handle_verify()
     local auth_header = ngx.var.http_authorization
     if not auth_header or not string.match(auth_header, "^Bearer ") then
-        ngx.status = 401
-        ngx.say('{"error": "No token provided"}')
+        send_error_response(401, "No token provided")
         return
     end
 
     local token = string.sub(auth_header, 8)
-    local payload = verify_token(token)
+    local payload, err = verify_token(token)
     
     if not payload then
-        ngx.status = 401
-        ngx.say('{"error": "Invalid or expired token"}')
+        ngx.log(ngx.WARN, "Token verification failed: " .. (err or "unknown error"))
+        send_error_response(401, "Invalid or expired token")
         return
     end
 
-    -- Get user to verify still exists and approved
+    -- Verify user still exists and is approved
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. payload.username)
     if res.status ~= 200 then
-        ngx.status = 401
-        ngx.say('{"error": "User not found"}')
+        send_error_response(401, "User not found")
         return
     end
 
     local user = parse_redis_hgetall(res.body)
-    if not user.username then
-        ngx.status = 401
-        ngx.say('{"error": "User not found"}')
+    if not user.username or user.is_approved ~= "true" then
+        send_error_response(401, "User not found or not approved")
         return
     end
 
-    ngx.say(cjson.encode({
-        success = true,
+    -- Update last activity (optional)
+    ngx.location.capture("/redis-internal/hset/user:" .. payload.username .. "/last_activity/" .. ngx.time())
+
+    send_success_response({
         user = {
             id = payload.user_id,
             username = payload.username,
             is_admin = payload.is_admin
         }
-    }))
+    })
 end
 
--- Route based on URI
+-- Route handling with security logging
 local uri = ngx.var.uri
+local method = ngx.var.request_method
+
+ngx.log(ngx.DEBUG, "Auth request: " .. method .. " " .. uri .. " from " .. ngx.var.remote_addr)
+
 if uri == "/api/auth/login" then
     handle_login()
 elseif uri == "/api/auth/register" then
@@ -346,6 +401,5 @@ elseif uri == "/api/auth/register" then
 elseif uri == "/api/auth/verify" then
     handle_verify()
 else
-    ngx.status = 404
-    ngx.say('{"error": "Auth endpoint not found"}')
+    send_error_response(404, "Auth endpoint not found")
 end

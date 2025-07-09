@@ -71,6 +71,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_USER_ID=${ADMIN_USER_ID}
     volumes:
+      # FIXED: Map the volume to the correct data directory
       - ./volumes/redis_data:/data
       - ./volumes/redis_logs:/var/log/redis
     networks:

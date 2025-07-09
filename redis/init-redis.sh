@@ -1,5 +1,5 @@
 #!/bin/bash
-# redis/init-redis.sh - Start Redis and initialize admin user ONLY ONCE
+# redis/init-redis.sh - Fixed initialization with proper persistence handling
 
 set -e
 
@@ -22,19 +22,17 @@ until redis-cli ping > /dev/null 2>&1; do
     sleep 1
 done
 
-# Give Redis extra time to load AOF/RDB data from volume
-sleep 3
+# Give Redis extra time to load AOF/RDB data from volume (increased for safety)
+sleep 5
 
 echo "✅ Redis is ready"
 
-# Create a flag to track if we've already initialized (stored in Redis itself)
-INIT_FLAG_KEY="devstral:initialized"
+# Use a file-based flag in the persistent volume instead of Redis key
+INIT_FLAG_FILE="/data/devstral_initialized"
 
 # Check if we've already initialized this Redis instance
-INIT_STATUS=$(redis-cli GET "$INIT_FLAG_KEY" 2>/dev/null || echo "")
-
-if [ "$INIT_STATUS" = "true" ]; then
-    echo "ℹ️  Redis already initialized (flag found), skipping admin user creation"
+if [ -f "$INIT_FLAG_FILE" ]; then
+    echo "ℹ️  Redis already initialized (flag file found), skipping admin user creation"
     echo "ℹ️  Admin user should already exist from previous initialization"
     
     # Verify admin user still exists
@@ -60,8 +58,8 @@ else
     if redis-cli EXISTS "user:$ADMIN_USERNAME" | grep -q "1"; then
         echo "ℹ️  Admin user '$ADMIN_USERNAME' already exists from previous data"
         # Mark as initialized
-        redis-cli SET "$INIT_FLAG_KEY" "true"
-        echo "✅ Initialization flag set"
+        touch "$INIT_FLAG_FILE"
+        echo "✅ Initialization flag file created"
     else
         # Create timestamp
         TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -83,9 +81,9 @@ else
             echo "   Username: $ADMIN_USERNAME"
             echo "   Password: $ADMIN_PASSWORD"
             
-            # Mark as initialized
-            redis-cli SET "$INIT_FLAG_KEY" "true"
-            echo "✅ Initialization flag set"
+            # Mark as initialized with file flag
+            touch "$INIT_FLAG_FILE"
+            echo "✅ Initialization flag file created"
         else
             echo "❌ Failed to create admin user"
             exit 1
