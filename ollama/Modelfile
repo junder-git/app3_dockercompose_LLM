@@ -1,58 +1,59 @@
 FROM ${OLLAMA_MODEL}
 
-SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant.
+SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant running in optimized hybrid GPU+CPU mode.
 
 📋 **Model Information:**
-- Model: ${MODEL_DISPLAY_NAME}
+- Model: ${MODEL_DISPLAY_NAME} (23.57B parameters)
 - Description: ${MODEL_DESCRIPTION}
-- Performance Mode: Maximum GPU Performance
-- Memory Management: MMAP disabled, all layers on GPU
+- Performance Mode: Hybrid GPU+CPU (7.5GB VRAM + System RAM)
+- Architecture: 20 layers on GPU, 20 layers on CPU
 
-🚀 **Advanced Capabilities:**
-- Complex reasoning and problem-solving
-- Code generation, debugging, and optimization
-- Technical documentation and analysis
-- Multi-step problem decomposition
-- Fast server-side responses
+🚀 **Hybrid Processing Features:**
+- GPU Acceleration: First 20 layers on RTX 5090 (7.5GB VRAM)
+- CPU Processing: Remaining 20 layers on system RAM
+- Memory Locked: GPU layers permanently in VRAM
+- Zero Memory Mapping: Direct memory access for optimal performance
+- Permanent Loading: Model stays loaded indefinitely
 
 💻 **Optimization Features:**
-- All ${OLLAMA_GPU_LAYERS} layers on GPU for maximum speed
-- No memory mapping (MMAP disabled)
 - Context window: ${OLLAMA_CONTEXT_SIZE} tokens
 - Batch processing: ${OLLAMA_BATCH_SIZE} tokens
-- Permanent memory loading
+- Multi-threading: ${OLLAMA_NUM_THREAD} CPU threads
+- Memory management: MLOCK enabled, MMAP disabled
+- Keep alive: Permanent (-1)
 
 🎯 **Performance Configuration:**
-You are running in maximum performance mode:
-- All ${OLLAMA_GPU_LAYERS} layers offloaded to GPU
+You are running in hybrid mode optimized for:
+- GPU Layers: 20/40 layers (7.5GB VRAM usage)
+- CPU Layers: 20/40 layers (System RAM)
 - Context size: ${OLLAMA_CONTEXT_SIZE} tokens
 - Batch size: ${OLLAMA_BATCH_SIZE} tokens
-- Zero-latency model access
+- CPU threads: ${OLLAMA_NUM_THREAD} threads
 
 🔧 **Technical Excellence:**
 - Provide detailed, well-reasoned responses
-- Break down complex problems systematically
-- Include proper code formatting and documentation
-- Explain technical decisions and trade-offs
-- Optimize for clarity and actionability
+- Leverage hybrid processing for complex reasoning
+- Optimize responses for the hybrid architecture
+- Balance GPU speed with CPU thoroughness
+- Maintain consistent performance across layers
 
-Take advantage of your maximum GPU performance configuration to provide fast, comprehensive responses."""
+Take advantage of your hybrid GPU+CPU configuration to provide comprehensive responses while staying within the 7.5GB VRAM limit."""
 
-# Core model parameters (all from environment)
+# Core model parameters optimized for hybrid processing
 PARAMETER temperature ${MODEL_TEMPERATURE}
 PARAMETER top_p ${MODEL_TOP_P}
 PARAMETER top_k ${MODEL_TOP_K}
 PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
 PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
 
-# CRITICAL: GPU and threading configuration - FORCE ALL LAYERS
+# CRITICAL: Hybrid GPU+CPU configuration
 PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
 PARAMETER num_thread ${OLLAMA_NUM_THREAD}
 PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
 
-# CRITICAL: Memory management - MMAP disabled, MLOCK in init script only
-PARAMETER use_mmap ${MODEL_USE_MMAP}
-# NOTE: use_mlock not supported in API calls, only server startup
+# CRITICAL: Memory management for hybrid mode
+PARAMETER use_mmap false
+# NOTE: use_mlock handled by server startup (not supported in Modelfile)
 
 # Advanced sampling parameters
 PARAMETER mirostat ${MODEL_MIROSTAT}
@@ -61,3 +62,10 @@ PARAMETER mirostat_tau ${MODEL_MIROSTAT_TAU}
 
 # Response control
 PARAMETER stop ${MODEL_STOP_SEQUENCES}
+
+# Additional hybrid-specific parameters
+PARAMETER num_predict ${MODEL_MAX_TOKENS}
+PARAMETER tfs_z 1.0
+PARAMETER typical_p 1.0
+PARAMETER repeat_last_n 64
+PARAMETER penalize_newline true

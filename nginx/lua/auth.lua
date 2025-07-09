@@ -1,4 +1,4 @@
--- nginx/lua/auth.lua - Safe version with no regex pattern issues
+-- nginx/lua/auth.lua - With pending user limit check
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -7,8 +7,9 @@ local MAX_USERNAME_LENGTH = tonumber(os.getenv("MAX_USERNAME_LENGTH")) or 50
 local MIN_PASSWORD_LENGTH = tonumber(os.getenv("MIN_PASSWORD_LENGTH")) or 6
 local MAX_PASSWORD_LENGTH = tonumber(os.getenv("MAX_PASSWORD_LENGTH")) or 128
 local SESSION_LIFETIME_DAYS = tonumber(os.getenv("SESSION_LIFETIME_DAYS")) or 7
+local MAX_PENDING_USERS = tonumber(os.getenv("MAX_PENDING_USERS")) or 2
 
--- SAFE: Simple sanitization without regex patterns
+-- Safe sanitization without regex patterns
 local function sanitize_input(input)
     if not input or type(input) ~= "string" then
         return ""
@@ -107,7 +108,7 @@ local function verify_token(token)
     return payload, nil
 end
 
--- Simplified Redis RESP parser (no debug logging)
+-- Redis RESP parser
 local function parse_redis_hgetall(body)
     if not body or body == "" or body == "$-1" then
         return {}
@@ -151,7 +152,57 @@ local function parse_redis_hgetall(body)
     return result
 end
 
--- SAFE: Error response without sanitization
+-- NEW: Function to count pending users
+local function count_pending_users()
+    -- Get all user keys from Redis
+    local res = ngx.location.capture("/redis-internal/keys/user:*")
+    if res.status ~= 200 then
+        ngx.log(ngx.ERR, "Failed to get user keys from Redis")
+        return 0
+    end
+    
+    -- Parse Redis KEYS response
+    local lines = {}
+    for line in res.body:gmatch("[^\r\n]+") do
+        if line and line ~= "" then
+            table.insert(lines, line)
+        end
+    end
+    
+    local pending_count = 0
+    local i = 1
+    
+    -- Skip array count
+    if lines[i] and string.match(lines[i], "^%*%d+$") then
+        i = i + 1
+    end
+    
+    -- Check each user key
+    while i <= #lines do
+        if lines[i] and string.match(lines[i], "^%$%d+$") then
+            i = i + 1
+            if lines[i] then
+                local user_key = lines[i]
+                
+                -- Get user data
+                local user_res = ngx.location.capture("/redis-internal/hgetall/" .. user_key)
+                if user_res.status == 200 then
+                    local user_data = parse_redis_hgetall(user_res.body)
+                    
+                    -- Check if user is pending (not approved and not admin)
+                    if user_data.is_approved == "false" and user_data.is_admin ~= "true" then
+                        pending_count = pending_count + 1
+                    end
+                end
+            end
+        end
+        i = i + 1
+    end
+    
+    return pending_count
+end
+
+-- Error response
 local function send_error_response(status, message)
     ngx.status = status
     ngx.header.content_type = "application/json"
@@ -324,6 +375,15 @@ local function handle_register()
         return
     end
 
+    -- NEW: Check pending user limit
+    local pending_count = count_pending_users()
+    ngx.log(ngx.INFO, "Current pending users: " .. pending_count .. ", Max allowed: " .. MAX_PENDING_USERS)
+    
+    if pending_count >= MAX_PENDING_USERS then
+        send_error_response(429, "Registration temporarily unavailable - too many pending approvals (" .. pending_count .. "/" .. MAX_PENDING_USERS .. ")")
+        return
+    end
+
     -- Create user
     local user_id = tostring(ngx.time() * 1000 + math.random(1000, 9999))
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -338,19 +398,24 @@ local function handle_register()
         "/last_login/" .. timestamp)
     
     if res.status ~= 200 then
+        ngx.log(ngx.ERR, "Failed to create user: " .. username)
         send_error_response(500, "Failed to create user")
         return
     end
 
-    ngx.log(ngx.INFO, "User registration successful: " .. username)
+    ngx.log(ngx.INFO, "User registration successful: " .. username .. " (pending: " .. (pending_count + 1) .. "/" .. MAX_PENDING_USERS .. ")")
     
     ngx.status = 201
     send_success_response({
-        message = "User created successfully. Pending admin approval.",
+        message = "User created successfully. Pending admin approval (" .. (pending_count + 1) .. "/" .. MAX_PENDING_USERS .. " pending users).",
         user = {
             id = user_id,
             username = username,
             is_approved = false
+        },
+        pending_info = {
+            current_pending = pending_count + 1,
+            max_pending = MAX_PENDING_USERS
         }
     })
 end
