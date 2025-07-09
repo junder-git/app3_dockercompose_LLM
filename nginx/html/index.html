@@ -93,6 +93,14 @@
     <script src="/js/common.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
+            // Quick redirect if already logged in
+            const token = localStorage.getItem('auth_token');
+            if (token && !DevstralCommon.isTokenExpired(token)) {
+                window.location.href = '/chat';
+                return;
+            }
+            
+            // Only do full auth check if we want to show user info on home page
             const user = await DevstralCommon.checkAuth();
             if (user) {
                 // Update nav links for authenticated user

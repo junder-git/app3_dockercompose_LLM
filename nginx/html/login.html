@@ -73,9 +73,10 @@
     <script src="/js/common.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
-            const user = await DevstralCommon.checkAuth();
-            if (user) {
-                window.location.href = user.is_admin ? '/admin' : '/chat';
+            // Quick redirect if already logged in
+            const token = localStorage.getItem('auth_token');
+            if (token && !DevstralCommon.isTokenExpired(token)) {
+                window.location.href = '/chat';
                 return;
             }
 

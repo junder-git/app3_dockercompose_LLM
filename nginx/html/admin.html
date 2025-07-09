@@ -93,25 +93,34 @@
     <script src="/js/common.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
+            console.log('Admin page loading...');
+            
             // Show loading indicator
             const loadingDiv = DevstralCommon.$('#loading-indicator');
             if (loadingDiv) {
                 loadingDiv.style.display = 'flex';
             }
 
-            // Check authentication
+            // Server-side admin check happens in nginx before this page loads
+            // If user reaches this page, they passed the server-side admin verification
+            // But we still need user info for the dashboard
+            console.log('Getting user info for admin dashboard...');
             const user = await DevstralCommon.checkAuth();
             
             if (!user) {
+                console.log('No user authenticated, redirecting to login');
                 window.location.href = '/login';
                 return;
             }
 
+            // Server-side already verified is_admin, but double-check for UI
             if (!user.is_admin) {
+                console.log('Client-side admin check failed, redirecting to unauthorized');
                 window.location.href = '/unauthorised';
                 return;
             }
 
+            console.log('Loading admin dashboard for verified admin:', user.username);
             DevstralCommon.text('#username-display', user.username);
             
             // Load admin content from server
@@ -135,57 +144,11 @@
                     setTimeout(() => window.location.href = '/unauthorised', 2000);
                 } else {
                     DevstralCommon.showFlashMessage('Failed to load admin dashboard', 'error');
-                    
-                    // Show basic admin interface if server-side fails
-                    DevstralCommon.html('#app-content', `
-                        <div class="row">
-                            <div class="col-12">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h5 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h5>
-                                    </div>
-                                    <div class="card-body">
-                                        <div class="alert alert-info">
-                                            <i class="bi bi-check-circle"></i> 
-                                            Admin authentication successful! Welcome, <strong>${user.username}</strong>.
-                                        </div>
-                                        <div class="alert alert-info">
-                                            <i class="bi bi-info-circle"></i> 
-                                            Server-side admin functionality unavailable. Basic admin interface loaded.
-                                        </div>
-                                        <p>You have administrator privileges on this system.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    `);
+                    setTimeout(() => window.location.href = '/', 2000);
                 }
             } catch (error) {
                 DevstralCommon.showFlashMessage('Error loading admin dashboard: ' + error.message, 'error');
-                
-                // Show basic admin interface on error
-                DevstralCommon.html('#app-content', `
-                    <div class="row">
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h5 class="mb-0"><i class="bi bi-speedometer2"></i> Admin Dashboard</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="alert alert-info">
-                                        <i class="bi bi-check-circle"></i> 
-                                        Admin authentication successful! Welcome, <strong>${user.username}</strong>.
-                                    </div>
-                                    <div class="alert alert-danger">
-                                        <i class="bi bi-exclamation-triangle"></i> 
-                                        Connection error. Basic admin interface loaded.
-                                    </div>
-                                    <p>You have administrator privileges on this system.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `);
+                setTimeout(() => window.location.href = '/', 2000);
             } finally {
                 // Hide loading indicator
                 if (loadingDiv) {

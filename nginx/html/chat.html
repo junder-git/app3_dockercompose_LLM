@@ -351,19 +351,28 @@
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
+            console.log('Chat page loading...');
             const user = await DevstralCommon.checkAuth();
             if (!user) {
+                console.log('No user found, redirecting to login');
                 window.location.href = '/login';
                 return;
             }
 
+            console.log('User authenticated:', user);
             DevstralCommon.text('#username-display', user.username);
 
-            // Show admin panel link for admin users only
+            // Admin panel link is controlled by server-side check in nginx
+            // The link visibility is just UI - real security is enforced server-side
             if (user.is_admin) {
                 const adminLink = DevstralCommon.$('#admin-panel-link');
                 if (adminLink) {
                     adminLink.style.display = 'block';
+                    // Ensure admin link works correctly
+                    adminLink.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        window.location.href = '/admin';
+                    });
                 }
             }
 
@@ -413,6 +422,7 @@
 
             const saveChatToRedis = async () => {
                 if (!chatState.messages || chatState.messages.length === 0) {
+                    console.log('No messages to save');
                     return false;
                 }
 
@@ -422,6 +432,8 @@
                         title: 'My Chat',
                         updated_at: new Date().toISOString()
                     };
+
+                    console.log('Saving chat with', chatState.messages.length, 'messages');
 
                     const response = await fetch('/api/chat/save', {
                         method: 'POST',
@@ -433,19 +445,26 @@
                     });
 
                     if (response.ok) {
+                        const result = await response.json();
+                        console.log('Chat saved successfully:', result);
                         chatState.lastSaveTime = Date.now();
                         chatState.unsavedChanges = false;
                         updateSaveIndicator(true);
                         return true;
+                    } else {
+                        const errorText = await response.text();
+                        console.error('Save failed:', response.status, errorText);
+                        return false;
                     }
-                    return false;
                 } catch (error) {
+                    console.error('Save error:', error);
                     return false;
                 }
             };
 
             const loadChatFromRedis = async () => {
                 try {
+                    console.log('Loading chat from Redis...');
                     const response = await fetch('/api/chat/load', {
                         headers: {
                             'Authorization': 'Bearer ' + DevstralCommon.getAuthToken()
@@ -454,10 +473,18 @@
 
                     if (response.ok) {
                         const chatData = await response.json();
+                        console.log('Chat loaded successfully:', chatData);
                         return chatData;
+                    } else if (response.status === 404) {
+                        console.log('No existing chat found');
+                        return null;
+                    } else {
+                        const errorText = await response.text();
+                        console.error('Load failed:', response.status, errorText);
+                        return null;
                     }
-                    return null;
                 } catch (error) {
+                    console.error('Load error:', error);
                     return null;
                 }
             };
@@ -687,8 +714,15 @@
                         responseDiv.innerHTML = formatMarkdown(finalResponse);
                     }
 
+                    // Save chat after successful response with better error handling
                     setTimeout(async () => {
-                        await saveChatToRedis();
+                        console.log('Auto-saving chat after response...');
+                        const saveSuccess = await saveChatToRedis();
+                        if (!saveSuccess) {
+                            console.warn('Auto-save failed, chat may be lost');
+                            // Show save indicator as unsaved
+                            updateSaveIndicator(false);
+                        }
                     }, 1000);
 
                 } catch (error) {
