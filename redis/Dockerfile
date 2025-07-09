@@ -1,6 +1,6 @@
 # redis/Dockerfile - Redis with admin user initialization
 
-FROM redis/redis-stack-server:latest
+FROM redis:latest
 
 # Copy configuration and initialization script
 COPY redis.conf /usr/local/etc/redis/redis.conf

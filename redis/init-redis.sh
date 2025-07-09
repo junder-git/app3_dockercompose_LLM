@@ -11,7 +11,7 @@ ADMIN_USER_ID="${ADMIN_USER_ID:-admin}"
 echo "🚀 Starting Redis with conditional admin initialization..."
 
 # Start Redis server in the background
-redis-stack-server /usr/local/etc/redis/redis.conf &
+redis-server /usr/local/etc/redis/redis.conf &
 REDIS_PID=$!
 
 echo "⏳ Redis server started with PID: $REDIS_PID"
