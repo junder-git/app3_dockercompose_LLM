@@ -1,12 +1,15 @@
-# redis/Dockerfile - Simple Redis without HTTP wrapper
+# redis/Dockerfile - Redis with admin user initialization
 
 FROM redis/redis-stack-server:latest
 
-# Copy configuration
+# Copy configuration and initialization script
 COPY redis.conf /usr/local/etc/redis/redis.conf
+COPY init-redis.sh /usr/local/bin/init-redis.sh
+
+# Make the init script executable
+RUN chmod +x /usr/local/bin/init-redis.sh
 
 # Create data directory with proper permissions
-# The redis-stack-server image runs as root by default
 RUN mkdir -p /data && \
     mkdir -p /var/log/redis && \
     chmod 777 /data && \
@@ -15,5 +18,5 @@ RUN mkdir -p /data && \
 # Expose Redis port
 EXPOSE 6379
 
-# Start Redis with our config
-CMD ["redis-stack-server", "/usr/local/etc/redis/redis.conf"]
+# Use our initialization script as entrypoint
+ENTRYPOINT ["/usr/local/bin/init-redis.sh"]
