@@ -6,7 +6,7 @@
     <title>Devstral AI Chat</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="/css/styles.css" rel="stylesheet">
+    <link href="/css/common.css" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -26,10 +26,8 @@
     </nav>
 
     <main class="container-fluid py-4">
-        <!-- Flash messages container -->
         <div id="flash-messages"></div>
         
-        <!-- Landing page content -->
         <div class="row justify-content-center">
             <div class="col-lg-8">
                 <div class="text-center mb-5">
@@ -43,7 +41,6 @@
                     </p>
                 </div>
                 
-                <!-- Feature cards -->
                 <div class="row mb-5">
                     <div class="col-md-4 mb-3">
                         <div class="card border-secondary h-100">
@@ -80,7 +77,6 @@
                     </div>
                 </div>
                 
-                <!-- Action buttons -->
                 <div class="text-center" id="action-buttons">
                     <a href="/login" class="btn btn-primary btn-lg me-3">
                         <i class="bi bi-box-arrow-in-right"></i> Login
@@ -93,32 +89,18 @@
         </div>
     </main>
 
-    <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/common.js"></script>
     <script>
-        // Index page specific JavaScript
         document.addEventListener('DOMContentLoaded', async () => {
-            console.log('🏠 Index page loaded');
-            
-            // Initialize auth
-            DevstralCommon.initAuth();
-            
-            // Check if user is already authenticated
             const user = await DevstralCommon.checkAuth();
             if (user) {
-                console.log('User authenticated:', user);
-                
-                // User is authenticated, update nav links
+                // Update nav links for authenticated user
                 const navLinks = `
                     <a class="nav-link" href="/chat">
                         <i class="bi bi-chat-dots"></i> Chat
                     </a>
-                    ${user.is_admin ? `
-                    <a class="nav-link" href="/admin">
-                        <i class="bi bi-gear"></i> Admin
-                    </a>
-                    ` : ''}
+                    ${user.is_admin ? `<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>` : ''}
                     <a class="nav-link" href="#" onclick="logout()">
                         <i class="bi bi-box-arrow-right"></i> Logout
                     </a>
@@ -130,15 +112,9 @@
                     <a href="/chat" class="btn btn-primary btn-lg me-3">
                         <i class="bi bi-chat-dots"></i> Continue Chatting
                     </a>
-                    ${user.is_admin ? `
-                    <a href="/admin" class="btn btn-outline-primary btn-lg">
-                        <i class="bi bi-gear"></i> Admin Panel
-                    </a>
-                    ` : ''}
+                    ${user.is_admin ? `<a href="/admin" class="btn btn-outline-primary btn-lg"><i class="bi bi-gear"></i> Admin Panel</a>` : ''}
                 `;
                 DevstralCommon.html('#action-buttons', actionButtons);
-                
-                DevstralCommon.showFlashMessage(`Welcome back, ${user.username}!`, 'success');
             }
         });
     </script>

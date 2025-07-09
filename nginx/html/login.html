@@ -6,7 +6,7 @@
     <title>Login - Devstral AI</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="/css/styles.css" rel="stylesheet">
+    <link href="/css/common.css" rel="stylesheet">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -26,7 +26,6 @@
     </nav>
 
     <main class="container-fluid py-4">
-        <!-- Flash messages container -->
         <div id="flash-messages"></div>
         
         <div class="row justify-content-center">
@@ -70,26 +69,16 @@
         </div>
     </main>
 
-    <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/common.js"></script>
     <script>
-        // Login page specific JavaScript
         document.addEventListener('DOMContentLoaded', async () => {
-            console.log('🔐 Login page loaded');
-            
-            // Initialize auth
-            DevstralCommon.initAuth();
-            
-            // Check if already authenticated
             const user = await DevstralCommon.checkAuth();
             if (user) {
-                console.log('User already authenticated, redirecting');
                 window.location.href = user.is_admin ? '/admin' : '/chat';
                 return;
             }
 
-            // Setup login form
             const form = DevstralCommon.$('#loginForm');
             if (form) {
                 form.addEventListener('submit', async (e) => {
@@ -112,9 +101,6 @@
                         const result = await DevstralCommon.login(username, password);
                         
                         if (result.success) {
-                            DevstralCommon.showFlashMessage('Login successful!', 'success');
-                            console.log('Login successful, redirecting...');
-                            
                             setTimeout(() => {
                                 window.location.href = result.user.is_admin ? '/admin' : '/chat';
                             }, 500);

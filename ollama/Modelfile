@@ -53,19 +53,12 @@ PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
 
 # CRITICAL: Memory management for hybrid mode
 PARAMETER use_mmap false
-# NOTE: use_mlock handled by server startup (not supported in Modelfile)
-
-# Advanced sampling parameters
-PARAMETER mirostat ${MODEL_MIROSTAT}
-PARAMETER mirostat_eta ${MODEL_MIROSTAT_ETA}
-PARAMETER mirostat_tau ${MODEL_MIROSTAT_TAU}
+# NOTE: use_mlock is handled by server startup flags, not Modelfile
 
 # Response control
 PARAMETER stop ${MODEL_STOP_SEQUENCES}
 
-# Additional hybrid-specific parameters
+# Additional parameters (removed deprecated ones)
 PARAMETER num_predict ${MODEL_MAX_TOKENS}
-PARAMETER tfs_z 1.0
-PARAMETER typical_p 1.0
 PARAMETER repeat_last_n 64
 PARAMETER penalize_newline true
