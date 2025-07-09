@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Chat persistence functions
     const generateChatId = () => {
-        return 'chat_' + user.user_id + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        return 'chat_' + user.id + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     };
 
     const saveChatToRedis = async (chatId, messages, title = null) => {
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const chatData = {
                 id: chatId,
-                user_id: user.user_id,
+                user_id: user.id,
                 title: title || (messages[0]?.content ? messages[0].content.substring(0, 50) + '...' : 'New Chat'),
                 messages: messages,
                 created_at: new Date().toISOString(),
@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Use sendBeacon for reliable saving on page unload
             const chatData = {
                 id: chatState.currentChatId,
-                user_id: user.user_id,
+                user_id: user.id,
                 messages: chatState.messages,
                 updated_at: new Date().toISOString()
             };
