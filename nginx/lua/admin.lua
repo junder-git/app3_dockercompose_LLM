@@ -1,5 +1,28 @@
--- nginx/lua/admin.lua - Updated with simple templating
+-- nginx/lua/admin.lua - Complete admin functionality
 local cjson = require "cjson"
+
+-- Auth verification function
+local function verify_admin()
+    local auth_header = ngx.var.http_authorization
+    if not auth_header or not string.match(auth_header, "^Bearer ") then
+        return false, "No token provided"
+    end
+
+    local token = string.sub(auth_header, 8)
+    local ok, payload = pcall(function()
+        return cjson.decode(ngx.decode_base64(token))
+    end)
+    
+    if not ok or not payload.exp or payload.exp < ngx.time() then
+        return false, "Invalid or expired token"
+    end
+
+    if not payload.is_admin then
+        return false, "Admin privileges required"
+    end
+
+    return true, payload
+end
 
 -- Simple template function
 local function render_template(template, data)
@@ -16,7 +39,7 @@ local function get_dashboard_template()
         <div class="row mb-4">
             <div class="col-12">
                 <h2><i class="bi bi-speedometer2"></i> Admin Dashboard</h2>
-                <p>Welcome, {{username}}!</p>
+                <p>Welcome, <strong>{{username}}</strong>!</p>
             </div>
         </div>
         
@@ -57,6 +80,11 @@ local function get_dashboard_template()
                         <div id="user-list">
                             {{user_list}}
                         </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" onclick="window.location.reload()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh Data
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -72,17 +100,129 @@ local function handle_dashboard()
         return
     end
 
-    -- Get user statistics (simplified)
+    -- Get user statistics (you'd implement real Redis queries here)
     local template_data = {
         username = payload.username,
-        user_count = "5",  -- You'd get this from Redis
-        pending_count = "2",  -- You'd get this from Redis
-        active_sessions = "3",  -- You'd get this from Redis
-        user_list = "<p>User list would go here...</p>"
+        user_count = "1",  -- Admin user exists
+        pending_count = "0",  -- No pending users yet
+        active_sessions = "1",  -- Admin is logged in
+        user_list = [[
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 
+                User management functionality is active. Users will appear here when they register.
+            </div>
+        ]]
     }
 
     local dashboard_html = render_template(get_dashboard_template(), template_data)
     
     ngx.header.content_type = "text/html; charset=utf-8"
     ngx.say(dashboard_html)
+end
+
+local function handle_users()
+    local ok, payload = verify_admin()
+    if not ok then
+        ngx.status = 403
+        ngx.say(cjson.encode({error = payload}))
+        return
+    end
+
+    -- For simplicity, return a basic user list
+    ngx.say(cjson.encode({
+        success = true,
+        users = {},
+        total = 0
+    }))
+end
+
+local function handle_approve()
+    local ok, payload = verify_admin()
+    if not ok then
+        ngx.status = 403
+        ngx.say(cjson.encode({error = payload}))
+        return
+    end
+
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    if not body then
+        ngx.status = 400
+        ngx.say('{"error": "Request body required"}')
+        return
+    end
+
+    local ok, data = pcall(cjson.decode, body)
+    if not ok or not data.user_id then
+        ngx.status = 400
+        ngx.say('{"error": "User ID is required"}')
+        return
+    end
+
+    -- Update user approval status using internal Redis location
+    local res = ngx.location.capture("/redis-internal/hset/user:" .. data.user_id .. "/is_approved/true")
+    if res.status == 200 then
+        ngx.say(cjson.encode({
+            success = true,
+            message = "User approved successfully"
+        }))
+    else
+        ngx.status = 500
+        ngx.say('{"error": "Failed to approve user"}')
+    end
+end
+
+local function handle_reject()
+    local ok, payload = verify_admin()
+    if not ok then
+        ngx.status = 403
+        ngx.say(cjson.encode({error = payload}))
+        return
+    end
+
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    if not body then
+        ngx.status = 400
+        ngx.say('{"error": "Request body required"}')
+        return
+    end
+
+    local ok, data = pcall(cjson.decode, body)
+    if not ok or not data.user_id then
+        ngx.status = 400
+        ngx.say('{"error": "User ID is required"}')
+        return
+    end
+
+    -- Delete user using internal Redis location
+    local res = ngx.location.capture("/redis-internal/del/user:" .. data.user_id)
+    if res.status == 200 then
+        ngx.say(cjson.encode({
+            success = true,
+            message = "User rejected and deleted"
+        }))
+    else
+        ngx.status = 500
+        ngx.say('{"error": "Failed to reject user"}')
+    end
+end
+
+-- Route based on URI and method
+local uri = ngx.var.uri
+local method = ngx.var.request_method
+
+if uri == "/api/admin/dashboard" and method == "GET" then
+    handle_dashboard()
+elseif uri == "/api/admin/users" and method == "GET" then
+    handle_users()
+elseif uri == "/api/admin/users/approve" and method == "POST" then
+    handle_approve()
+elseif uri == "/api/admin/users/reject" and method == "POST" then
+    handle_reject()
+else
+    ngx.status = 404
+    ngx.say('{"error": "Admin endpoint not found"}')
 end

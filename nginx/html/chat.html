@@ -35,7 +35,7 @@
                 <div class="message-content">
                     <p>Hello! I'm Devstral AI. How can I help you today?</p>
                 </div>
-                <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+                <span class="message-timestamp" id="welcome-timestamp"></span>
             </div>
         </div>
         
@@ -57,5 +57,14 @@
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/client.js"></script>
+    <script>
+        // Set welcome message timestamp when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            const welcomeTimestamp = document.getElementById('welcome-timestamp');
+            if (welcomeTimestamp) {
+                welcomeTimestamp.textContent = new Date().toLocaleTimeString();
+            }
+        });
+    </script>
 </body>
 </html>

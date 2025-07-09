@@ -310,7 +310,7 @@ const DevstralClient = (() => {
     });
   };
 
-  // ===== STREAMING CHAT IMPLEMENTATION =====
+  // ===== FIXED STREAMING CHAT IMPLEMENTATION =====
   const initChat = async () => {
     console.log('Initializing chat page');
     const user = await checkAuth();
@@ -328,9 +328,6 @@ const DevstralClient = (() => {
     // State for streaming
     let isStreaming = false;
     let currentStreamingMessage = null;
-
-    // Load chat history on page load
-    await loadChatHistory(user.id, messagesContainer);
 
     const sendMessage = async () => {
       const message = val(messageInput).trim();
@@ -352,16 +349,25 @@ const DevstralClient = (() => {
       scrollTop(messagesContainer, messagesContainer.scrollHeight);
 
       try {
-        // Use HTTP streaming for Ollama
+        // Create streaming message container first
+        currentStreamingMessage = createElement('div', 'message assistant-message');
+        currentStreamingMessage.innerHTML = `
+          <div class="message-content">
+            <div class="ai-response" id="streaming-content">Thinking...</div>
+          </div>
+          <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+        `;
+        append(messagesContainer, currentStreamingMessage);
+
+        // Use correct Ollama API format
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + getAuthToken(),
-            'Accept': 'text/plain'
+            'Authorization': 'Bearer ' + getAuthToken()
           },
           body: JSON.stringify({
-            model: "devstral", // Use the model from your .env
+            model: "devstral",
             messages: [
               {
                 role: "user",
@@ -373,73 +379,65 @@ const DevstralClient = (() => {
         });
 
         if (!response.ok) {
-          throw new Error('Failed to get response from Ollama');
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-
-        // Create streaming message container
-        currentStreamingMessage = createElement('div', 'message assistant-message');
-        currentStreamingMessage.innerHTML = `
-          <div class="message-content">
-            <div class="ai-response" id="streaming-content"></div>
-          </div>
-          <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
-        `;
-        append(messagesContainer, currentStreamingMessage);
-
         let accumulatedResponse = '';
-        let streamEnded = false;
 
-        while (!streamEnded) {
+        while (true) {
           const { done, value } = await reader.read();
           
-          if (done) {
-            streamEnded = true;
-            break;
-          }
+          if (done) break;
           
-          const chunk = decoder.decode(value);
+          const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split('\n');
           
           for (const line of lines) {
-            if (line.trim() && line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.substring(6));
-                if (data.message && data.message.content) {
-                  accumulatedResponse += data.message.content;
-                  const streamingContent = $('#streaming-content');
-                  if (streamingContent) {
-                    streamingContent.textContent = accumulatedResponse;
-                  }
-                  scrollTop(messagesContainer, messagesContainer.scrollHeight);
+            if (line.trim() === '') continue;
+            
+            try {
+              const data = JSON.parse(line);
+              
+              if (data.message && data.message.content) {
+                accumulatedResponse += data.message.content;
+                const streamingContent = $('#streaming-content');
+                if (streamingContent) {
+                  streamingContent.textContent = accumulatedResponse;
                 }
-                
-                if (data.done) {
-                  streamEnded = true;
-                  break;
-                }
-              } catch (e) {
-                console.error('Error parsing streaming data:', e);
+                scrollTop(messagesContainer, messagesContainer.scrollHeight);
               }
+              
+              if (data.done) {
+                break;
+              }
+            } catch (e) {
+              // Skip invalid JSON lines
+              console.warn('Failed to parse line:', line);
             }
           }
         }
 
-        // Save conversation after streaming is complete
-        if (accumulatedResponse) {
-          await saveConversationToRedis(user.id, message, accumulatedResponse);
+        // Ensure we have some response
+        if (!accumulatedResponse) {
+          accumulatedResponse = "I apologize, but I didn't receive a proper response. Please try again.";
+          const streamingContent = $('#streaming-content');
+          if (streamingContent) {
+            streamingContent.textContent = accumulatedResponse;
+          }
         }
 
       } catch (error) {
         console.error('Failed to send message:', error);
         showFlashMessage('Failed to send message: ' + error.message, 'error');
         
-        // Remove failed streaming message
+        // Update the streaming message with error
         if (currentStreamingMessage) {
-          remove(currentStreamingMessage);
-          currentStreamingMessage = null;
+          const streamingContent = currentStreamingMessage.querySelector('#streaming-content');
+          if (streamingContent) {
+            streamingContent.textContent = "Sorry, I encountered an error. Please try again.";
+          }
         }
       } finally {
         isStreaming = false;
