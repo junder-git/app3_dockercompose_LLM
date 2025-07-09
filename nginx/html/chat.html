@@ -68,303 +68,541 @@
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/common.js"></script>
     <script>
-        // Chat page specific JavaScript
-        document.addEventListener('DOMContentLoaded', async () => {
-            console.log('💬 Chat page loaded');
+        // Enhanced chat.html JavaScript with Redis persistence and navigation support
+
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('💬 Chat page loaded with persistence');
+    
+    // Initialize auth
+    DevstralCommon.initAuth();
+    
+    // Check authentication
+    const user = await DevstralCommon.checkAuth();
+    if (!user) {
+        console.log('No user authenticated, redirecting to login');
+        window.location.href = '/login';
+        return;
+    }
+
+    console.log('Chat initialized for user:', user.username);
+    DevstralCommon.text('#username-display', user.username);
+
+    // Show admin panel link for admin users
+    if (user.is_admin) {
+        const adminLink = DevstralCommon.$('#admin-panel-link');
+        if (adminLink) {
+            adminLink.style.display = 'block';
+        }
+    }
+
+    // Chat state management
+    let chatState = {
+        currentChatId: null,
+        messages: [],
+        isStreaming: false,
+        currentController: null,
+        connectionStatus: 'connected',
+        lastSaveTime: 0,
+        unsavedChanges: false
+    };
+
+    // Get DOM elements
+    const messagesContainer = DevstralCommon.$('#chat-messages');
+    const messageInput = DevstralCommon.$('#message-input');
+    const sendBtn = DevstralCommon.$('#send-btn');
+    const stopBtn = DevstralCommon.$('#stop-btn');
+
+    if (!messagesContainer || !messageInput || !sendBtn || !stopBtn) {
+        console.error('Chat elements not found');
+        DevstralCommon.showFlashMessage('Chat interface not properly loaded', 'error');
+        return;
+    }
+
+    // Chat persistence functions
+    const generateChatId = () => {
+        return 'chat_' + user.user_id + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    };
+
+    const saveChatToRedis = async (chatId, messages, title = null) => {
+        if (!chatId || !messages || messages.length === 0) {
+            console.log('Nothing to save');
+            return false;
+        }
+
+        try {
+            const chatData = {
+                id: chatId,
+                user_id: user.user_id,
+                title: title || (messages[0]?.content ? messages[0].content.substring(0, 50) + '...' : 'New Chat'),
+                messages: messages,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            console.log('Saving chat to Redis:', chatId);
             
-            // Initialize auth
-            DevstralCommon.initAuth();
+            // Use internal Redis endpoint (we'll need to add this to nginx config)
+            const response = await fetch('/api/chat/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + DevstralCommon.getAuthToken()
+                },
+                body: JSON.stringify(chatData)
+            });
+
+            if (response.ok) {
+                console.log('Chat saved successfully');
+                chatState.lastSaveTime = Date.now();
+                chatState.unsavedChanges = false;
+                return true;
+            } else {
+                console.error('Failed to save chat:', response.status);
+                return false;
+            }
+        } catch (error) {
+            console.error('Error saving chat:', error);
+            return false;
+        }
+    };
+
+    const loadChatFromRedis = async (chatId) => {
+        if (!chatId) return null;
+
+        try {
+            console.log('Loading chat from Redis:', chatId);
             
-            // Check authentication
-            const user = await DevstralCommon.checkAuth();
-            if (!user) {
-                console.log('No user authenticated, redirecting to login');
-                window.location.href = '/login';
-                return;
-            }
-
-            console.log('Chat initialized for user:', user.username);
-            DevstralCommon.text('#username-display', user.username);
-
-            // Show admin panel link for admin users
-            if (user.is_admin) {
-                const adminLink = DevstralCommon.$('#admin-panel-link');
-                if (adminLink) {
-                    adminLink.style.display = 'block';
-                }
-            }
-
-            // Set welcome message timestamp
-            const welcomeTimestamp = DevstralCommon.$('#welcome-timestamp');
-            if (welcomeTimestamp) {
-                DevstralCommon.text(welcomeTimestamp, new Date().toLocaleTimeString());
-            }
-
-            // Initialize chat functionality
-            const messagesContainer = DevstralCommon.$('#chat-messages');
-            const messageInput = DevstralCommon.$('#message-input');
-            const sendBtn = DevstralCommon.$('#send-btn');
-            const stopBtn = DevstralCommon.$('#stop-btn');
-
-            if (!messagesContainer || !messageInput || !sendBtn || !stopBtn) {
-                console.error('Chat elements not found');
-                DevstralCommon.showFlashMessage('Chat interface not properly loaded', 'error');
-                return;
-            }
-
-            let isStreaming = false;
-            let currentController = null;
-            let connectionStatus = 'connected';
-
-            // Connection status indicator
-            const updateConnectionStatus = (status) => {
-                const statusEl = DevstralCommon.$('#connection-status');
-                if (!statusEl) return;
-                
-                connectionStatus = status;
-                const icons = {
-                    connected: { icon: 'bi-wifi', color: 'success', text: 'Connected' },
-                    connecting: { icon: 'bi-wifi-off', color: 'warning', text: 'Connecting...' },
-                    disconnected: { icon: 'bi-wifi-off', color: 'danger', text: 'Disconnected' },
-                    error: { icon: 'bi-exclamation-triangle', color: 'danger', text: 'Error' }
-                };
-                
-                const config = icons[status] || icons.error;
-                statusEl.innerHTML = `<span class="badge bg-${config.color}"><i class="bi ${config.icon}"></i> ${config.text}</span>`;
-            };
-
-            // Enhanced chat message sending function with error handling
-            const sendChatMessage = async (message) => {
-                const token = DevstralCommon.getAuthToken();
-                if (!token) {
-                    throw new Error('No authentication token');
-                }
-
-                console.log('Sending chat message:', message);
-                updateConnectionStatus('connecting');
-
-                // Create AbortController for cancellation
-                currentController = new AbortController();
-                const signal = currentController.signal;
-
-                try {
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            model: "devstral",
-                            messages: [
-                                {
-                                    role: "user",
-                                    content: message
-                                }
-                            ],
-                            stream: false
-                        }),
-                        signal: signal
-                    });
-
-                    console.log('Chat response status:', response.status);
-                    updateConnectionStatus('connected');
-
-                    if (!response.ok) {
-                        let errorText = await response.text();
-                        console.error('Chat error response:', errorText);
-                        
-                        // Handle specific error codes
-                        if (response.status === 401) {
-                            throw new Error('Authentication failed. Please login again.');
-                        } else if (response.status === 403) {
-                            throw new Error('Access denied. Please check your permissions.');
-                        } else if (response.status === 429) {
-                            throw new Error('Rate limit exceeded. Please wait before trying again.');
-                        } else if (response.status === 500) {
-                            throw new Error('Server error. The AI service may be temporarily unavailable.');
-                        } else {
-                            throw new Error(`HTTP ${response.status}: ${errorText || 'Unknown error'}`);
-                        }
-                    }
-
-                    const responseData = await response.json();
-                    console.log('Chat response data:', responseData);
-
-                    return responseData;
-                } catch (error) {
-                    updateConnectionStatus('error');
-                    console.error('Chat error:', error);
-                    
-                    if (error.name === 'AbortError') {
-                        throw new Error('Request was cancelled');
-                    }
-                    
-                    // Network error handling
-                    if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                        throw new Error('Network error. Please check your connection and try again.');
-                    }
-                    
-                    throw error;
-                } finally {
-                    currentController = null;
-                }
-            };
-
-            // Enhanced send message function with interruption support
-            const sendMessage = async () => {
-                const message = DevstralCommon.val(messageInput).trim();
-                if (!message || isStreaming) return;
-
-                if (message.length > 5000) {
-                    DevstralCommon.showFlashMessage('Message too long (max 5000 characters)', 'error');
-                    return;
-                }
-
-                DevstralCommon.val(messageInput, '');
-                DevstralCommon.prop(sendBtn, 'disabled', true);
-                stopBtn.style.display = 'inline-block';
-                isStreaming = true;
-
-                // Add user message
-                const userMsg = document.createElement('div');
-                userMsg.className = 'message user-message';
-                userMsg.innerHTML = `
-                    <div class="message-content">
-                        <div class="user-text">${DevstralCommon.escapeHtml(message)}</div>
-                    </div>
-                    <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
-                `;
-                DevstralCommon.append(messagesContainer, userMsg);
-                DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
-
-                // Add loading message
-                const loadingMsg = document.createElement('div');
-                loadingMsg.className = 'message assistant-message';
-                loadingMsg.innerHTML = `
-                    <div class="message-content">
-                        <div class="ai-response">
-                            <div class="d-flex align-items-center">
-                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                                <span>Thinking...</span>
-                            </div>
-                        </div>
-                    </div>
-                    <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
-                `;
-                DevstralCommon.append(messagesContainer, loadingMsg);
-                DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
-
-                try {
-                    const responseData = await sendChatMessage(message);
-                    
-                    let finalResponse = '';
-                    if (responseData.message && responseData.message.content) {
-                        finalResponse = responseData.message.content;
-                    } else if (responseData.response) {
-                        finalResponse = responseData.response;
-                    } else if (responseData.content) {
-                        finalResponse = responseData.content;
-                    } else {
-                        finalResponse = 'I received your message but couldn\'t process it properly.';
-                    }
-
-                    // Update loading message with response
-                    const responseDiv = loadingMsg.querySelector('.ai-response');
-                    if (responseDiv) {
-                        responseDiv.innerHTML = DevstralCommon.formatMarkdown(finalResponse);
-                    }
-
-                } catch (error) {
-                    console.error('Chat error:', error);
-                    
-                    let errorMessage = error.message;
-                    if (error.message === 'Request was cancelled') {
-                        DevstralCommon.showFlashMessage('Request cancelled', 'info');
-                        errorMessage = 'Request was cancelled by user.';
-                    } else {
-                        DevstralCommon.showFlashMessage('Chat Error: ' + error.message, 'error');
-                        
-                        // Handle authentication errors
-                        if (error.message.includes('Authentication failed')) {
-                            setTimeout(() => {
-                                DevstralCommon.logout();
-                            }, 2000);
-                        }
-                    }
-                    
-                    // Update loading message with error
-                    const responseDiv = loadingMsg.querySelector('.ai-response');
-                    if (responseDiv) {
-                        responseDiv.innerHTML = `
-                            <div class="alert alert-danger">
-                                <strong>Error:</strong> ${DevstralCommon.escapeHtml(errorMessage)}
-                            </div>
-                        `;
-                    }
-                } finally {
-                    isStreaming = false;
-                    DevstralCommon.prop(sendBtn, 'disabled', false);
-                    stopBtn.style.display = 'none';
-                    DevstralCommon.scrollTop(messagesContainer, messagesContainer.scrollHeight);
-                    currentController = null;
-                }
-            };
-
-            // Stop button handler
-            const stopGeneration = () => {
-                if (currentController) {
-                    currentController.abort();
-                    console.log('Generation stopped by user');
-                }
-            };
-
-            // Event listeners
-            sendBtn.addEventListener('click', sendMessage);
-            stopBtn.addEventListener('click', stopGeneration);
-            
-            messageInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
+            const response = await fetch(`/api/chat/load/${chatId}`, {
+                headers: {
+                    'Authorization': 'Bearer ' + DevstralCommon.getAuthToken()
                 }
             });
 
-            // Auto-resize textarea
-            messageInput.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-            });
+            if (response.ok) {
+                const chatData = await response.json();
+                console.log('Chat loaded successfully');
+                return chatData;
+            } else {
+                console.error('Failed to load chat:', response.status);
+                return null;
+            }
+        } catch (error) {
+            console.error('Error loading chat:', error);
+            return null;
+        }
+    };
 
-            // Connection health check
-            const checkConnection = async () => {
-                try {
-                    const response = await fetch('/api/chat/test', {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': 'Bearer ' + DevstralCommon.getAuthToken()
-                        }
-                    });
-                    
-                    if (response.ok) {
-                        updateConnectionStatus('connected');
-                    } else {
-                        updateConnectionStatus('error');
-                    }
-                } catch (error) {
-                    updateConnectionStatus('disconnected');
-                }
-            };
+    const getCurrentChatId = () => {
+        // Try to get from URL first
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlChatId = urlParams.get('chat_id');
+        
+        if (urlChatId) {
+            return urlChatId;
+        }
 
-            // Initial connection check
-            checkConnection();
-            
-            // Periodic connection check
-            setInterval(checkConnection, 30000);
+        // Try to get from localStorage
+        const storedChatId = localStorage.getItem('current_chat_id');
+        if (storedChatId) {
+            return storedChatId;
+        }
 
-            DevstralCommon.showFlashMessage('Chat initialized successfully!', 'success');
+        return null;
+    };
+
+    const setCurrentChatId = (chatId) => {
+        if (chatId) {
+            localStorage.setItem('current_chat_id', chatId);
+            // Update URL without page reload
+            const url = new URL(window.location);
+            url.searchParams.set('chat_id', chatId);
+            window.history.replaceState({}, '', url);
+        } else {
+            localStorage.removeItem('current_chat_id');
+            const url = new URL(window.location);
+            url.searchParams.delete('chat_id');
+            window.history.replaceState({}, '', url);
+        }
+    };
+
+    // Message rendering functions
+    const renderMessage = (message, isUser = false) => {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+        
+        const timestamp = new Date(message.timestamp || Date.now()).toLocaleTimeString();
+        
+        if (isUser) {
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="user-text">${DevstralCommon.escapeHtml(message.content)}</div>
+                </div>
+                <span class="message-timestamp">${timestamp}</span>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="ai-response">${DevstralCommon.formatMarkdown(message.content)}</div>
+                </div>
+                <span class="message-timestamp">${timestamp}</span>
+            `;
+        }
+        
+        return messageDiv;
+    };
+
+    const renderMessages = (messages) => {
+        // Clear existing messages but keep welcome message
+        const welcomeMsg = messagesContainer.querySelector('.assistant-message');
+        messagesContainer.innerHTML = '';
+        
+        if (welcomeMsg) {
+            messagesContainer.appendChild(welcomeMsg);
+        }
+
+        messages.forEach(msg => {
+            const messageElement = renderMessage(msg, msg.role === 'user');
+            messagesContainer.appendChild(messageElement);
         });
+
+        scrollToBottom();
+    };
+
+    const scrollToBottom = () => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    };
+
+    // Initialize chat
+    const initializeChat = async () => {
+        const currentChatId = getCurrentChatId();
+        
+        if (currentChatId) {
+            console.log('Loading existing chat:', currentChatId);
+            const chatData = await loadChatFromRedis(currentChatId);
+            
+            if (chatData && chatData.messages) {
+                chatState.currentChatId = currentChatId;
+                chatState.messages = chatData.messages;
+                renderMessages(chatState.messages);
+                DevstralCommon.showFlashMessage('Chat loaded successfully', 'success');
+                return;
+            } else {
+                console.log('Failed to load chat, starting new one');
+                localStorage.removeItem('current_chat_id');
+            }
+        }
+
+        // Start new chat
+        console.log('Starting new chat');
+        chatState.currentChatId = null;
+        chatState.messages = [];
+        
+        // Set welcome message timestamp
+        const welcomeTimestamp = DevstralCommon.$('#welcome-timestamp');
+        if (welcomeTimestamp) {
+            DevstralCommon.text(welcomeTimestamp, new Date().toLocaleTimeString());
+        }
+    };
+
+    // Auto-save functionality
+    const autoSave = async () => {
+        if (chatState.unsavedChanges && chatState.currentChatId && chatState.messages.length > 0) {
+            console.log('Auto-saving chat...');
+            await saveChatToRedis(chatState.currentChatId, chatState.messages);
+        }
+    };
+
+    // Set up auto-save interval
+    setInterval(autoSave, 30000); // Auto-save every 30 seconds
+
+    // Save before page unload
+    window.addEventListener('beforeunload', () => {
+        if (chatState.unsavedChanges && chatState.currentChatId) {
+            // Use sendBeacon for reliable saving on page unload
+            const chatData = {
+                id: chatState.currentChatId,
+                user_id: user.user_id,
+                messages: chatState.messages,
+                updated_at: new Date().toISOString()
+            };
+            
+            navigator.sendBeacon('/api/chat/save', JSON.stringify(chatData));
+        }
+    });
+
+    // Connection status management
+    const updateConnectionStatus = (status) => {
+        const statusEl = DevstralCommon.$('#connection-status');
+        if (!statusEl) return;
+        
+        chatState.connectionStatus = status;
+        const icons = {
+            connected: { icon: 'bi-wifi', color: 'success', text: 'Connected' },
+            connecting: { icon: 'bi-wifi-off', color: 'warning', text: 'Connecting...' },
+            disconnected: { icon: 'bi-wifi-off', color: 'danger', text: 'Disconnected' },
+            error: { icon: 'bi-exclamation-triangle', color: 'danger', text: 'Error' }
+        };
+        
+        const config = icons[status] || icons.error;
+        statusEl.innerHTML = `<span class="badge bg-${config.color}"><i class="bi ${config.icon}"></i> ${config.text}</span>`;
+    };
+
+    // Enhanced chat message sending
+    const sendChatMessage = async (message) => {
+        const token = DevstralCommon.getAuthToken();
+        if (!token) {
+            throw new Error('No authentication token');
+        }
+
+        console.log('Sending chat message:', message);
+        updateConnectionStatus('connecting');
+
+        // Create AbortController for cancellation
+        chatState.currentController = new AbortController();
+        const signal = chatState.currentController.signal;
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "devstral",
+                    messages: [
+                        {
+                            role: "user",
+                            content: message
+                        }
+                    ],
+                    stream: false
+                }),
+                signal: signal
+            });
+
+            console.log('Chat response status:', response.status);
+            updateConnectionStatus('connected');
+
+            if (!response.ok) {
+                let errorText = await response.text();
+                console.error('Chat error response:', errorText);
+                
+                if (response.status === 401) {
+                    throw new Error('Authentication failed. Please login again.');
+                } else if (response.status === 403) {
+                    throw new Error('Access denied. Please check your permissions.');
+                } else if (response.status === 429) {
+                    throw new Error('Rate limit exceeded. Please wait before trying again.');
+                } else if (response.status === 500) {
+                    throw new Error('Server error. The AI service may be temporarily unavailable.');
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${errorText || 'Unknown error'}`);
+                }
+            }
+
+            const responseData = await response.json();
+            console.log('Chat response data:', responseData);
+
+            return responseData;
+        } catch (error) {
+            updateConnectionStatus('error');
+            console.error('Chat error:', error);
+            
+            if (error.name === 'AbortError') {
+                throw new Error('Request was cancelled');
+            }
+            
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                throw new Error('Network error. Please check your connection and try again.');
+            }
+            
+            throw error;
+        } finally {
+            chatState.currentController = null;
+        }
+    };
+
+    // Enhanced send message function
+    const sendMessage = async () => {
+        const message = DevstralCommon.val(messageInput).trim();
+        if (!message || chatState.isStreaming) return;
+
+        if (message.length > 5000) {
+            DevstralCommon.showFlashMessage('Message too long (max 5000 characters)', 'error');
+            return;
+        }
+
+        // Initialize chat if needed
+        if (!chatState.currentChatId) {
+            chatState.currentChatId = generateChatId();
+            setCurrentChatId(chatState.currentChatId);
+        }
+
+        DevstralCommon.val(messageInput, '');
+        DevstralCommon.prop(sendBtn, 'disabled', true);
+        stopBtn.style.display = 'inline-block';
+        chatState.isStreaming = true;
+
+        // Create user message object
+        const userMessage = {
+            role: 'user',
+            content: message,
+            timestamp: new Date().toISOString()
+        };
+
+        // Add to state and render
+        chatState.messages.push(userMessage);
+        chatState.unsavedChanges = true;
+        
+        const userMsgElement = renderMessage(userMessage, true);
+        messagesContainer.appendChild(userMsgElement);
+        scrollToBottom();
+
+        // Add loading message
+        const loadingMsg = document.createElement('div');
+        loadingMsg.className = 'message assistant-message';
+        loadingMsg.innerHTML = `
+            <div class="message-content">
+                <div class="ai-response">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        <span>Thinking...</span>
+                    </div>
+                </div>
+            </div>
+            <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+        `;
+        messagesContainer.appendChild(loadingMsg);
+        scrollToBottom();
+
+        try {
+            const responseData = await sendChatMessage(message);
+            
+            let finalResponse = '';
+            if (responseData.message && responseData.message.content) {
+                finalResponse = responseData.message.content;
+            } else if (responseData.response) {
+                finalResponse = responseData.response;
+            } else if (responseData.content) {
+                finalResponse = responseData.content;
+            } else {
+                finalResponse = 'I received your message but couldn\'t process it properly.';
+            }
+
+            // Create assistant message object
+            const assistantMessage = {
+                role: 'assistant',
+                content: finalResponse,
+                timestamp: new Date().toISOString()
+            };
+
+            // Add to state
+            chatState.messages.push(assistantMessage);
+            chatState.unsavedChanges = true;
+
+            // Update loading message with response
+            const responseDiv = loadingMsg.querySelector('.ai-response');
+            if (responseDiv) {
+                responseDiv.innerHTML = DevstralCommon.formatMarkdown(finalResponse);
+            }
+
+            // Save chat after successful response
+            await saveChatToRedis(chatState.currentChatId, chatState.messages);
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            
+            let errorMessage = error.message;
+            if (error.message === 'Request was cancelled') {
+                DevstralCommon.showFlashMessage('Request cancelled', 'info');
+                errorMessage = 'Request was cancelled by user.';
+            } else {
+                DevstralCommon.showFlashMessage('Chat Error: ' + error.message, 'error');
+                
+                // Handle authentication errors
+                if (error.message.includes('Authentication failed')) {
+                    setTimeout(() => {
+                        DevstralCommon.logout();
+                    }, 2000);
+                }
+            }
+            
+            // Update loading message with error
+            const responseDiv = loadingMsg.querySelector('.ai-response');
+            if (responseDiv) {
+                responseDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> ${DevstralCommon.escapeHtml(errorMessage)}
+                    </div>
+                `;
+            }
+        } finally {
+            chatState.isStreaming = false;
+            DevstralCommon.prop(sendBtn, 'disabled', false);
+            stopBtn.style.display = 'none';
+            scrollToBottom();
+            chatState.currentController = null;
+        }
+    };
+
+    // Stop button handler
+    const stopGeneration = () => {
+        if (chatState.currentController) {
+            chatState.currentController.abort();
+            console.log('Generation stopped by user');
+        }
+    };
+
+    // Event listeners
+    sendBtn.addEventListener('click', sendMessage);
+    stopBtn.addEventListener('click', stopGeneration);
+    
+    messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Auto-resize textarea
+    messageInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+
+    // Connection health check
+    const checkConnection = async () => {
+        try {
+            const response = await fetch('/api/chat/test', {
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + DevstralCommon.getAuthToken()
+                }
+            });
+            
+            if (response.ok) {
+                updateConnectionStatus('connected');
+            } else {
+                updateConnectionStatus('error');
+            }
+        } catch (error) {
+            updateConnectionStatus('disconnected');
+        }
+    };
+
+    // Initialize everything
+    await initializeChat();
+    
+    // Initial connection check
+    checkConnection();
+    
+    // Periodic connection check
+    setInterval(checkConnection, 30000);
+
+    DevstralCommon.showFlashMessage('Chat initialized successfully!', 'success');
+});
     </script>
 </body>
 </html>
