@@ -353,7 +353,7 @@ const DevstralClient = (() => {
 
       try {
         // Use HTTP streaming for Ollama
-        const response = await fetch('/ollama/api/chat', {
+        const response = await fetch('/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
