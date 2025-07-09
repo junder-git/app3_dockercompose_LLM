@@ -359,17 +359,23 @@ const DevstralClient = (() => {
         `;
         append(messagesContainer, currentStreamingMessage);
 
-        console.log('Sending request to /api/chat with message:', message);
+        console.log('Sending request to:', apiUrl, 'with message:', message);
+        console.log('Full URL will be:', window.location.origin + apiUrl);
+        
+        // Add timeout controller for hybrid processing (slower)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 minutes
         
         // IMPORTANT: Use the correct URL path - /api/chat NOT /ollama/api/chat
-        const response = await fetch('/api/chat', {
+        const response = await fetch(apiUrl, {
+          signal: controller.signal,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + getAuthToken()
           },
           body: JSON.stringify({
-            model: "devstral-optimized", // Use the correct model name from logs
+            model: "devstral", // Use base model name, not optimized
             messages: [
               {
                 role: "user",
@@ -379,6 +385,9 @@ const DevstralClient = (() => {
             stream: false  // Start with non-streaming to debug
           })
         });
+
+        // Clear timeout
+        clearTimeout(timeoutId);
 
         console.log('Response status:', response.status);
         console.log('Response URL:', response.url);
