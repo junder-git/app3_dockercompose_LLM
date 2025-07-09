@@ -1,4 +1,4 @@
--- nginx/lua/auth.lua - OpenResty Lua authentication with environment variables
+-- nginx/lua/auth.lua - Fixed authentication with proper debugging
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -14,7 +14,7 @@ local function generate_token(user)
         user_id = user.id,
         username = user.username,
         is_admin = user.is_admin,
-        exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60) -- configurable session lifetime
+        exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60)
     }
     return ngx.encode_base64(cjson.encode(payload))
 end
@@ -60,6 +60,28 @@ local function validate_password(password)
     return true, ""
 end
 
+local function parse_redis_hgetall(body)
+    if not body or body == "" or body == "$-1" then
+        return {}
+    end
+    
+    local lines = {}
+    for line in body:gmatch("[^\r\n]+") do
+        if line and line ~= "" then
+            table.insert(lines, line)
+        end
+    end
+    
+    local result = {}
+    for i = 1, #lines, 2 do
+        if lines[i] and lines[i+1] then
+            result[lines[i]] = lines[i+1]
+        end
+    end
+    
+    return result
+end
+
 local function handle_login()
     if ngx.var.request_method ~= "POST" then
         ngx.status = 405
@@ -86,6 +108,9 @@ local function handle_login()
     local username = data.username
     local password = data.password
 
+    -- Debug logging
+    ngx.log(ngx.ERR, "Login attempt for username: " .. (username or "nil"))
+
     -- Validate input
     local valid, err = validate_username(username)
     if not valid then
@@ -101,35 +126,33 @@ local function handle_login()
         return
     end
 
-    -- Get user from Redis
+    -- Get user from Redis using hgetall
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. username)
-    if res.status ~= 200 or not res.body or res.body == "" then
+    ngx.log(ngx.ERR, "Redis hgetall response status: " .. res.status)
+    ngx.log(ngx.ERR, "Redis hgetall response body: " .. (res.body or "nil"))
+    
+    if res.status ~= 200 then
         ngx.status = 401
         ngx.say('{"error": "Invalid credentials"}')
         return
     end
 
     -- Parse Redis response
-    local lines = {}
-    for line in res.body:gmatch("[^\r\n]+") do
-        table.insert(lines, line)
-    end
+    local user = parse_redis_hgetall(res.body)
     
-    local user = {}
-    for i = 1, #lines, 2 do
-        if lines[i+1] then
-            user[lines[i]] = lines[i+1]
-        end
-    end
+    ngx.log(ngx.ERR, "Parsed user data: " .. cjson.encode(user))
 
-    if not user.username then
+    if not user.username or user.username ~= username then
+        ngx.log(ngx.ERR, "User not found in Redis or username mismatch")
         ngx.status = 401
         ngx.say('{"error": "Invalid credentials"}')
         return
     end
 
-    -- Check password
+    -- Check password (direct comparison for now - should use proper hashing in production)
+    ngx.log(ngx.ERR, "Comparing passwords - provided: " .. password .. ", stored: " .. (user.password_hash or "nil"))
     if user.password_hash ~= password then
+        ngx.log(ngx.ERR, "Password mismatch")
         ngx.status = 401
         ngx.say('{"error": "Invalid credentials"}')
         return
@@ -137,6 +160,7 @@ local function handle_login()
 
     -- Check if approved
     if user.is_approved ~= "true" then
+        ngx.log(ngx.ERR, "User not approved: " .. (user.is_approved or "nil"))
         ngx.status = 403
         ngx.say('{"error": "Account pending approval"}')
         return
@@ -149,6 +173,7 @@ local function handle_login()
         is_admin = user.is_admin == "true"
     })
 
+    ngx.log(ngx.ERR, "Login successful for user: " .. username)
     ngx.say(cjson.encode({
         success = true,
         token = token,
@@ -213,22 +238,15 @@ local function handle_register()
     local user_id = tostring(ngx.time() * 1000)
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     
-    -- Set user fields
-    local fields = {
-        "id", user_id,
-        "username", username,
-        "password_hash", password,
-        "is_admin", "false",
-        "is_approved", "false",
-        "created_at", timestamp
-    }
+    -- Use hmset with all fields at once
+    local res = ngx.location.capture("/redis-internal/hmset/user:" .. username .. 
+        "/id/" .. user_id ..
+        "/username/" .. username ..
+        "/password_hash/" .. password ..
+        "/is_admin/false" ..
+        "/is_approved/false" ..
+        "/created_at/" .. timestamp)
     
-    local cmd = "hset/user:" .. username
-    for i = 1, #fields do
-        cmd = cmd .. "/" .. fields[i]
-    end
-    
-    res = ngx.location.capture("/redis-internal/" .. cmd)
     if res.status ~= 200 then
         ngx.status = 500
         ngx.say('{"error": "Failed to create user"}')
@@ -266,7 +284,14 @@ local function handle_verify()
 
     -- Get user to verify still exists and approved
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. payload.username)
-    if res.status ~= 200 or not res.body or res.body == "" then
+    if res.status ~= 200 then
+        ngx.status = 401
+        ngx.say('{"error": "User not found"}')
+        return
+    end
+
+    local user = parse_redis_hgetall(res.body)
+    if not user.username then
         ngx.status = 401
         ngx.say('{"error": "User not found"}')
         return
