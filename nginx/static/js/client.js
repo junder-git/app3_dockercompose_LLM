@@ -1,4 +1,4 @@
-// nginx/static/js/client.js - SECURE VERSION (Fixed syntax errors)
+// nginx/static/js/client.js - CORRECTED VERSION
 
 const DevstralClient = (() => {
   'use strict';
@@ -310,7 +310,7 @@ const DevstralClient = (() => {
     });
   };
 
-  // ===== FIXED STREAMING CHAT IMPLEMENTATION =====
+  // ===== CORRECTED STREAMING CHAT IMPLEMENTATION =====
   const initChat = async () => {
     console.log('Initializing chat page');
     const user = await checkAuth();
@@ -359,7 +359,9 @@ const DevstralClient = (() => {
         `;
         append(messagesContainer, currentStreamingMessage);
 
-        // Use correct Ollama API format
+        console.log('Sending request to /api/chat with message:', message);
+        
+        // IMPORTANT: Use the correct URL path - /api/chat NOT /ollama/api/chat
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: {
@@ -367,76 +369,58 @@ const DevstralClient = (() => {
             'Authorization': 'Bearer ' + getAuthToken()
           },
           body: JSON.stringify({
-            model: "devstral",
+            model: "devstral-optimized", // Use the correct model name from logs
             messages: [
               {
                 role: "user",
                 content: message
               }
             ],
-            stream: true
+            stream: false  // Start with non-streaming to debug
           })
         });
 
+        console.log('Response status:', response.status);
+        console.log('Response URL:', response.url);
+
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          const errorText = await response.text();
+          console.error('Error response:', errorText);
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let accumulatedResponse = '';
+        // Get response as JSON
+        const responseData = await response.json();
+        console.log('Response data:', responseData);
 
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          
-          for (const line of lines) {
-            if (line.trim() === '') continue;
-            
-            try {
-              const data = JSON.parse(line);
-              
-              if (data.message && data.message.content) {
-                accumulatedResponse += data.message.content;
-                const streamingContent = $('#streaming-content');
-                if (streamingContent) {
-                  streamingContent.textContent = accumulatedResponse;
-                }
-                scrollTop(messagesContainer, messagesContainer.scrollHeight);
-              }
-              
-              if (data.done) {
-                break;
-              }
-            } catch (e) {
-              // Skip invalid JSON lines
-              console.warn('Failed to parse line:', line);
-            }
-          }
+        let finalResponse = '';
+        if (responseData.message && responseData.message.content) {
+          finalResponse = responseData.message.content;
+        } else if (responseData.response) {
+          finalResponse = responseData.response;
+        } else {
+          finalResponse = 'I received your message but couldn\'t process it properly.';
         }
 
-        // Ensure we have some response
-        if (!accumulatedResponse) {
-          accumulatedResponse = "I apologize, but I didn't receive a proper response. Please try again.";
-          const streamingContent = $('#streaming-content');
-          if (streamingContent) {
-            streamingContent.textContent = accumulatedResponse;
-          }
+        const streamingContent = $('#streaming-content');
+        if (streamingContent) {
+          streamingContent.textContent = finalResponse;
         }
 
       } catch (error) {
         console.error('Failed to send message:', error);
-        showFlashMessage('Failed to send message: ' + error.message, 'error');
+        showFlashMessage('Chat Error: ' + error.message, 'error');
         
-        // Update the streaming message with error
+        // Update the streaming message with detailed error
         if (currentStreamingMessage) {
           const streamingContent = currentStreamingMessage.querySelector('#streaming-content');
           if (streamingContent) {
-            streamingContent.textContent = "Sorry, I encountered an error. Please try again.";
+            streamingContent.innerHTML = `
+              <div class="alert alert-danger">
+                <strong>Error:</strong> ${escapeHtml(error.message)}<br>
+                <small>Check browser console for details.</small>
+              </div>
+            `;
           }
         }
       } finally {
@@ -454,87 +438,6 @@ const DevstralClient = (() => {
         sendMessage();
       }
     });
-  };
-
-  // Helper functions for chat
-  const saveConversationToRedis = async (userId, userMessage, assistantResponse) => {
-    try {
-      const chatId = Date.now().toString() + '_' + userId;
-      
-      await fetch('/redis/hset', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + getAuthToken()
-        },
-        body: JSON.stringify({
-          key: `chat:${chatId}`,
-          field: 'conversation',
-          value: JSON.stringify({
-            user_message: userMessage,
-            assistant_response: assistantResponse,
-            timestamp: new Date().toISOString(),
-            user_id: userId
-          })
-        })
-      });
-    } catch (error) {
-      console.error('Failed to save conversation:', error);
-    }
-  };
-
-  const loadChatHistory = async (userId, container) => {
-    try {
-      const response = await fetch(`/redis/get?key=chat_history:${userId}`, {
-        headers: {
-          'Authorization': 'Bearer ' + getAuthToken()
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.value) {
-          const history = JSON.parse(data.value);
-          renderChatHistory(history, container);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
-    }
-  };
-
-  const renderChatHistory = (history, container) => {
-    // Clear existing messages except welcome message
-    const welcomeMsg = container.querySelector('.assistant-message');
-    container.innerHTML = '';
-    if (welcomeMsg) {
-      append(container, welcomeMsg);
-    }
-
-    // Render history
-    history.forEach(chat => {
-      // User message
-      const userMsg = createElement('div', 'message user-message');
-      userMsg.innerHTML = `
-        <div class="message-content">
-          <div class="user-text">${escapeHtml(chat.user_message)}</div>
-        </div>
-        <span class="message-timestamp">${new Date(chat.timestamp).toLocaleTimeString()}</span>
-      `;
-      append(container, userMsg);
-
-      // Assistant message
-      const assistantMsg = createElement('div', 'message assistant-message');
-      assistantMsg.innerHTML = `
-        <div class="message-content">
-          <div class="ai-response">${escapeHtml(chat.assistant_response)}</div>
-        </div>
-        <span class="message-timestamp">${new Date(chat.timestamp).toLocaleTimeString()}</span>
-      `;
-      append(container, assistantMsg);
-    });
-
-    scrollTop(container, container.scrollHeight);
   };
 
   // ===== SECURE ADMIN REDIRECT =====
