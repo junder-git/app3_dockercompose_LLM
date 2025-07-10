@@ -6,9 +6,8 @@ FROM openresty/openresty:1.25.3.1-0-alpine-fat
 RUN apk add --no-cache \
     curl \
     wget \
-    openssl
-
-RUN /usr/local/openresty/luajit/bin/luarocks install lua-resty-jwt
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
@@ -44,6 +43,9 @@ RUN chmod -R 755 /usr/local/openresty/nginx/html/ && \
     chown -R nobody:nobody /usr/local/openresty/nginx/lua/ && \
     chown -R nobody:nobody /var/cache/nginx && \
     chown -R nobody:nobody /var/log/nginx
+
+# Install lua-resty-jwt
+RUN /usr/local/openresty/bin/opm get SkyLothar/lua-resty-jwt
 
 # Expose port
 EXPOSE 80
