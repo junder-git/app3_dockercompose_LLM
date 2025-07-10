@@ -16,41 +16,11 @@ echo "🔍 Debug: ADMIN_USER_ID='$ADMIN_USER_ID'"
 echo "🔍 Debug: JWT_SECRET length: ${#JWT_SECRET}"
 echo "🔍 Debug: ADMIN_PASSWORD length: ${#ADMIN_PASSWORD}"
 
-# Function to hash password using JWT_SECRET (consistent with Lua scripts)
-hash_password() {
-    # Check if required variables are set
-    if [[ -z "$ADMIN_PASSWORD" ]]; then
-        echo "❌ Error: ADMIN_PASSWORD is empty" >&2  # Send to stderr, not stdout
-        return 1
-    fi
-    
-    if [[ -z "$JWT_SECRET" ]]; then
-        echo "❌ Error: JWT_SECRET is empty" >&2      # Send to stderr, not stdout
-        return 1
-    fi
-    
-    # FIXED: Send debug output to stderr, not stdout
-    local combined="${ADMIN_PASSWORD}${JWT_SECRET}"
-    echo "🔍 Debug: Combined string length: ${#combined}" >&2
-    
-    # Generate hash
-    local hash=$(echo -n "$combined" | openssl dgst -sha256 -hex | cut -d' ' -f2)
-    
-    if [[ -z "$hash" ]]; then
-        echo "❌ Error: Hash generation failed" >&2     # Send to stderr, not stdout
-        return 1
-    fi
-    
-    echo "🔍 Debug: Hash generated successfully (length: ${#hash})" >&2
-    
-    # ONLY the final result should go to stdout
-    echo "jwt_secret:${hash}"
-}
 # Generate admin password hash ONCE and store it
-ADMIN_PASSWORD_HASH=$(hash_password)
+ADMIN_PASSWORD_HASH=$(echo -n "${ADMIN_PASSWORD}${JWT_SECRET}" | openssl dgst -sha256 -hex | awk '{print $2}')
 
 # SECURITY: Never log the actual hash
-echo "🔐 Admin password hash generated successfully (length: ${#ADMIN_PASSWORD_HASH})"
+echo "🔐 Admin password hash generated successfully: ${ADMIN_PASSWORD_HASH}"
 
 # Start Redis server in the background
 redis-server /usr/local/etc/redis/redis.conf &
@@ -73,7 +43,7 @@ echo "✅ Redis is ready"
 if redis-cli EXISTS "user:$ADMIN_USERNAME" | grep -q "1"; then
     echo "ℹ️  Admin user '$ADMIN_USERNAME' already exists from previous data"
     # Update password hash if it changed
-    redis-cli HSET "user:$ADMIN_USERNAME" "password_hash" "$ADMIN_PASSWORD_HASH" > /dev/null
+    redis-cli HSET "user:$ADMIN_USERNAME" "password_hash:" "$ADMIN_PASSWORD_HASH" > /dev/null
     echo "🔐 Admin password hash updated"
 else
     # Create timestamp
