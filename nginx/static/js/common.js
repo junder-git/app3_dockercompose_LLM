@@ -1,100 +1,105 @@
-window.DevstralCommon = {
-    $: (selector, parent = document) => parent.querySelector(selector),
+async function apiGet(url) {
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" }
+  });
+  return await res.json();
+}
 
-    $$: (selector, parent = document) => parent.querySelectorAll(selector),
+async function apiPost(url, data = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  return await res.json();
+}
 
-    val: (selector) => DevstralCommon.$(selector)?.value || '',
+async function loadUser() {
+  try {
+    const res = await apiGet("/api/auth/me");
+    const usernameEl = document.getElementById("navbar-username");
+    const logoutBtn = document.getElementById("logout-button");
 
-    text: (el, text = null) => {
-        if (!el) return;
-        if (text !== null) el.innerText = text;
-        else return el.innerText;
-    },
-
-    html: (selector, html) => {
-        const el = DevstralCommon.$(selector);
-        if (el) el.innerHTML = html;
-    },
-
-    prop: (el, prop, value) => {
-        if (el) el[prop] = value;
-    },
-
-    showFlashMessage: (message, type = 'success', container = '#flash-messages') => {
-        const flashContainer = DevstralCommon.$(container);
-        if (!flashContainer) return;
-
-        const div = document.createElement('div');
-        div.className = `alert alert-${type}`;
-        div.innerHTML = `<i class="bi bi-info-circle"></i> ${message}`;
-
-        flashContainer.innerHTML = '';
-        flashContainer.appendChild(div);
-
-        setTimeout(() => {
-            div.remove();
-        }, 5000);
-    },
-
-    isTokenExpired: (token) => {
-        try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            return payload.exp && payload.exp < Date.now() / 1000;
-        } catch (e) {
-            return true;
-        }
-    },
-
-    saveToken: (token) => {
-        localStorage.setItem('auth_token', token);
-    },
-
-    getToken: () => {
-        return localStorage.getItem('auth_token');
-    },
-
-    clearToken: () => {
-        localStorage.removeItem('auth_token');
-    },
-
-    authHeaders: () => {
-        const token = DevstralCommon.getToken();
-        return token ? { 'Authorization': `Bearer ${token}` } : {};
-    },
-
-    login: async (username, password) => {
-        const response = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+    if (res.success && res.username) {
+      if (usernameEl) usernameEl.innerText = `Logged in as: ${res.username}`;
+      if (logoutBtn) {
+        logoutBtn.style.display = "inline-block";
+        logoutBtn.addEventListener("click", () => {
+          document.cookie = "access_token=; Max-Age=0; Path=/";
+          location.href = "/login.html";
         });
-
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Login failed');
-        }
-
-        const data = await response.json();
-        if (data.success && data.token) {
-            DevstralCommon.saveToken(data.token);
-        }
-        return data;
-    },
-
-    logout: () => {
-        DevstralCommon.clearToken();
-        window.location.href = '/login';
-    },
-
-    fetchWithAuth: async (url, options = {}) => {
-        const headers = { ...(options.headers || {}), ...DevstralCommon.authHeaders() };
-        const response = await fetch(url, { ...options, headers });
-
-        if (response.status === 401) {
-            DevstralCommon.logout();
-            throw new Error('Unauthorized - logged out');
-        }
-
-        return response;
+      }
+    } else {
+      if (usernameEl) usernameEl.innerText = "Guest";
     }
+  } catch {
+    const usernameEl = document.getElementById("navbar-username");
+    if (usernameEl) usernameEl.innerText = "Guest";
+  }
+}
+
+async function loadAdminPanel() {
+  const res = await apiGet("/api/auth/me");
+  if (!res.success || !res.is_admin) {
+    window.location.href = "/login.html";
+  }
+}
+
+async function setupChat() {
+  const res = await apiGet("/api/auth/me");
+  if (!res.success) {
+    window.location.href = "/login.html";
+  }
+  // You can add further chat event listeners here
+}
+
+function setupLogin() {
+  const loginForm = document.getElementById("login-form");
+  if (loginForm) {
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const res = await apiPost("/api/auth/login", { username, password });
+      if (res.success && res.token) {
+        document.cookie = `access_token=${res.token}; Path=/;`;
+        window.location.href = "/chat.html";
+      } else {
+        alert("Invalid credentials");
+      }
+    });
+  }
+}
+
+function setupRegister() {
+  const regForm = document.getElementById("register-form");
+  if (regForm) {
+    regForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const res = await apiPost("/api/register", { username, password });
+      if (res.success) {
+        alert("Registered successfully. Please login.");
+        window.location.href = "/login.html";
+      } else {
+        alert("Registration failed: " + (res.error || "Unknown error"));
+      }
+    });
+  }
+}
+
+window.DevstralCommon = {
+  apiGet,
+  apiPost,
+  loadUser,
+  loadAdminPanel,
+  setupChat,
+  setupLogin,
+  setupRegister
 };
