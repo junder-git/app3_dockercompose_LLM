@@ -10,11 +10,11 @@ JWT_SECRET="${JWT_SECRET}"
 
 echo "🚀 Starting Redis with conditional admin initialization..."
 
-# Debug environment variables
+# SECURITY: Never log actual passwords or secrets in production
 echo "🔍 Debug: ADMIN_USERNAME='$ADMIN_USERNAME'"
-echo "🔍 Debug: ADMIN_PASSWORD='$ADMIN_PASSWORD'"
-echo "🔍 Debug: JWT_SECRET='$JWT_SECRET'"
 echo "🔍 Debug: ADMIN_USER_ID='$ADMIN_USER_ID'"
+echo "🔍 Debug: JWT_SECRET length: ${#JWT_SECRET}"
+echo "🔍 Debug: ADMIN_PASSWORD length: ${#ADMIN_PASSWORD}"
 
 # Function to hash password using JWT_SECRET (consistent with Lua scripts)
 hash_password() {
@@ -29,26 +29,29 @@ hash_password() {
         return 1
     fi
     
-    # Use echo -n instead of printf for better compatibility
+    # SECURITY: Never log the actual password or secret
     local combined="${ADMIN_PASSWORD}${JWT_SECRET}"
-    echo "🔍 Debug: Combined string: '$combined'"
-    echo "🔍 Debug: Combined length: ${#combined}"
+    echo "🔍 Debug: Combined string length: ${#combined}"
     
     # Generate hash
     local hash=$(echo -n "$combined" | openssl dgst -sha256 -hex | cut -d' ' -f2)
-    echo "🔍 Debug: Raw hash: '$hash'"
     
     if [[ -z "$hash" ]]; then
         echo "❌ Error: Hash generation failed"
         return 1
     fi
     
+    # SECURITY: Never log the actual hash
+    echo "🔍 Debug: Hash generated successfully (length: ${#hash})"
+    
     echo "jwt_secret:${hash}"
 }
 
 # Generate admin password hash ONCE and store it
 ADMIN_PASSWORD_HASH=$(hash_password)
-echo "🔐 Generated admin password hash: $ADMIN_PASSWORD_HASH"
+
+# SECURITY: Never log the actual hash
+echo "🔐 Admin password hash generated successfully (length: ${#ADMIN_PASSWORD_HASH})"
 
 # Start Redis server in the background
 redis-server /usr/local/etc/redis/redis.conf &
@@ -62,29 +65,35 @@ until redis-cli ping > /dev/null 2>&1; do
     sleep 1
 done
 
-# Give Redis extra time to load AOF/RDB data from volume (increased for safety)
+# Give Redis extra time to load AOF/RDB data from volume
 sleep 5
 
 echo "✅ Redis is ready"
   
 # Double-check if admin user exists (maybe from previous volume without flag)
 if redis-cli EXISTS "user:$ADMIN_USERNAME" | grep -q "1"; then
-echo "ℹ️  Admin user '$ADMIN_USERNAME' already exists from previous data"
-redis-cli SET "password_hash" "$ADMIN_PASSWORD_HASH"
+    echo "ℹ️  Admin user '$ADMIN_USERNAME' already exists from previous data"
+    # Update password hash if it changed
+    redis-cli HSET "user:$ADMIN_USERNAME" "password_hash" "$ADMIN_PASSWORD_HASH" > /dev/null
+    echo "🔐 Admin password hash updated"
 else
-# Create timestamp
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# Create admin user
-redis-cli HMSET "user:$ADMIN_USERNAME" \
-    "id" "$ADMIN_USER_ID" \
-    "username" "$ADMIN_USERNAME" \
-    "password_hash" "$ADMIN_PASSWORD_HASH" \
-    "is_admin" "true" \
-    "is_approved" "true" \
-    "created_at" "$TIMESTAMP"
+    # Create timestamp
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    echo "📝 Creating admin user in Redis..."
+    
+    # Create admin user
+    redis-cli HMSET "user:$ADMIN_USERNAME" \
+        "id" "$ADMIN_USER_ID" \
+        "username" "$ADMIN_USERNAME" \
+        "password_hash" "$ADMIN_PASSWORD_HASH" \
+        "is_admin" "true" \
+        "is_approved" "true" \
+        "created_at" "$TIMESTAMP" > /dev/null
+    
+    echo "✅ Admin user created successfully"
 fi
-echo "📝 Creating admin user in Redis with generated password hash..."
-echo "🔐 Using password hash: $ADMIN_PASSWORD_HASH"
+
 echo "🎉 Redis initialization complete!"
 
 # Wait for Redis process (keeps container running)

@@ -415,7 +415,8 @@ local function handle_login()
         return
     end
 
-    -- Password comparison using hash verification
+    -- SECURITY: Password verification is the ONLY place where we access the stored hash
+    -- The hash is never logged or returned in responses
     if not verify_password(password, user.password_hash) then
         ngx.log(ngx.WARN, "DEBUG: Password verification failed for: " .. username)
         send_error_response(401, "Invalid credentials")
@@ -451,12 +452,12 @@ local function handle_login()
 
     -- Create new JWT
     local jwt_payload = {
-        id = user.id,  -- Changed from user_id to id
+        id = user.id,
         username = user.username,
         is_admin = user.is_admin == "true",
         exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60),
         iat = ngx.time(),
-        jti = tostring(ngx.time() * 1000 + math.random(1000, 9999)) -- JWT ID
+        jti = tostring(ngx.time() * 1000 + math.random(1000, 9999))
     }
 
     local jwt_token = generate_jwt(jwt_payload)
@@ -500,7 +501,7 @@ local function handle_verify()
     end
 
     -- Verify JWT exists in Redis
-    local stored_jwt = get_jwt_from_redis(payload.id)  -- Changed from user_id to id
+    local stored_jwt = get_jwt_from_redis(payload.id)
     if not stored_jwt or stored_jwt ~= token then
         send_error_response(401, "Token not found in session store")
         return
@@ -523,7 +524,7 @@ local function handle_verify()
 
     send_success_response({
         user = {
-            id = payload.id,  -- Changed from user_id to id
+            id = payload.id,
             username = payload.username,
             is_admin = payload.is_admin
         }
@@ -547,7 +548,7 @@ local function handle_logout()
     end
 
     -- Delete JWT from Redis
-    local delete_success = delete_jwt_from_redis(payload.id)  -- Changed from user_id to id
+    local delete_success = delete_jwt_from_redis(payload.id)
     
     if delete_success then
         send_success_response({
@@ -558,7 +559,7 @@ local function handle_logout()
     end
 end
 
--- Debug endpoint
+-- SECURITY: Fixed debug endpoint - never expose password hashes
 local function handle_debug()
     ngx.log(ngx.INFO, "DEBUG: Auth debug endpoint called")
     
@@ -566,19 +567,21 @@ local function handle_debug()
     local redis_res = ngx.location.capture("/redis-internal/ping")
     debug_redis_operation("PING", "/redis-internal/ping", redis_res)
     
-    -- Try to get admin user
+    -- Try to get admin user - but NEVER return password_hash
     local admin_res = ngx.location.capture("/redis-internal/hgetall/user:admin1")
     debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_res)
     
-    local admin_data = {}
+    local admin_exists = false
     if admin_res.status == 200 then
-        admin_data = parse_redis_hgetall(admin_res.body)
+        local admin_data = parse_redis_hgetall(admin_res.body)
+        admin_exists = admin_data.username ~= nil
     end
     
     send_success_response({
         redis_ping = redis_res.status == 200,
-        admin_user_exists = admin_data.username ~= nil,
-        admin_data = admin_data
+        admin_user_exists = admin_exists,
+        -- SECURITY: Never expose password hashes or other sensitive data
+        message = "Debug info available - sensitive data excluded for security"
     })
 end
 

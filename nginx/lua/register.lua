@@ -1,4 +1,4 @@
--- nginx/lua/register.lua - Dedicated registration handler with Redis debugging
+-- nginx/lua/register.lua - Dedicated registration handler with secure debugging
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -22,7 +22,7 @@ local function hash_password(password)
     return "jwt_secret:" .. hash
 end
 
--- Password verification function using JWT_SECRET (consistent with Redis init)
+-- SECURITY: Password verification function - never expose hashes
 local function verify_password(password, stored_hash)
     if not stored_hash then
         return false
@@ -47,24 +47,7 @@ local function verify_password(password, stored_hash)
         return computed_hash == stored_hash_part
     end
     
-    -- Legacy format: salt:hash
-    if string.find(stored_hash, ":") then
-        local salt, hash = stored_hash:match("([^:]+):([^:]+)")
-        if not salt or not hash then
-            return false
-        end
-        
-        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
-                                       password:gsub("'", "'\"'\"'"), salt)
-        local hash_handle = io.popen(hash_cmd)
-        local computed_hash = hash_handle:read("*a"):gsub("\n", "")
-        hash_handle:close()
-        
-        return computed_hash == hash
-    end
-    
-    -- Legacy plain text password (for backward compatibility)
-    return password == stored_hash
+    return false
 end
 
 -- Debug function to log Redis operations
@@ -72,7 +55,6 @@ local function debug_redis_operation(operation, uri, result)
     ngx.log(ngx.INFO, "DEBUG REDIS: Operation=" .. operation .. ", URI=" .. uri .. ", Status=" .. result.status)
     if result.body then
         ngx.log(ngx.INFO, "DEBUG REDIS: Body length=" .. #result.body)
-        ngx.log(ngx.INFO, "DEBUG REDIS: Body preview=" .. string.sub(result.body, 1, 200))
     end
 end
 
@@ -184,7 +166,7 @@ local function parse_redis_keys(body)
     return keys
 end
 
--- Parse Redis HGETALL response
+-- SECURITY: Parse Redis HGETALL response but filter out sensitive data
 local function parse_redis_hgetall(body)
     if not body or body == "" or body == "$-1" then
         return {}
@@ -217,7 +199,10 @@ local function parse_redis_hgetall(body)
                     i = i + 1
                     if lines[i] then
                         local value = lines[i]
-                        result[key] = value
+                        -- SECURITY: Never expose password hashes
+                        if key ~= "password_hash" then
+                            result[key] = value
+                        end
                     end
                 end
             end
@@ -297,7 +282,7 @@ local function send_success_response(data)
     ngx.say(cjson.encode(response))
 end
 
--- Debug endpoint
+-- SECURITY: Fixed debug endpoint - never expose password hashes or sensitive data
 local function handle_debug()
     ngx.log(ngx.INFO, "DEBUG: Registration debug endpoint called")
     
@@ -313,7 +298,7 @@ local function handle_debug()
     
     test_results.set_status = set_result.status
     test_results.get_status = get_result.status
-    test_results.get_body = get_result.body
+    test_results.get_success = get_result.status == 200
     
     debug_redis_operation("SET TEST", "/redis-internal/hset/debug_test/test_field/test_value", set_result)
     debug_redis_operation("GET TEST", "/redis-internal/hget/debug_test/test_field", get_result)
@@ -321,7 +306,7 @@ local function handle_debug()
     -- Test 2: Check if we can see the test data
     local hgetall_result = ngx.location.capture("/redis-internal/hgetall/debug_test")
     test_results.hgetall_status = hgetall_result.status
-    test_results.hgetall_body = hgetall_result.body
+    test_results.hgetall_success = hgetall_result.status == 200
     
     debug_redis_operation("HGETALL TEST", "/redis-internal/hgetall/debug_test", hgetall_result)
     
@@ -332,13 +317,14 @@ local function handle_debug()
     -- Count users
     local pending_count = count_pending_users()
     
-    -- Try to get a specific user (admin)
+    -- Try to get a specific user (admin) - but never expose password hash
     local admin_test = ngx.location.capture("/redis-internal/hgetall/user:admin1")
     debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_test)
     
-    local admin_data = {}
+    local admin_exists = false
     if admin_test.status == 200 then
-        admin_data = parse_redis_hgetall(admin_test.body)
+        local admin_data = parse_redis_hgetall(admin_test.body)
+        admin_exists = admin_data.username ~= nil
     end
     
     -- Test Redis info
@@ -355,27 +341,15 @@ local function handle_debug()
         test_results = test_results,
         pending_users = pending_count,
         max_pending = MAX_PENDING_USERS,
-        admin_user_exists = admin_data.username ~= nil,
-        admin_user_data = admin_data,
+        admin_user_exists = admin_exists,
+        -- SECURITY: Never expose password hashes or sensitive user data
+        admin_user_data = {
+            exists = admin_exists,
+            message = "Admin user data protected for security"
+        },
         redis_info_status = info_result.status,
-        redis_dbsize_status = dbsize_result.status
-    })
-end user (admin)
-    local admin_test = ngx.location.capture("/redis-internal/hgetall/user:admin1")
-    debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_test)
-    
-    local admin_data = {}
-    if admin_test.status == 200 then
-        admin_data = parse_redis_hgetall(admin_test.body)
-    end
-    
-    send_success_response({
-        redis_status = redis_ok,
-        redis_message = redis_msg,
-        pending_users = pending_count,
-        max_pending = MAX_PENDING_USERS,
-        admin_user_exists = admin_data.username ~= nil,
-        admin_user_data = admin_data
+        redis_dbsize_status = dbsize_result.status,
+        security_note = "Sensitive data excluded from debug output"
     })
 end
 
@@ -479,7 +453,7 @@ local function handle_register()
     -- Now try creating the user with a simpler approach
     ngx.log(ngx.INFO, "DEBUG: Redis test passed, creating user...")
     
-    -- Hash the password
+    -- Hash the password - SECURITY: Never log the actual hash
     local hashed_password = hash_password(password)
     ngx.log(ngx.INFO, "DEBUG: Password hashed successfully")
     
@@ -497,10 +471,10 @@ local function handle_register()
                       "/created_at/" .. timestamp ..
                       "/last_login/" .. timestamp
     
-    ngx.log(ngx.INFO, "DEBUG: HMSET path: " .. hmset_path)
+    ngx.log(ngx.INFO, "DEBUG: HMSET path prepared (password hash excluded from logs)")
     
     local hmset_result = ngx.location.capture(hmset_path)
-    debug_redis_operation("HMSET user:" .. username, hmset_path, hmset_result)
+    debug_redis_operation("HMSET user:" .. username, "HMSET path (secure)", hmset_result)
     
     if hmset_result.status ~= 200 then
         ngx.log(ngx.ERR, "DEBUG: HMSET failed for user " .. username)
