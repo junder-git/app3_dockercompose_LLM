@@ -99,8 +99,10 @@ services:
     ports:
       - "80:80"
     environment:
-      - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
       - JWT_SECRET=${JWT_SECRET}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx

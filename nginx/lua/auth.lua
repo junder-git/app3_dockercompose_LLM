@@ -5,7 +5,7 @@ local jwt = require "resty.jwt"
 -- Config
 local REDIS_HOST = os.getenv("REDIS_HOST") or "127.0.0.1"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
 
 -- Utility
 local function send_json(status, tbl)
@@ -71,7 +71,7 @@ local function generate_jwt(user_id, username)
     return jwt_token
 end
 
-function handle_login()
+local function handle_login()
     ngx.req.read_body()
     local data = cjson.decode(ngx.var.request_body or "{}")
 
