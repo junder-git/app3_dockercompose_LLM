@@ -177,8 +177,8 @@ local function verify_password(password, stored_hash)
         end
         
         -- Hash the provided password with JWT_SECRET
-        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
-                                       password:gsub("'", "'\"'\"'"), JWT_SECRET:gsub("'", "'\"'\"'"))
+        local hash_cmd = string.format("echo -n '%s%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                               password:gsub("'", "'\"'\"'"), salt)
         local hash_handle = io.popen(hash_cmd)
         local computed_hash = hash_handle:read("*a"):gsub("\n", "")
         hash_handle:close()
