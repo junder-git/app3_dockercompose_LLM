@@ -39,7 +39,7 @@ local function verify_password(password, stored_hash)
     return computed_hash == stored_hash
 end
 
-function handle_login()
+local function handle_login()
     local body = ngx.req.get_body_data()
     if not body then
         send_json(400, { error = "Missing request body" })
@@ -91,6 +91,26 @@ function handle_login()
     send_json(200, { success = true, token = jwt_token })
 end
 
+local function handle_me()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        send_json(401, { error = "No token provided" })
+    end
+
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        send_json(401, { error = "Invalid token" })
+    end
+
+    local payload = jwt_obj.payload
+    send_json(200, {
+        success = true,
+        username = payload.username,
+        is_admin = payload.is_admin
+    })
+end
+
 return {
-    handle_login = handle_login
+    handle_login = handle_login,
+    handle_me = handle_me
 }
