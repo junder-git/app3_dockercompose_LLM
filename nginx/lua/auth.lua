@@ -1,4 +1,4 @@
--- nginx/lua/auth.lua - With pending user limit check
+-- nginx/lua/auth.lua - Simplified authentication handler
 local cjson = require "cjson"
 
 -- Get configuration from environment variables
@@ -7,21 +7,30 @@ local MAX_USERNAME_LENGTH = tonumber(os.getenv("MAX_USERNAME_LENGTH")) or 50
 local MIN_PASSWORD_LENGTH = tonumber(os.getenv("MIN_PASSWORD_LENGTH")) or 6
 local MAX_PASSWORD_LENGTH = tonumber(os.getenv("MAX_PASSWORD_LENGTH")) or 128
 local SESSION_LIFETIME_DAYS = tonumber(os.getenv("SESSION_LIFETIME_DAYS")) or 7
-local MAX_PENDING_USERS = tonumber(os.getenv("MAX_PENDING_USERS")) or 2
 
--- Safe sanitization without regex patterns
+-- JWT Secret (in production, this should be from environment variable)
+local JWT_SECRET = os.getenv("JWT_SECRET") or "your-secret-key-change-this-in-production"
+
+-- Debug function to log Redis operations
+local function debug_redis_operation(operation, uri, result)
+    ngx.log(ngx.INFO, "DEBUG REDIS: Operation=" .. operation .. ", URI=" .. uri .. ", Status=" .. result.status)
+    if result.body then
+        ngx.log(ngx.INFO, "DEBUG REDIS: Body length=" .. #result.body)
+        ngx.log(ngx.INFO, "DEBUG REDIS: Body preview=" .. string.sub(result.body, 1, 200))
+    end
+end
+
+-- Simple sanitization
 local function sanitize_input(input)
     if not input or type(input) ~= "string" then
         return ""
     end
     
-    -- Simple character-by-character sanitization
     local result = ""
     for i = 1, #input do
         local char = string.sub(input, i, i)
         local byte = string.byte(char)
         
-        -- Keep only safe characters: letters, numbers, underscore, dash
         if (byte >= 48 and byte <= 57) or  -- 0-9
            (byte >= 65 and byte <= 90) or  -- A-Z
            (byte >= 97 and byte <= 122) or -- a-z
@@ -39,7 +48,6 @@ local function validate_username(username)
         return false, "Username must be a string"
     end
     
-    -- Basic length check before sanitization
     if #username < MIN_USERNAME_LENGTH then
         return false, "Username must be at least " .. MIN_USERNAME_LENGTH .. " characters"
     end
@@ -47,10 +55,8 @@ local function validate_username(username)
         return false, "Username must be less than " .. MAX_USERNAME_LENGTH .. " characters"
     end
     
-    -- Sanitize input
     local clean_username = sanitize_input(username)
     
-    -- Check if sanitization removed characters (indicating invalid chars)
     if #clean_username ~= #username then
         return false, "Username can only contain letters, numbers, underscore, and dash"
     end
@@ -71,7 +77,7 @@ local function validate_password(password)
     return true, password
 end
 
--- Token generation
+-- Simple token generation (for now, we'll use the original base64 approach)
 local function generate_token(user)
     local payload = {
         user_id = user.id,
@@ -108,7 +114,7 @@ local function verify_token(token)
     return payload, nil
 end
 
--- Redis RESP parser
+-- Parse Redis HGETALL response
 local function parse_redis_hgetall(body)
     if not body or body == "" or body == "$-1" then
         return {}
@@ -152,56 +158,6 @@ local function parse_redis_hgetall(body)
     return result
 end
 
--- NEW: Function to count pending users
-local function count_pending_users()
-    -- Get all user keys from Redis
-    local res = ngx.location.capture("/redis-internal/keys/user:*")
-    if res.status ~= 200 then
-        ngx.log(ngx.ERR, "Failed to get user keys from Redis")
-        return 0
-    end
-    
-    -- Parse Redis KEYS response
-    local lines = {}
-    for line in res.body:gmatch("[^\r\n]+") do
-        if line and line ~= "" then
-            table.insert(lines, line)
-        end
-    end
-    
-    local pending_count = 0
-    local i = 1
-    
-    -- Skip array count
-    if lines[i] and string.match(lines[i], "^%*%d+$") then
-        i = i + 1
-    end
-    
-    -- Check each user key
-    while i <= #lines do
-        if lines[i] and string.match(lines[i], "^%$%d+$") then
-            i = i + 1
-            if lines[i] then
-                local user_key = lines[i]
-                
-                -- Get user data
-                local user_res = ngx.location.capture("/redis-internal/hgetall/" .. user_key)
-                if user_res.status == 200 then
-                    local user_data = parse_redis_hgetall(user_res.body)
-                    
-                    -- Check if user is pending (not approved and not admin)
-                    if user_data.is_approved == "false" and user_data.is_admin ~= "true" then
-                        pending_count = pending_count + 1
-                    end
-                end
-            end
-        end
-        i = i + 1
-    end
-    
-    return pending_count
-end
-
 -- Error response
 local function send_error_response(status, message)
     ngx.status = status
@@ -234,7 +190,10 @@ local function send_success_response(data)
     ngx.say(cjson.encode(response))
 end
 
+-- Login handler
 local function handle_login()
+    ngx.log(ngx.INFO, "DEBUG: Login request received")
+    
     if ngx.var.request_method ~= "POST" then
         send_error_response(405, "Method not allowed")
         return
@@ -264,6 +223,8 @@ local function handle_login()
         send_error_response(400, "Invalid JSON")
         return
     end
+
+    ngx.log(ngx.INFO, "DEBUG: Login attempt for username: " .. tostring(data.username))
 
     -- Input validation
     local valid, username = validate_username(data.username)
@@ -280,8 +241,10 @@ local function handle_login()
 
     -- Get user from Redis
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. username)
+    debug_redis_operation("HGETALL user:" .. username, "/redis-internal/hgetall/user:" .. username, res)
     
     if res.status ~= 200 then
+        ngx.log(ngx.WARN, "DEBUG: User not found in Redis: " .. username)
         send_error_response(401, "Invalid credentials")
         return
     end
@@ -289,18 +252,21 @@ local function handle_login()
     local user = parse_redis_hgetall(res.body)
     
     if not user.username or user.username ~= username then
+        ngx.log(ngx.WARN, "DEBUG: Username mismatch for: " .. username)
         send_error_response(401, "Invalid credentials")
         return
     end
 
     -- Password comparison
     if user.password_hash ~= password then
+        ngx.log(ngx.WARN, "DEBUG: Password mismatch for: " .. username)
         send_error_response(401, "Invalid credentials")
         return
     end
 
     -- Check if user is approved
     if user.is_approved ~= "true" then
+        ngx.log(ngx.WARN, "DEBUG: User not approved: " .. username)
         send_error_response(403, "Account pending approval")
         return
     end
@@ -312,7 +278,7 @@ local function handle_login()
         is_admin = user.is_admin == "true"
     })
 
-    ngx.log(ngx.INFO, "Successful login for user: " .. username)
+    ngx.log(ngx.INFO, "DEBUG: Successful login for user: " .. username)
     
     send_success_response({
         token = token,
@@ -324,103 +290,10 @@ local function handle_login()
     })
 end
 
-local function handle_register()
-    if ngx.var.request_method ~= "POST" then
-        send_error_response(405, "Method not allowed")
-        return
-    end
-
-    local content_type = ngx.var.content_type
-    if not content_type or not string.match(content_type, "application/json") then
-        send_error_response(400, "Invalid content type")
-        return
-    end
-
-    ngx.req.read_body()
-    local body = ngx.req.get_body_data()
-    
-    if not body then
-        send_error_response(400, "Request body required")
-        return
-    end
-
-    if #body > 1024 then
-        send_error_response(400, "Request body too large")
-        return
-    end
-
-    local ok, data = pcall(cjson.decode, body)
-    if not ok then
-        send_error_response(400, "Invalid JSON")
-        return
-    end
-
-    -- Input validation
-    local valid, username = validate_username(data.username)
-    if not valid then
-        send_error_response(400, username)
-        return
-    end
-
-    valid, password = validate_password(data.password)
-    if not valid then
-        send_error_response(400, password)
-        return
-    end
-
-    -- Check if user already exists
-    local res = ngx.location.capture("/redis-internal/exists/user:" .. username)
-    if res.status == 200 and res.body:match("1") then
-        send_error_response(409, "Username already exists")
-        return
-    end
-
-    -- NEW: Check pending user limit
-    local pending_count = count_pending_users()
-    ngx.log(ngx.INFO, "Current pending users: " .. pending_count .. ", Max allowed: " .. MAX_PENDING_USERS)
-    
-    if pending_count >= MAX_PENDING_USERS then
-        send_error_response(429, "Registration temporarily unavailable - too many pending approvals (" .. pending_count .. "/" .. MAX_PENDING_USERS .. ")")
-        return
-    end
-
-    -- Create user
-    local user_id = tostring(ngx.time() * 1000 + math.random(1000, 9999))
-    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    
-    local res = ngx.location.capture("/redis-internal/hmset/user:" .. username .. 
-        "/id/" .. user_id ..
-        "/username/" .. username ..
-        "/password_hash/" .. password ..
-        "/is_admin/false" ..
-        "/is_approved/false" ..
-        "/created_at/" .. timestamp ..
-        "/last_login/" .. timestamp)
-    
-    if res.status ~= 200 then
-        ngx.log(ngx.ERR, "Failed to create user: " .. username)
-        send_error_response(500, "Failed to create user")
-        return
-    end
-
-    ngx.log(ngx.INFO, "User registration successful: " .. username .. " (pending: " .. (pending_count + 1) .. "/" .. MAX_PENDING_USERS .. ")")
-    
-    ngx.status = 201
-    send_success_response({
-        message = "User created successfully. Pending admin approval (" .. (pending_count + 1) .. "/" .. MAX_PENDING_USERS .. " pending users).",
-        user = {
-            id = user_id,
-            username = username,
-            is_approved = false
-        },
-        pending_info = {
-            current_pending = pending_count + 1,
-            max_pending = MAX_PENDING_USERS
-        }
-    })
-end
-
+-- Verify handler
 local function handle_verify()
+    ngx.log(ngx.INFO, "DEBUG: Verify request received")
+    
     local auth_header = ngx.var.http_authorization
     if not auth_header or not string.match(auth_header, "^Bearer ") then
         send_error_response(401, "No token provided")
@@ -431,12 +304,15 @@ local function handle_verify()
     local payload, err = verify_token(token)
     
     if not payload then
+        ngx.log(ngx.WARN, "DEBUG: Token verification failed: " .. (err or "unknown"))
         send_error_response(401, "Invalid or expired token")
         return
     end
 
     -- Verify user still exists and is approved
     local res = ngx.location.capture("/redis-internal/hgetall/user:" .. payload.username)
+    debug_redis_operation("HGETALL user:" .. payload.username, "/redis-internal/hgetall/user:" .. payload.username, res)
+    
     if res.status ~= 200 then
         send_error_response(401, "User not found")
         return
@@ -457,15 +333,42 @@ local function handle_verify()
     })
 end
 
+-- Debug endpoint
+local function handle_debug()
+    ngx.log(ngx.INFO, "DEBUG: Auth debug endpoint called")
+    
+    -- Test Redis connection
+    local redis_res = ngx.location.capture("/redis-internal/ping")
+    debug_redis_operation("PING", "/redis-internal/ping", redis_res)
+    
+    -- Try to get admin user
+    local admin_res = ngx.location.capture("/redis-internal/hgetall/user:admin1")
+    debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_res)
+    
+    local admin_data = {}
+    if admin_res.status == 200 then
+        admin_data = parse_redis_hgetall(admin_res.body)
+    end
+    
+    send_success_response({
+        redis_ping = redis_res.status == 200,
+        admin_user_exists = admin_data.username ~= nil,
+        admin_data = admin_data
+    })
+end
+
 -- Route handling
 local uri = ngx.var.uri
+local method = ngx.var.request_method
 
-if uri == "/api/auth/login" then
+ngx.log(ngx.INFO, "DEBUG: Auth.lua handling " .. method .. " " .. uri)
+
+if uri == "/api/auth/login" and method == "POST" then
     handle_login()
-elseif uri == "/api/auth/register" then
-    handle_register()
-elseif uri == "/api/auth/verify" then
+elseif uri == "/api/auth/verify" and method == "GET" then
     handle_verify()
+elseif uri == "/api/auth/debug" and method == "GET" then
+    handle_debug()
 else
     send_error_response(404, "Auth endpoint not found")
 end

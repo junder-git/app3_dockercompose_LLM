@@ -2,10 +2,14 @@
 
 FROM openresty/openresty:1.25.3.1-0-alpine-fat
 
-# Install additional dependencies
+# Install additional dependencies including JWT support
 RUN apk add --no-cache \
     curl \
-    wget
+    wget \
+    openssl \
+    && luarocks install lua-resty-hmac
+
+# Rest of your Dockerfile remains the same...
 
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
