@@ -20,12 +20,11 @@ REDIS_PID=$!
 
 echo "⏳ Redis server started in background with PID: $REDIS_PID"
 
-# Wait a bit for Redis to fully start
+# Wait for Redis to fully start
 sleep 3
 
-# Generate password hash
+# Generate password hash without prefix
 ADMIN_PASSWORD_HASH=$(printf '%s%s' "$ADMIN_PASSWORD" "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
-REDIS_PASSWORD_HASH="jwt_secret:${ADMIN_PASSWORD_HASH}"
 
 echo "🔐 Admin password hash generated successfully: ${ADMIN_PASSWORD_HASH}"
 
@@ -39,7 +38,7 @@ else
   redis-cli HMSET "user:${ADMIN_USERNAME}" \
     id "$ADMIN_USER_ID" \
     username "$ADMIN_USERNAME" \
-    password_hash "$REDIS_PASSWORD_HASH" \
+    password_hash "$ADMIN_PASSWORD_HASH" \
     is_admin "true" \
     is_approved "true" \
     created_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -49,5 +48,3 @@ fi
 
 echo "⏳ Waiting for Redis process (keeps container running)..."
 wait $REDIS_PID
-
-#tail -f /dev/null
