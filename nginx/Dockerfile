@@ -8,6 +8,8 @@ RUN apk add --no-cache \
     wget \
     openssl
 
+RUN /usr/local/openresty/luajit/bin/luarocks install lua-resty-jwt
+
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
 
