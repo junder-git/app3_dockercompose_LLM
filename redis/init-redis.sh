@@ -43,7 +43,7 @@ echo "✅ Redis is ready"
 if redis-cli EXISTS "user:$ADMIN_USERNAME" | grep -q "1"; then
     echo "ℹ️  Admin user '$ADMIN_USERNAME' already exists from previous data"
     # Update password hash if it changed
-    redis-cli HSET "user:$ADMIN_USERNAME" "password_hash:" "$ADMIN_PASSWORD_HASH" > /dev/null
+    redis-cli HSET "user:$ADMIN_USERNAME" "password_hash:" "jwt_secret:$ADMIN_PASSWORD_HASH" > /dev/null
     echo "🔐 Admin password hash updated"
 else
     # Create timestamp
@@ -55,7 +55,7 @@ else
     redis-cli HMSET "user:$ADMIN_USERNAME" \
         "id" "$ADMIN_USER_ID" \
         "username" "$ADMIN_USERNAME" \
-        "password_hash" "$ADMIN_PASSWORD_HASH" \
+        "password_hash" "jwt_secret:$ADMIN_PASSWORD_HASH" \
         "is_admin" "true" \
         "is_approved" "true" \
         "created_at" "$TIMESTAMP" > /dev/null
