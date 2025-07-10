@@ -1,5 +1,4 @@
 #!/bin/bash
-# redis/init-redis.sh - Fixed initialization with JWT_SECRET password hashing
 
 set -e
 
@@ -11,16 +10,44 @@ JWT_SECRET="${JWT_SECRET}"
 
 echo "🚀 Starting Redis with conditional admin initialization..."
 
+# Debug environment variables
+echo "🔍 Debug: ADMIN_USERNAME='$ADMIN_USERNAME'"
+echo "🔍 Debug: ADMIN_PASSWORD='$ADMIN_PASSWORD'"
+echo "🔍 Debug: JWT_SECRET='$JWT_SECRET'"
+echo "🔍 Debug: ADMIN_USER_ID='$ADMIN_USER_ID'"
+
 # Function to hash password using JWT_SECRET (consistent with Lua scripts)
 hash_password() {
-    local password="$ADMIN_PASSWORD"
-    # Use JWT_SECRET as salt for consistency with Lua scripts
-    local hash=$(printf '%s%s' "$password" "$JWT_SECRET" | openssl dgst -sha256 -hex | cut -d' ' -f2)
+    # Check if required variables are set
+    if [[ -z "$ADMIN_PASSWORD" ]]; then
+        echo "❌ Error: ADMIN_PASSWORD is empty"
+        return 1
+    fi
+    
+    if [[ -z "$JWT_SECRET" ]]; then
+        echo "❌ Error: JWT_SECRET is empty"
+        return 1
+    fi
+    
+    # Use echo -n instead of printf for better compatibility
+    local combined="${ADMIN_PASSWORD}${JWT_SECRET}"
+    echo "🔍 Debug: Combined string: '$combined'"
+    echo "🔍 Debug: Combined length: ${#combined}"
+    
+    # Generate hash
+    local hash=$(echo -n "$combined" | openssl dgst -sha256 -hex | cut -d' ' -f2)
+    echo "🔍 Debug: Raw hash: '$hash'"
+    
+    if [[ -z "$hash" ]]; then
+        echo "❌ Error: Hash generation failed"
+        return 1
+    fi
+    
     echo "jwt_secret:${hash}"
 }
 
 # Generate admin password hash ONCE and store it
-ADMIN_PASSWORD_HASH=$(hash_password "$ADMIN_PASSWORD")
+ADMIN_PASSWORD_HASH=$(hash_password)
 echo "🔐 Generated admin password hash: $ADMIN_PASSWORD_HASH"
 
 # Start Redis server in the background

@@ -2,6 +2,12 @@
 
 FROM redis:latest
 
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy configuration and initialization script
 COPY redis.conf /usr/local/etc/redis/redis.conf
 COPY init-redis.sh /usr/local/bin/init-redis.sh
