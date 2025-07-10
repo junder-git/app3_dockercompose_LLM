@@ -3,7 +3,7 @@ local redis = require "resty.redis"
 local jwt = require "resty.jwt"
 
 -- Config
-local REDIS_HOST = os.getenv("REDIS_HOST") or "127.0.0.1"
+local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
 
@@ -17,7 +17,7 @@ end
 
 local function connect_redis()
     local red = redis:new()
-    red:set_timeout(1000)
+    red:set_timeouts(1000,1000,1000)
     local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
     if not ok then
         ngx.log(ngx.ERR, "Failed to connect to Redis: ", err)
