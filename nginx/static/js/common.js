@@ -1,27 +1,46 @@
 window.DevstralCommon = {
     loadUser: async function () {
-        try {
-            const res = await fetch("/api/auth/me", { credentials: "include" }).then(r => r.json());
-            const usernameSpan = document.getElementById("navbar-username");
-            const logoutButton = document.getElementById("logout-button");
-            if (res.success && res.username) {
-                usernameSpan.innerText = `Logged in as: ${res.username}`;
-                logoutButton.style.display = "inline-block";
-                logoutButton.onclick = () => {
-                    document.cookie = "access_token=; Max-Age=0; Path=/";
-                    window.location.href = "/login.html";
-                };
-            } else {
-                usernameSpan.innerText = "Guest";
-                logoutButton.style.display = "none";
-                if (window.location.pathname.includes("chat") || window.location.pathname.includes("admin")) {
-                    window.location.href = "/login.html";
-                }
+    try {
+        const cookies = document.cookie.split(";").reduce((acc, pair) => {
+            const [k, v] = pair.trim().split("=");
+            acc[k] = v;
+            return acc;
+        }, {});
+        const token = cookies["access_token"];
+
+        const usernameSpan = document.getElementById("navbar-username");
+        const logoutButton = document.getElementById("logout-button");
+
+        if (!token) {
+            usernameSpan.innerText = "Guest";
+            logoutButton.style.display = "none";
+            if (window.location.pathname.includes("chat") || window.location.pathname.includes("admin")) {
+                window.location.href = "/login.html";
             }
-        } catch (err) {
-            console.error("Error fetching user:", err);
+            return; // Stop here if no token
         }
-    },
+
+        // If we do have a token, verify it
+        const res = await fetch("/api/auth/me", { credentials: "include" }).then(r => r.json());
+
+        if (res.success && res.username) {
+            usernameSpan.innerText = `Logged in as: ${res.username}`;
+            logoutButton.style.display = "inline-block";
+            logoutButton.onclick = () => {
+                document.cookie = "access_token=; Max-Age=0; Path=/";
+                window.location.href = "/login.html";
+            };
+        } else {
+            usernameSpan.innerText = "Guest";
+            logoutButton.style.display = "none";
+            if (window.location.pathname.includes("chat") || window.location.pathname.includes("admin")) {
+                window.location.href = "/login.html";
+            }
+        }
+    } catch (err) {
+        console.error("Error fetching user:", err);
+    }
+},
 
     setupLogin: function () {
         const form = document.getElementById("login-form");

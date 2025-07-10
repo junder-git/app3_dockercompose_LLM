@@ -92,30 +92,28 @@ local function handle_login()
 end
 
 local function handle_me()
-    local token = ngx.var.cookie_access_token or ngx.var.http_authorization
-    if not token or token == "" then
-        send_json(401, { error = "No token" })
-    end
+    local token = ngx.var.cookie_access_token
 
-    -- Remove "Bearer " if present
-    if string.sub(token, 1, 7) == "Bearer " then
-        token = string.sub(token, 8)
+    ngx.header.content_type = "application/json"
+
+    if not token then
+        ngx.say(cjson.encode({ success = false }))
+        return
     end
 
     local jwt_obj = jwt:verify(JWT_SECRET, token)
+
     if not jwt_obj.verified then
-        send_json(401, { error = "Invalid token" })
+        ngx.say(cjson.encode({ success = false }))
+        return
     end
 
-    send_json(200, {
-        success = true,
-        username = jwt_obj.payload.username,
-        is_admin = jwt_obj.payload.is_admin
-    })
+    local username = jwt_obj.payload.username
+    ngx.say(cjson.encode({ success = true, username = username }))
 end
 
 
 return {
-    handle_login = handle_login,
-    handle_me = handle_me
+  handle_login = handle_login,
+  handle_me = handle_me
 }
