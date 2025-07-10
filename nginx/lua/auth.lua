@@ -27,8 +27,8 @@ local function connect_redis()
 end
 
 local function verify_password(password, stored_hash)
-    local combined = password .. JWT_SECRET
-    local hash_cmd = string.format("printf '%%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'", combined)
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local computed_hash = handle:read("*a"):gsub("\n", "")
     handle:close()
@@ -40,8 +40,11 @@ local function verify_password(password, stored_hash)
 end
 
 function handle_login()
-    ngx.req.read_body()
     local body = ngx.req.get_body_data()
+    if not body then
+        send_json(400, { error = "Missing request body" })
+    end
+
     local data = cjson.decode(body)
     local username = data.username
     local password = data.password
@@ -52,53 +55,42 @@ function handle_login()
 
     local red = connect_redis()
     local user_key = "user:" .. username
-    local user_data_raw, err = red:hgetall(user_key)
-    if not user_data_raw or #user_data_raw == 0 then
+    local user_data, err = red:hgetall(user_key)
+    if not user_data or #user_data == 0 then
         send_json(401, { error = "Invalid credentials" })
     end
 
-    local user_data = {}
-    for i = 1, #user_data_raw, 2 do
-        user_data[user_data_raw[i]] = user_data_raw[i + 1]
+    local user = {}
+    for i = 1, #user_data, 2 do
+        user[user_data[i]] = user_data[i + 1]
     end
 
-    ngx.log(ngx.ERR, "DEBUG: User data dump: ", cjson.encode(user_data))
+    ngx.log(ngx.ERR, "DEBUG: User data dump: ", cjson.encode(user))
 
-    if not verify_password(password, user_data.password_hash) then
+    if user.is_approved ~= "true" then
+        send_json(403, { error = "User not approved" })
+    end
+
+    if not verify_password(password, user.password_hash) then
         ngx.log(ngx.ERR, "Password verification failed for user: ", username)
         send_json(401, { error = "Invalid credentials" })
     end
 
-    if user_data.is_approved ~= "true" then
-        send_json(403, { error = "User not approved" })
-    end
-
-    local token = jwt:sign(JWT_SECRET, {
+    local jwt_token = jwt:sign(JWT_SECRET, {
         header = { typ = "JWT", alg = "HS256" },
         payload = {
             username = username,
-            id = user_data.id,
-            is_admin = user_data.is_admin,
-            exp = ngx.time() + 7 * 24 * 3600
+            is_admin = user.is_admin == "true",
+            exp = ngx.time() + 86400
         }
     })
 
-    ngx.header["Set-Cookie"] = "token=" .. token .. "; Path=/; HttpOnly"
+    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. "; Path=/; HttpOnly"
     ngx.log(ngx.ERR, "DEBUG: Set-Cookie header set with token")
 
-    send_json(200, { success = true, token = token })
+    send_json(200, { success = true, token = jwt_token })
 end
 
-function handle_check()
-    local token = ngx.var.cookie_token
-    if not token then
-        send_json(401, { success = false, error = "No token" })
-    end
-
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        send_json(401, { success = false, error = "Invalid token" })
-    end
-
-    send_json(200, { success = true })
-end
+return {
+    handle_login = handle_login
+}

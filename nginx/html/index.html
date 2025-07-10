@@ -5,113 +5,58 @@
   <meta charset="UTF-8" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="/static/js/common.js"></script>
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      height: 100%;
-      font-family: sans-serif;
-      background: #111;
-      color: white;
-    }
-    #overlay {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      z-index: 1;
-    }
-    #overlay h1 {
-      font-size: 2.5rem;
-    }
-    #overlay p {
-      font-size: 1.2rem;
-    }
-    a.btn {
-      margin: 5px;
-    }
+    html, body { margin: 0; padding: 0; overflow: hidden; }
+    body { background: #111; color: #eee; }
   </style>
 </head>
 <body>
   <canvas id="bg"></canvas>
-  <div id="overlay">
-    <h1><i class="fas fa-robot"></i> Welcome to Devstral LLM App</h1>
-    <p class="lead">Your private local AI chat and admin system</p>
-    <a href="/register" class="btn btn-success">
-      <i class="fas fa-user-plus"></i> Register
-    </a>
-    <a href="/chat" class="btn btn-info">
-      <i class="fas fa-comments"></i> Chat
-    </a>
-    <a href="/admin" class="btn btn-warning">
-      <i class="fas fa-tools"></i> Admin
-    </a>
-  </div>
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <a class="navbar-brand" href="/">Devstral</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/chat">Chat</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+      </ul>
+      <span class="navbar-text me-3" id="navbar-username">Loading...</span>
+      <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+    </div>
+  </nav>
 
   <script>
-    const canvas = document.getElementById("bg");
-    const ctx = canvas.getContext("2d");
-    let nodes = [];
-    const numNodes = 50;
-
-    function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    window.addEventListener("resize", resize);
-    resize();
-
+  const canvas = document.getElementById("bg");
+  const ctx = canvas.getContext("2d");
+  let nodes = [];
+  const numNodes = 50;
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  window.addEventListener("resize", resize); resize();
+  for (let i = 0; i < numNodes; i++) {
+    nodes.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5 });
+  }
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    nodes.forEach(n => { n.x += n.vx; n.y += n.vy; if (n.x < 0 || n.x > canvas.width) n.vx *= -1; if (n.y < 0 || n.y > canvas.height) n.vy *= -1; });
     for (let i = 0; i < numNodes; i++) {
-      nodes.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-      });
-    }
-
-    function animate() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Move nodes
-      nodes.forEach(node => {
-        node.x += node.vx;
-        node.y += node.vy;
-        if (node.x < 0 || node.x > canvas.width) node.vx *= -1;
-        if (node.y < 0 || node.y > canvas.height) node.vy *= -1;
-      });
-
-      // Draw connections
-      for (let i = 0; i < numNodes; i++) {
-        for (let j = i + 1; j < numNodes; j++) {
-          const dx = nodes[i].x - nodes[j].x;
-          const dy = nodes[i].y - nodes[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(nodes[i].x, nodes[i].y);
-            ctx.lineTo(nodes[j].x, nodes[j].y);
-            ctx.stroke();
-          }
-        }
+      for (let j = i + 1; j < numNodes; j++) {
+        const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y, dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) { ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[j].x, nodes[j].y); ctx.stroke(); }
       }
-
-      // Draw nodes
-      nodes.forEach(node => {
-        ctx.fillStyle = "rgba(255,255,255,0.6)";
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, 2, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      requestAnimationFrame(animate);
     }
+    nodes.forEach(n => { ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.beginPath(); ctx.arc(n.x, n.y, 2, 0, Math.PI*2); ctx.fill(); });
+    requestAnimationFrame(animate);
+  }
+  animate();
 
-    animate();
+  (async () => {
+    try {
+      const res = await apiGet("/api/auth/me");
+      if (res.success && res.username) document.getElementById("navbar-username").innerText = `Logged in as: ${res.username}`;
+      else document.getElementById("navbar-username").innerText = "Guest";
+    } catch { document.getElementById("navbar-username").innerText = "Guest"; }
+  })();
   </script>
 </body>
 </html>
