@@ -126,12 +126,6 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 45s
 
 networks:
   devstral-network:
