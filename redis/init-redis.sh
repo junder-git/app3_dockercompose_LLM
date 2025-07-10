@@ -4,8 +4,8 @@
 set -e
 
 # Get admin credentials from environment variables
-ADMIN_USERNAME="${ADMIN_USERNAME:-admin1}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin1}"
+ADMIN_USERNAME="${ADMIN_USERNAME}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD}"
 ADMIN_USER_ID="${ADMIN_USER_ID:-admin}"
 JWT_SECRET="${JWT_SECRET}"
 
@@ -13,7 +13,7 @@ echo "🚀 Starting Redis with conditional admin initialization..."
 
 # Function to hash password using JWT_SECRET (consistent with Lua scripts)
 hash_password() {
-    local password="$1"
+    local password="$ADMIN_PASSWORD"
     # Use JWT_SECRET as salt for consistency with Lua scripts
     local hash=$(printf '%s%s' "$password" "$JWT_SECRET" | openssl dgst -sha256 -hex | cut -d' ' -f2)
     echo "jwt_secret:${hash}"
