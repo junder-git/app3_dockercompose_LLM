@@ -8,6 +8,65 @@ local MIN_PASSWORD_LENGTH = tonumber(os.getenv("MIN_PASSWORD_LENGTH")) or 6
 local MAX_PASSWORD_LENGTH = tonumber(os.getenv("MAX_PASSWORD_LENGTH")) or 128
 local MAX_PENDING_USERS = tonumber(os.getenv("MAX_PENDING_USERS")) or 2
 
+-- Password hashing function using JWT_SECRET (consistent with Redis init)
+local function hash_password(password)
+    local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+    
+    -- Use JWT_SECRET as salt for consistency with Redis init
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                   password:gsub("'", "'\"'\"'"), JWT_SECRET:gsub("'", "'\"'\"'"))
+    local hash_handle = io.popen(hash_cmd)
+    local hash = hash_handle:read("*a"):gsub("\n", "")
+    hash_handle:close()
+    
+    return "jwt_secret:" .. hash
+end
+
+-- Password verification function using JWT_SECRET (consistent with Redis init)
+local function verify_password(password, stored_hash)
+    if not stored_hash then
+        return false
+    end
+    
+    -- Check if it's a JWT_SECRET-based hash
+    if string.find(stored_hash, "jwt_secret:") then
+        local stored_hash_part = stored_hash:match("jwt_secret:([^:]+)")
+        if not stored_hash_part then
+            return false
+        end
+        
+        local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+        
+        -- Hash the provided password with JWT_SECRET
+        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                       password:gsub("'", "'\"'\"'"), JWT_SECRET:gsub("'", "'\"'\"'"))
+        local hash_handle = io.popen(hash_cmd)
+        local computed_hash = hash_handle:read("*a"):gsub("\n", "")
+        hash_handle:close()
+        
+        return computed_hash == stored_hash_part
+    end
+    
+    -- Legacy format: salt:hash
+    if string.find(stored_hash, ":") then
+        local salt, hash = stored_hash:match("([^:]+):([^:]+)")
+        if not salt or not hash then
+            return false
+        end
+        
+        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                       password:gsub("'", "'\"'\"'"), salt)
+        local hash_handle = io.popen(hash_cmd)
+        local computed_hash = hash_handle:read("*a"):gsub("\n", "")
+        hash_handle:close()
+        
+        return computed_hash == hash
+    end
+    
+    -- Legacy plain text password (for backward compatibility)
+    return password == stored_hash
+end
+
 -- Debug function to log Redis operations
 local function debug_redis_operation(operation, uri, result)
     ngx.log(ngx.INFO, "DEBUG REDIS: Operation=" .. operation .. ", URI=" .. uri .. ", Status=" .. result.status)
@@ -245,10 +304,63 @@ local function handle_debug()
     -- Test Redis connection
     local redis_ok, redis_msg = test_redis_connection()
     
+    -- Test basic Redis operations
+    local test_results = {}
+    
+    -- Test 1: Simple SET/GET
+    local set_result = ngx.location.capture("/redis-internal/hset/debug_test/test_field/test_value")
+    local get_result = ngx.location.capture("/redis-internal/hget/debug_test/test_field")
+    
+    test_results.set_status = set_result.status
+    test_results.get_status = get_result.status
+    test_results.get_body = get_result.body
+    
+    debug_redis_operation("SET TEST", "/redis-internal/hset/debug_test/test_field/test_value", set_result)
+    debug_redis_operation("GET TEST", "/redis-internal/hget/debug_test/test_field", get_result)
+    
+    -- Test 2: Check if we can see the test data
+    local hgetall_result = ngx.location.capture("/redis-internal/hgetall/debug_test")
+    test_results.hgetall_status = hgetall_result.status
+    test_results.hgetall_body = hgetall_result.body
+    
+    debug_redis_operation("HGETALL TEST", "/redis-internal/hgetall/debug_test", hgetall_result)
+    
+    -- Clean up test data
+    local del_result = ngx.location.capture("/redis-internal/del/debug_test")
+    debug_redis_operation("DEL TEST", "/redis-internal/del/debug_test", del_result)
+    
     -- Count users
     local pending_count = count_pending_users()
     
     -- Try to get a specific user (admin)
+    local admin_test = ngx.location.capture("/redis-internal/hgetall/user:admin1")
+    debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_test)
+    
+    local admin_data = {}
+    if admin_test.status == 200 then
+        admin_data = parse_redis_hgetall(admin_test.body)
+    end
+    
+    -- Test Redis info
+    local info_result = ngx.location.capture("/redis-internal/info")
+    debug_redis_operation("INFO", "/redis-internal/info", info_result)
+    
+    -- Test database size
+    local dbsize_result = ngx.location.capture("/redis-internal/dbsize")
+    debug_redis_operation("DBSIZE", "/redis-internal/dbsize", dbsize_result)
+    
+    send_success_response({
+        redis_status = redis_ok,
+        redis_message = redis_msg,
+        test_results = test_results,
+        pending_users = pending_count,
+        max_pending = MAX_PENDING_USERS,
+        admin_user_exists = admin_data.username ~= nil,
+        admin_user_data = admin_data,
+        redis_info_status = info_result.status,
+        redis_dbsize_status = dbsize_result.status
+    })
+end user (admin)
     local admin_test = ngx.location.capture("/redis-internal/hgetall/user:admin1")
     debug_redis_operation("HGETALL user:admin1", "/redis-internal/hgetall/user:admin1", admin_test)
     
@@ -349,26 +461,61 @@ local function handle_register()
     
     ngx.log(ngx.INFO, "DEBUG: Creating user with ID: " .. user_id)
     
-    -- Use individual HSET commands instead of HMSET for better debugging
-    local hset_commands = {
-        "id/" .. user_id,
-        "username/" .. username,
-        "password_hash/" .. password,
-        "is_admin/false",
-        "is_approved/false",
-        "created_at/" .. timestamp,
-        "last_login/" .. timestamp
-    }
+    -- Try a single HSET command first to test Redis connectivity
+    local test_key = "test_user_creation"
+    local test_result = ngx.location.capture("/redis-internal/hset/" .. test_key .. "/test_field/test_value")
+    debug_redis_operation("HSET TEST", "/redis-internal/hset/" .. test_key .. "/test_field/test_value", test_result)
     
-    for _, cmd in ipairs(hset_commands) do
-        local hset_res = ngx.location.capture("/redis-internal/hset/user:" .. username .. "/" .. cmd)
-        debug_redis_operation("HSET user:" .. username .. " " .. cmd, "/redis-internal/hset/user:" .. username .. "/" .. cmd, hset_res)
-        
-        if hset_res.status ~= 200 then
-            ngx.log(ngx.ERR, "DEBUG: Failed to set field " .. cmd .. " for user " .. username)
-            send_error_response(500, "Failed to create user - Redis error on field: " .. cmd)
-            return
-        end
+    if test_result.status ~= 200 then
+        ngx.log(ngx.ERR, "DEBUG: Redis test HSET failed")
+        send_error_response(500, "Redis connectivity test failed")
+        return
+    end
+    
+    -- Clean up test key
+    local cleanup_result = ngx.location.capture("/redis-internal/del/" .. test_key)
+    debug_redis_operation("DEL TEST", "/redis-internal/del/" .. test_key, cleanup_result)
+    
+    -- Now try creating the user with a simpler approach
+    ngx.log(ngx.INFO, "DEBUG: Redis test passed, creating user...")
+    
+    -- Hash the password
+    local hashed_password = hash_password(password)
+    ngx.log(ngx.INFO, "DEBUG: Password hashed successfully")
+    
+    -- Create user key
+    local user_key = "user:" .. username
+    ngx.log(ngx.INFO, "DEBUG: User key: " .. user_key)
+    
+    -- Try HMSET instead of individual HSET commands
+    local hmset_path = "/redis-internal/hmset/" .. user_key .. 
+                      "/id/" .. user_id ..
+                      "/username/" .. username ..
+                      "/password_hash/" .. hashed_password ..
+                      "/is_admin/false" ..
+                      "/is_approved/false" ..
+                      "/created_at/" .. timestamp ..
+                      "/last_login/" .. timestamp
+    
+    ngx.log(ngx.INFO, "DEBUG: HMSET path: " .. hmset_path)
+    
+    local hmset_result = ngx.location.capture(hmset_path)
+    debug_redis_operation("HMSET user:" .. username, hmset_path, hmset_result)
+    
+    if hmset_result.status ~= 200 then
+        ngx.log(ngx.ERR, "DEBUG: HMSET failed for user " .. username)
+        send_error_response(500, "Failed to create user - HMSET failed")
+        return
+    end
+    
+    -- Verify user was created
+    local verify_result = ngx.location.capture("/redis-internal/hgetall/user:" .. username)
+    debug_redis_operation("HGETALL VERIFY", "/redis-internal/hgetall/user:" .. username, verify_result)
+    
+    if verify_result.status ~= 200 then
+        ngx.log(ngx.ERR, "DEBUG: User verification failed")
+        send_error_response(500, "User creation verification failed")
+        return
     end
 
     ngx.log(ngx.INFO, "DEBUG: User creation successful: " .. username)

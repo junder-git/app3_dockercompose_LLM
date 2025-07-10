@@ -163,6 +163,49 @@ local function delete_jwt_from_redis(user_id)
     return result.status == 200
 end
 
+-- Password verification function using JWT_SECRET (consistent with Redis init and register)
+local function verify_password(password, stored_hash)
+    if not stored_hash then
+        return false
+    end
+    
+    -- Check if it's a JWT_SECRET-based hash
+    if string.find(stored_hash, "jwt_secret:") then
+        local stored_hash_part = stored_hash:match("jwt_secret:([^:]+)")
+        if not stored_hash_part then
+            return false
+        end
+        
+        -- Hash the provided password with JWT_SECRET
+        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                       password:gsub("'", "'\"'\"'"), JWT_SECRET:gsub("'", "'\"'\"'"))
+        local hash_handle = io.popen(hash_cmd)
+        local computed_hash = hash_handle:read("*a"):gsub("\n", "")
+        hash_handle:close()
+        
+        return computed_hash == stored_hash_part
+    end
+    
+    -- Legacy format: salt:hash
+    if string.find(stored_hash, ":") then
+        local salt, hash = stored_hash:match("([^:]+):([^:]+)")
+        if not salt or not hash then
+            return false
+        end
+        
+        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
+                                       password:gsub("'", "'\"'\"'"), salt)
+        local hash_handle = io.popen(hash_cmd)
+        local computed_hash = hash_handle:read("*a"):gsub("\n", "")
+        hash_handle:close()
+        
+        return computed_hash == hash
+    end
+    
+    -- Legacy plain text password (for backward compatibility)
+    return password == stored_hash
+end
+
 -- Debug function to log Redis operations
 local function debug_redis_operation(operation, uri, result)
     ngx.log(ngx.INFO, "DEBUG REDIS: Operation=" .. operation .. ", URI=" .. uri .. ", Status=" .. result.status)
@@ -372,9 +415,9 @@ local function handle_login()
         return
     end
 
-    -- Password comparison
-    if user.password_hash ~= password then
-        ngx.log(ngx.WARN, "DEBUG: Password mismatch for: " .. username)
+    -- Password comparison using hash verification
+    if not verify_password(password, user.password_hash) then
+        ngx.log(ngx.WARN, "DEBUG: Password verification failed for: " .. username)
         send_error_response(401, "Invalid credentials")
         return
     end
@@ -408,7 +451,7 @@ local function handle_login()
 
     -- Create new JWT
     local jwt_payload = {
-        user_id = user.id,
+        id = user.id,  -- Changed from user_id to id
         username = user.username,
         is_admin = user.is_admin == "true",
         exp = ngx.time() + (SESSION_LIFETIME_DAYS * 24 * 60 * 60),
@@ -457,7 +500,7 @@ local function handle_verify()
     end
 
     -- Verify JWT exists in Redis
-    local stored_jwt = get_jwt_from_redis(payload.user_id)
+    local stored_jwt = get_jwt_from_redis(payload.id)  -- Changed from user_id to id
     if not stored_jwt or stored_jwt ~= token then
         send_error_response(401, "Token not found in session store")
         return
@@ -480,7 +523,7 @@ local function handle_verify()
 
     send_success_response({
         user = {
-            id = payload.user_id,
+            id = payload.id,  -- Changed from user_id to id
             username = payload.username,
             is_admin = payload.is_admin
         }
@@ -504,7 +547,7 @@ local function handle_logout()
     end
 
     -- Delete JWT from Redis
-    local delete_success = delete_jwt_from_redis(payload.user_id)
+    local delete_success = delete_jwt_from_redis(payload.id)  -- Changed from user_id to id
     
     if delete_success then
         send_success_response({

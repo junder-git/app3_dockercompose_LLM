@@ -70,6 +70,7 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       # FIXED: Map the volume to the correct data directory
       - ./volumes/redis_data:/data
@@ -99,6 +100,7 @@ services:
       - "80:80"
     environment:
       - ALLOWED_DOMAINS=${ALLOWED_DOMAINS}
+      - JWT_SECRET=${JWT_SECRET}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
