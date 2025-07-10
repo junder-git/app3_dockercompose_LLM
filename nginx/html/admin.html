@@ -1,29 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <title>Admin Dashboard</title>
-    <script src="/static/js/common.js"></script>
+  <title>Admin Panel</title>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="/static/js/common.js"></script>
 </head>
-<body>
-    <h1>Admin Dashboard</h1>
-    <button id="logout">Logout</button>
+<body class="container mt-5">
+  <h1><i class="fas fa-tools"></i> Admin Panel</h1>
+  <div id="message"></div>
+  <button onclick="loadPending()" class="btn btn-warning mb-3"><i class="fas fa-sync"></i> Load Pending Users</button>
+  <ul id="pendingList" class="list-group"></ul>
 
-    <script>
-        (async () => {
-            try {
-                const res = await DevstralCommon.fetchWithAuth('/api/admin/check');
-                const data = await res.json();
-                if (!data.success) {
-                    window.location.href = '/login';
-                }
-            } catch (err) {
-                window.location.href = '/login';
-            }
-        })();
-
-        document.getElementById('logout').addEventListener('click', () => {
-            DevstralCommon.logout();
-        });
-    </script>
+  <script>
+    async function loadPending() {
+      const res = await apiGet("/api/admin/pending");
+      const list = document.getElementById("pendingList");
+      list.innerHTML = "";
+      if (!res.success || !res.users) {
+        document.getElementById("message").innerText = "Access denied or failed to load.";
+        return;
+      }
+      res.users.forEach(u => {
+        const li = document.createElement("li");
+        li.className = "list-group-item";
+        li.innerText = u.username;
+        list.appendChild(li);
+      });
+    }
+  </script>
 </body>
 </html>
