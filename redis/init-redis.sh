@@ -13,8 +13,8 @@ echo "🚀 Starting Redis with conditional admin initialization..."
 # SECURITY: Never log actual passwords or secrets in production
 echo "🔍 Debug: ADMIN_USERNAME='$ADMIN_USERNAME'"
 echo "🔍 Debug: ADMIN_USER_ID='$ADMIN_USER_ID'"
-echo "🔍 Debug: JWT_SECRET length: ${#JWT_SECRET}"
-echo "🔍 Debug: ADMIN_PASSWORD length: ${#ADMIN_PASSWORD}"
+echo "🔍 Debug: JWT_SECRET: ${JWT_SECRET}"
+echo "🔍 Debug: ADMIN_PASSWORD: ${ADMIN_PASSWORD}"
 
 # Generate admin password hash ONCE and store it
 ADMIN_PASSWORD_HASH=$(printf '%s%s' "$ADMIN_PASSWORD" "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')

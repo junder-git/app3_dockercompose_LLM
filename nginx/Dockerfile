@@ -43,10 +43,6 @@ RUN chmod -R 755 /usr/local/openresty/nginx/html/ && \
     chown -R nobody:nobody /var/cache/nginx && \
     chown -R nobody:nobody /var/log/nginx
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
-
 # Expose port
 EXPOSE 80
 

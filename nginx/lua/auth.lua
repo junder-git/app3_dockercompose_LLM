@@ -391,7 +391,7 @@ local function handle_login()
         return
     end
 
-    valid, password = validate_password(data.password)
+    local valid, password = validate_password(data.password)
     if not valid then
         send_error_response(400, password)
         return
