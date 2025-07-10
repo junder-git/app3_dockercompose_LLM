@@ -1,120 +1,34 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Devstral AI</title>
-    <link href="/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="/css/common.css" rel="stylesheet">
+    <title>Login</title>
+    <script src="/static/js/common.js"></script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">
-                <i class="bi bi-robot"></i> Devstral AI
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/">
-                    <i class="bi bi-house"></i> Home
-                </a>
-                <a class="nav-link" href="/register">
-                    <i class="bi bi-person-plus"></i> Register
-                </a>
-            </div>
-        </div>
-    </nav>
+    <h1>Login</h1>
+    <form id="login-form">
+        <input type="text" id="username" placeholder="Username" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
 
-    <main class="container-fluid py-4">
-        <div id="flash-messages"></div>
-        
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
-                <div class="card border-secondary">
-                    <div class="card-header">
-                        <h4 class="mb-0">
-                            <i class="bi bi-box-arrow-in-right"></i> Login
-                        </h4>
-                    </div>
-                    <div class="card-body">
-                        <form id="loginForm">
-                            <div class="mb-3">
-                                <label for="username" class="form-label">
-                                    <i class="bi bi-person"></i> Username
-                                </label>
-                                <input type="text" class="form-control" id="username" name="username" required autofocus>
-                            </div>
-                            <div class="mb-3">
-                                <label for="password" class="form-label">
-                                    <i class="bi bi-lock"></i> Password
-                                </label>
-                                <input type="password" class="form-control" id="password" name="password" required>
-                            </div>
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary" id="login-btn">
-                                    <i class="bi bi-box-arrow-in-right"></i> Login
-                                </button>
-                            </div>
-                        </form>
-                        <div class="mt-3 text-center">
-                            <p>Don't have an account? 
-                                <a href="/register" class="text-primary">
-                                    <i class="bi bi-person-plus"></i> Register here
-                                </a>
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
+    <div id="flash-messages"></div>
 
-    <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/common.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Quick redirect if already logged in
-            const token = localStorage.getItem('auth_token');
-            if (token && !DevstralCommon.isTokenExpired(token)) {
-                window.location.href = '/chat';
-                return;
-            }
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            try {
+                const username = DevstralCommon.val('#username');
+                const password = DevstralCommon.val('#password');
+                const res = await DevstralCommon.login(username, password);
 
-            const form = DevstralCommon.$('#loginForm');
-            if (form) {
-                form.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    
-                    const username = DevstralCommon.val('#username').trim();
-                    const password = DevstralCommon.val('#password').trim();
-                    
-                    if (!username || !password) {
-                        DevstralCommon.showFlashMessage('Please enter both username and password', 'error');
-                        return;
-                    }
-
-                    const btn = DevstralCommon.$('#login-btn');
-                    const originalText = DevstralCommon.text(btn);
-                    DevstralCommon.text(btn, 'Logging in...');
-                    DevstralCommon.prop(btn, 'disabled', true);
-
-                    try {
-                        const result = await DevstralCommon.login(username, password);
-                        
-                        if (result.success) {
-                            setTimeout(() => {
-                                window.location.href = result.user.is_admin ? '/admin' : '/chat';
-                            }, 500);
-                        } else {
-                            DevstralCommon.showFlashMessage(result.error, 'error');
-                        }
-                    } catch (error) {
-                        DevstralCommon.showFlashMessage('Login failed: ' + error.message, 'error');
-                    } finally {
-                        DevstralCommon.text(btn, originalText);
-                        DevstralCommon.prop(btn, 'disabled', false);
-                    }
-                });
+                if (res.success) {
+                    window.location.href = '/chat';
+                } else {
+                    DevstralCommon.showFlashMessage('Login failed', 'danger');
+                }
+            } catch (err) {
+                DevstralCommon.showFlashMessage(err.message, 'danger');
             }
         });
     </script>
