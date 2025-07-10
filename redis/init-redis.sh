@@ -20,33 +20,32 @@ echo "🔍 Debug: ADMIN_PASSWORD length: ${#ADMIN_PASSWORD}"
 hash_password() {
     # Check if required variables are set
     if [[ -z "$ADMIN_PASSWORD" ]]; then
-        echo "❌ Error: ADMIN_PASSWORD is empty"
+        echo "❌ Error: ADMIN_PASSWORD is empty" >&2  # Send to stderr, not stdout
         return 1
     fi
     
     if [[ -z "$JWT_SECRET" ]]; then
-        echo "❌ Error: JWT_SECRET is empty"
+        echo "❌ Error: JWT_SECRET is empty" >&2      # Send to stderr, not stdout
         return 1
     fi
     
-    # SECURITY: Never log the actual password or secret
+    # FIXED: Send debug output to stderr, not stdout
     local combined="${ADMIN_PASSWORD}${JWT_SECRET}"
-    echo "🔍 Debug: Combined string length: ${#combined}"
+    echo "🔍 Debug: Combined string length: ${#combined}" >&2
     
     # Generate hash
     local hash=$(echo -n "$combined" | openssl dgst -sha256 -hex | cut -d' ' -f2)
     
     if [[ -z "$hash" ]]; then
-        echo "❌ Error: Hash generation failed"
+        echo "❌ Error: Hash generation failed" >&2     # Send to stderr, not stdout
         return 1
     fi
     
-    # SECURITY: Never log the actual hash
-    echo "🔍 Debug: Hash generated successfully (length: ${#hash})"
+    echo "🔍 Debug: Hash generated successfully (length: ${#hash})" >&2
     
+    # ONLY the final result should go to stdout
     echo "jwt_secret:${hash}"
 }
-
 # Generate admin password hash ONCE and store it
 ADMIN_PASSWORD_HASH=$(hash_password)
 
