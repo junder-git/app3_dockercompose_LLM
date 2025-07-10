@@ -9,6 +9,9 @@ RUN apk add --no-cache \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install lua-resty-jwt
+RUN /usr/local/openresty/bin/opm get SkyLothar/lua-resty-jwt
+
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html
 
@@ -44,8 +47,6 @@ RUN chmod -R 755 /usr/local/openresty/nginx/html/ && \
     chown -R nobody:nobody /var/cache/nginx && \
     chown -R nobody:nobody /var/log/nginx
 
-# Install lua-resty-jwt
-RUN /usr/local/openresty/bin/opm get SkyLothar/lua-resty-jwt
 
 # Expose port
 EXPOSE 80
