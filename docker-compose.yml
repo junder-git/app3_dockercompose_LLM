@@ -87,11 +87,15 @@ services:
           memory: ${REDIS_MEMORY}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test: [
+        "CMD-SHELL",
+        "redis-cli EXISTS user:${ADMIN_USERNAME} || exit 1"
+      ]
+      interval: 5s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 10s
+
 
   nginx:
     build: ./nginx
