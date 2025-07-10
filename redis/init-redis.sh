@@ -17,7 +17,7 @@ echo "🔍 Debug: JWT_SECRET length: ${#JWT_SECRET}"
 echo "🔍 Debug: ADMIN_PASSWORD length: ${#ADMIN_PASSWORD}"
 
 # Generate admin password hash ONCE and store it
-ADMIN_PASSWORD_HASH=$(echo -n "${ADMIN_PASSWORD}${JWT_SECRET}" | openssl dgst -sha256 -hex | awk '{print $2}')
+ADMIN_PASSWORD_HASH=$(printf '%s%s' "$ADMIN_PASSWORD" "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
 
 # SECURITY: Never log the actual hash
 echo "🔐 Admin password hash generated successfully: ${ADMIN_PASSWORD_HASH}"
