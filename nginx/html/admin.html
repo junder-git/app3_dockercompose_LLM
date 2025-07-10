@@ -1,10 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<head>
   <meta charset="UTF-8" />
-  <title>Admin Panel</title>
+  <title>Devstral LLM</title>
+  <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/common.css">
+  <script src="/js/lib/jquery.min.js" defer></script>
+  <script src="/js/lib/bootstrap.min.js" defer></script>
   <script src="/js/common.js" defer></script>
+</head>
 </head>
 <body class="dark-theme">
   <nav class="top-nav">
@@ -21,8 +26,11 @@
   </main>
 
   <script>
-    DevstralCommon.loadUser();
+    document.addEventListener("DOMContentLoaded", function () {
+      DevstralCommon.loadUser();
     DevstralCommon.loadAdminPanel();
+});
+
   </script>
 </body>
 </html>

@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Login</title>
+  <title>Devstral LLM</title>
+  <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/common.css">
+  <script src="/js/lib/jquery.min.js" defer></script>
+  <script src="/js/lib/bootstrap.min.js" defer></script>
   <script src="/js/common.js" defer></script>
 </head>
 <body class="dark-theme">
@@ -25,8 +28,11 @@
   </main>
 
   <script>
+        document.addEventListener("DOMContentLoaded", function () {
     DevstralCommon.loadUser();
     DevstralCommon.setupLogin();
+});
+
   </script>
 </body>
 </html>
