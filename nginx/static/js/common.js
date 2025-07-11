@@ -1,110 +1,86 @@
-window.DevstralCommon = {
-    loadUser: async function () {
-    try {
-        const cookies = document.cookie.split(";").reduce((acc, pair) => {
-            const [k, v] = pair.trim().split("=");
-            acc[k] = v;
-            return acc;
-        }, {});
-        const token = cookies["access_token"];
+const DevstralCommon = {};
 
-        const usernameSpan = document.getElementById("navbar-username");
-        const logoutButton = document.getElementById("logout-button");
-
-        if (!token) {
-            usernameSpan.innerText = "Guest";
-            logoutButton.style.display = "none";
-            if (window.location.pathname.includes("chat") || window.location.pathname.includes("admin")) {
-                window.location.href = "/login.html";
-            }
-            return; // Stop here if no token
-        }
-
-        // If we do have a token, verify it
-        const res = await fetch("/api/auth/me", { credentials: "include" }).then(r => r.json());
-
-        if (res.success && res.username) {
-            usernameSpan.innerText = `Logged in as: ${res.username}`;
-            logoutButton.style.display = "inline-block";
-            logoutButton.onclick = () => {
-                document.cookie = "access_token=; Max-Age=0; Path=/";
-                window.location.href = "/login.html";
-            };
+// Load user info and update navbar
+DevstralCommon.loadUser = function() {
+    fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'include'  // Important: send cookies
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.username) {
+            document.getElementById('navbar-username').textContent = data.username;
+            document.getElementById('logout-button').style.display = 'inline-block';
         } else {
-            usernameSpan.innerText = "Guest";
-            logoutButton.style.display = "none";
-            if (window.location.pathname.includes("chat") || window.location.pathname.includes("admin")) {
-                window.location.href = "/login.html";
-            }
+            document.getElementById('navbar-username').textContent = 'Guest';
+            document.getElementById('logout-button').style.display = 'none';
         }
-    } catch (err) {
-        console.error("Error fetching user:", err);
-    }
-},
-
-    setupLogin: function () {
-        const form = document.getElementById("login-form");
-        if (!form) return;
-        form.addEventListener("submit", async function (e) {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const payload = {
-                username: formData.get("username"),
-                password: formData.get("password")
-            };
-            try {
-                const res = await fetch("/api/auth/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                }).then(r => r.json());
-                if (res.success && res.token) {
-                    document.cookie = `access_token=${res.token}; Path=/;`;
-                    window.location.href = "/chat.html"; // Redirect after login
-                } else {
-                    alert("Invalid credentials");
-                }
-            } catch {
-                alert("Login failed");
-            }
-        });
-    },
-
-    setupRegister: function () {
-        const form = document.getElementById("register-form");
-        if (!form) return;
-        form.addEventListener("submit", async function (e) {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const payload = {
-                username: formData.get("username"),
-                password: formData.get("password")
-            };
-            try {
-                const res = await fetch("/api/register", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload)
-                }).then(r => r.json());
-                if (res.success) {
-                    alert("Registered successfully, please log in!");
-                    window.location.href = "/login.html";
-                } else {
-                    alert("Registration failed");
-                }
-            } catch {
-                alert("Registration failed");
-            }
-        });
-    },
-
-    setupChat: function () {
-        console.log("Chat setup called");
-        // Add your chat-specific frontend logic here
-    },
-
-    loadAdminPanel: function () {
-        console.log("Admin panel setup called");
-        // Add your admin-specific frontend logic here
-    }
+    })
+    .catch(() => {
+        document.getElementById('navbar-username').textContent = 'Guest';
+        document.getElementById('logout-button').style.display = 'none';
+    });
 };
+
+// Setup login form
+DevstralCommon.setupLogin = function() {
+    $('#login-form').on('submit', function(e) {
+        e.preventDefault();
+        const formData = {
+            username: this.username.value,
+            password: this.password.value
+        };
+        fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // Important: receive cookies
+            body: JSON.stringify(formData)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.token) { // ✅ only check for token
+                const redirect = new URLSearchParams(window.location.search).get('redirect') || '/chat.html';
+                location.href = redirect;
+            } else {
+                alert('Invalid login');
+            }
+        })
+        .catch(() => {
+            alert('Login error');
+        });
+    });
+};
+
+// Setup register form
+DevstralCommon.setupRegister = function() {
+    $('#register-form').on('submit', function(e) {
+        e.preventDefault();
+        const formData = {
+            username: this.username.value,
+            password: this.password.value
+        };
+        fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert('Registration successful. Please wait for approval.');
+                window.location.href = '/login.html';
+            } else {
+                alert(data.error || 'Registration failed.');
+            }
+        })
+        .catch(() => {
+            alert('Registration error');
+        });
+    });
+};
+
+// Setup logout button
+document.getElementById('logout-button').addEventListener('click', function() {
+    document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    location.reload();
+});

@@ -1,10 +1,10 @@
 local cjson = require "cjson"
-local jwt = require "resty.jwt"
 local redis = require "resty.redis"
+local jwt = require "resty.jwt"
 
-local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
+local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
 
 local function send_json(status, tbl)
     ngx.status = status
@@ -23,24 +23,35 @@ local function connect_redis()
     return red
 end
 
-local function require_admin()
-    local token = ngx.var.cookie_access_token
-    if not token then
-        send_json(401, { error = "No token provided" })
+local function verify_password(password, stored_hash)
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
+                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
+    local handle = io.popen(hash_cmd)
+    local computed_hash = handle:read("*a"):gsub("\n", "")
+    handle:close()
+    return computed_hash == stored_hash
+end
+
+local function handle_login()
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    if not body then
+        send_json(400, { error = "Missing request body" })
     end
 
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        send_json(401, { error = "Invalid token" })
-    end
+    local data = cjson.decode(body)
+    local username = data.username
+    local password = data.password
 
-    local username = jwt_obj.payload.username
+    if not username or not password then
+        send_json(400, { error = "Username and password required" })
+    end
 
     local red = connect_redis()
     local user_key = "user:" .. username
     local user_data, err = red:hgetall(user_key)
     if not user_data or #user_data == 0 then
-        send_json(403, { error = "User not found" })
+        send_json(401, { error = "Invalid credentials" })
     end
 
     local user = {}
@@ -48,18 +59,48 @@ local function require_admin()
         user[user_data[i]] = user_data[i + 1]
     end
 
-    if user.is_admin ~= "true" then
-        send_json(403, { error = "Admin privileges required" })
+    if user.is_approved ~= "true" then
+        send_json(403, { error = "User not approved" })
     end
 
-    return username
+    if not verify_password(password, user.password_hash) then
+        send_json(401, { error = "Invalid credentials" })
+    end
+
+    local jwt_token = jwt:sign(JWT_SECRET, {
+        header = { typ = "JWT", alg = "HS256" },
+        payload = {
+            username = username,
+            exp = ngx.time() + 86400
+        }
+    })
+
+    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. "; Path=/; HttpOnly"
+    send_json(200, { success = true, token = jwt_token })
 end
 
-function handle_admin_panel()
-    local username = require_admin()
-    send_json(200, { success = true, message = "Welcome, admin " .. username })
+local function handle_me()
+    local token = ngx.var.cookie_access_token
+
+    ngx.header.content_type = "application/json"
+
+    if not token then
+        ngx.say(cjson.encode({ success = false }))
+        return
+    end
+
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+
+    if not jwt_obj.verified then
+        ngx.say(cjson.encode({ success = false }))
+        return
+    end
+
+    local username = jwt_obj.payload.username
+    ngx.say(cjson.encode({ success = true, username = username }))
 end
 
 return {
-    handle_admin_panel = handle_admin_panel
+    handle_login = handle_login,
+    handle_me = handle_me
 }

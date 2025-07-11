@@ -76,7 +76,7 @@ local function handle_login()
     })
 
     ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. "; Path=/; HttpOnly"
-    send_json(200, { success = true })
+    send_json(200, { token = jwt_token })
 end
 
 local function handle_me()
@@ -85,19 +85,19 @@ local function handle_me()
     ngx.header.content_type = "application/json"
 
     if not token then
-        ngx.say(cjson.encode({ success = false }))
+        ngx.say(cjson.encode({ }))
         return
     end
 
     local jwt_obj = jwt:verify(JWT_SECRET, token)
 
     if not jwt_obj.verified then
-        ngx.say(cjson.encode({ success = false }))
+        ngx.say(cjson.encode({ }))
         return
     end
 
     local username = jwt_obj.payload.username
-    ngx.say(cjson.encode({ success = true, username = username }))
+    ngx.say(cjson.encode({ username = username }))
 end
 
 return {
