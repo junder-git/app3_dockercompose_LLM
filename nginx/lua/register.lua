@@ -1,9 +1,10 @@
 local cjson = require "cjson"
 local redis = require "resty.redis"
+local template = require "template"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local function send_json(status, tbl)
     ngx.status = status
@@ -64,7 +65,7 @@ function handle_register()
         red:hset(user_key, k, v)
     end
 
-    send_json(200, { success = true, message = "User registered. Wait for admin approval." })
+    send_json(200, { message = "User registered. Wait for admin approval." })
 end
 
 return {

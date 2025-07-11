@@ -2,37 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Devstral LLM</title>
+  <title>Chat</title>
   <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/common.css">
-  <script src="/js/lib/jquery.min.js" defer></script>
-  <script src="/js/lib/bootstrap.min.js" defer></script>
-  <script src="/js/common.js" defer></script>
 </head>
 <body class="dark-theme">
   <nav class="top-nav">
     <a href="/chat.html">Chat</a>
     <a href="/admin.html">Admin</a>
     <a href="/register.html">Register</a>
-    <button id="logout-button" style="display: none;">Logout</button>
-    <span id="navbar-username">Guest</span>
+    <button id="logout-button" onclick="document.cookie='access_token=; Max-Age=0; Path=/'; location.href='/login.html';">Logout</button>
+    <span id="navbar-username">{{ username }}</span>
   </nav>
-
   <main>
-    <h2>Chat</h2>
+    <h2>Welcome to Chat, {{ username }}!</h2>
     <div id="chat-messages"></div>
     <form id="chat-form">
       <input type="text" id="chat-input" placeholder="Type your message" required>
       <button type="submit">Send</button>
     </form>
   </main>
-
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-     DevstralCommon.loadUser();
-    DevstralCommon.setupChat();
-});
-
-  </script>
 </body>
 </html>

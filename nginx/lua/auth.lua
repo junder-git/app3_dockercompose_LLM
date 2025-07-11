@@ -1,10 +1,11 @@
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local jwt = require "resty.jwt"
+local template = require "template"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local function send_json(status, tbl)
     ngx.status = status
@@ -49,7 +50,7 @@ local function handle_login()
 
     local red = connect_redis()
     local user_key = "user:" .. username
-    local user_data, err = red:hgetall(user_key)
+    local user_data = red:hgetall(user_key)
     if not user_data or #user_data == 0 then
         send_json(401, { error = "Invalid credentials" })
     end
@@ -79,28 +80,6 @@ local function handle_login()
     send_json(200, { token = jwt_token })
 end
 
-local function handle_me()
-    local token = ngx.var.cookie_access_token
-
-    ngx.header.content_type = "application/json"
-
-    if not token then
-        ngx.say(cjson.encode({ }))
-        return
-    end
-
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-
-    if not jwt_obj.verified then
-        ngx.say(cjson.encode({ }))
-        return
-    end
-
-    local username = jwt_obj.payload.username
-    ngx.say(cjson.encode({ username = username }))
-end
-
 return {
-    handle_login = handle_login,
-    handle_me = handle_me
+    handle_login = handle_login
 }

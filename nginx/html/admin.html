@@ -1,36 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<head>
   <meta charset="UTF-8" />
-  <title>Devstral LLM</title>
+  <title>Admin Panel</title>
   <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/common.css">
-  <script src="/js/lib/jquery.min.js" defer></script>
-  <script src="/js/lib/bootstrap.min.js" defer></script>
-  <script src="/js/common.js" defer></script>
-</head>
 </head>
 <body class="dark-theme">
   <nav class="top-nav">
     <a href="/chat.html">Chat</a>
     <a href="/admin.html">Admin</a>
     <a href="/register.html">Register</a>
-    <button id="logout-button" style="display: none;">Logout</button>
-    <span id="navbar-username">Guest</span>
+    <button id="logout-button" onclick="document.cookie='access_token=; Max-Age=0; Path=/'; location.href='/login.html';">Logout</button>
+    <span id="navbar-username">{{ username }}</span>
   </nav>
-
   <main>
-    <h2>Admin Panel</h2>
-    <div id="admin-content">Loading admin data...</div>
+    <h2>Admin Panel — Welcome, {{ username }}!</h2>
+    <p>Manage users and settings here.</p>
   </main>
-
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      DevstralCommon.loadUser();
-    DevstralCommon.loadAdminPanel();
-});
-
-  </script>
 </body>
 </html>

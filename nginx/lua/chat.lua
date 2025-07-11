@@ -1,41 +1,55 @@
-local cjson = require "cjson"
 local jwt = require "resty.jwt"
+local redis = require "resty.redis"
+local template = require "template"
 
-local JWT_SECRET = os.getenv("JWT_SECRET") or "your-super-secret-jwt-key-change-this-in-production-min-32-chars"
+local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
+local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
+local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
-local function send_json(status, tbl)
-    ngx.status = status
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode(tbl))
-    ngx.exit(status)
+local function send_html(content)
+    ngx.status = 200
+    ngx.header.content_type = "text/html"
+    ngx.say(content)
+    ngx.exit(200)
 end
 
-local function require_auth()
+local function connect_redis()
+    local red = redis:new()
+    red:set_timeout(1000)
+    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
+    if not ok then
+        ngx.status = 500
+        ngx.say("Failed to connect to Redis")
+        ngx.exit(500)
+    end
+    return red
+end
+
+function handle_chat_page()
     local token = ngx.var.cookie_access_token
     if not token then
-        send_json(401, { error = "No token provided" })
+        return ngx.redirect("/login.html?redirect=chat.html", 302)
     end
 
     local jwt_obj = jwt:verify(JWT_SECRET, token)
     if not jwt_obj.verified then
-        send_json(401, { error = "Invalid token" })
+        return ngx.redirect("/login.html?redirect=chat.html", 302)
     end
 
-    return jwt_obj.payload.username
-end
+    local username = jwt_obj.payload.username
 
-function handle_chat_message()
-    local username = require_auth()
-    ngx.req.read_body()
-    local body = ngx.req.get_body_data()
-    if not body then
-        send_json(400, { error = "Missing body" })
+    local html, err = template.render_template("/usr/local/openresty/nginx/html/chat.html", {
+        username = username
+    })
+    if not html then
+        ngx.status = 500
+        ngx.say("Template error: " .. err)
+        ngx.exit(500)
     end
-    local data = cjson.decode(body)
-    local message = data.message or ""
-    send_json(200, { success = true, echo = message, user = username })
+
+    send_html(html)
 end
 
 return {
-    handle_chat_message = handle_chat_message
+    handle_chat_page = handle_chat_page
 }
