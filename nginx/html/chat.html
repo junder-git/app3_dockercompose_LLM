@@ -1,26 +1,445 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <title>Chat</title>
-  <link rel="stylesheet" href="/css/bootstrap.min.css">
-  <link rel="stylesheet" href="/css/common.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - ai.junder.uk</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/common.css">
 </head>
-<body class="dark-theme">
-  <nav class="top-nav">
-    <a href="/chat.html">Chat</a>
-    <a href="/admin.html">Admin</a>
-    <a href="/register.html">Register</a>
-    <button id="logout-button" onclick="document.cookie='access_token=; Max-Age=0; Path=/'; location.href='/login.html';">Logout</button>
-    <span id="navbar-username">{{ username }}</span>
-  </nav>
-  <main>
-    <h2>Welcome to Chat, {{ username }}!</h2>
-    <div id="chat-messages"></div>
-    <form id="chat-form">
-      <input type="text" id="chat-input" placeholder="Type your message" required>
-      <button type="submit">Send</button>
-    </form>
-  </main>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand logo-brand" href="/">
+                <i class="bi bi-lightning-charge-fill"></i> ai.junder.uk
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/chat.html">
+                            <i class="bi bi-chat-dots"></i> Chat
+                        </a>
+                    </li>
+                    <li class="nav-item" id="admin-nav" style="display: none;">
+                        <a class="nav-link" href="/admin.html">
+                            <i class="bi bi-gear"></i> Admin
+                        </a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item dropdown" id="user-nav">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> <span id="navbar-username">{{ username }}</span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="/"><i class="bi bi-house"></i> Home</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="logout-button"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="chat-container">
+        <div class="chat-header">
+            <div>
+                <h5 class="mb-1">
+                    <i class="bi bi-robot text-primary"></i> Devstral AI Chat
+                </h5>
+                <small class="text-muted">{{ model_info }} | User: {{ username }} | Messages today: {{ user_message_count }}</small>
+            </div>
+            <div class="chat-actions">
+                <button class="btn btn-outline-primary btn-icon" id="clear-chat" title="Clear Chat">
+                    <i class="bi bi-trash"></i>
+                </button>
+                <button class="btn btn-outline-secondary btn-icon" id="export-chat" title="Export Chat">
+                    <i class="bi bi-download"></i>
+                </button>
+                <button class="btn btn-outline-info btn-icon" id="chat-settings" title="Settings">
+                    <i class="bi bi-gear"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+            <div class="welcome-message" id="welcome-message">
+                <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
+                <p>I'm your advanced coding and reasoning assistant. Ask me anything about programming, problem-solving, or technical questions.</p>
+                
+                <div class="suggestions">
+                    <div class="suggestion-card" onclick="sendSuggestion('How do I implement a binary search algorithm in Python?')">
+                        <strong><i class="bi bi-code-slash"></i> Binary Search</strong>
+                        <p>Learn algorithm implementation</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('Explain the difference between async/await and Promises in JavaScript')">
+                        <strong><i class="bi bi-lightning"></i> Async Programming</strong>
+                        <p>JavaScript concurrency concepts</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('Help me debug this SQL query performance issue')">
+                        <strong><i class="bi bi-database"></i> SQL Optimization</strong>
+                        <p>Database performance tuning</p>
+                    </div>
+                    <div class="suggestion-card" onclick="sendSuggestion('What are the best practices for React component architecture?')">
+                        <strong><i class="bi bi-layers"></i> React Architecture</strong>
+                        <p>Frontend development patterns</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="typing-indicator">
+            <div class="message-avatar avatar-ai">
+                <i class="bi bi-robot"></i>
+            </div>
+            <div>
+                <span>Devstral is thinking</span>
+                <div class="typing-dots">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-container">
+            <form class="chat-input-form" id="chat-form">
+                <textarea 
+                    class="form-control chat-input" 
+                    id="chat-input" 
+                    placeholder="Ask me anything about coding, algorithms, or technical problems..." 
+                    rows="1" 
+                    required></textarea>
+                <button type="submit" class="btn btn-primary btn-icon" id="send-button">
+                    <i class="bi bi-send"></i>
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <!-- Settings Modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-primary">
+                        <i class="bi bi-gear"></i> Chat Settings
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Model Temperature</label>
+                        <input type="range" class="form-range" id="temperature-slider" min="0" max="1" step="0.1" value="0.7">
+                        <small class="text-muted">Controls creativity (0.1 = focused, 1.0 = creative)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max Response Length</label>
+                        <select class="form-select" id="max-tokens">
+                            <option value="1024">Short (1024 tokens)</option>
+                            <option value="2048" selected>Medium (2048 tokens)</option>
+                            <option value="3072">Long (3072 tokens)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
+                            <label class="form-check-label">Auto-scroll to new messages</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/lib/jquery.min.js"></script>
+    <script src="/js/lib/bootstrap.min.js"></script>
+    <script src="/static/js/common.js"></script>
+    <script>
+        class DevstralChat {
+            constructor() {
+                this.messages = [];
+                this.isTyping = false;
+                this.autoScroll = true;
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.loadChatHistory();
+                this.setupTextareaAutoResize();
+                DevstralCommon.loadUser();
+            }
+
+            setupEventListeners() {
+                // Form submission
+                document.getElementById('chat-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.sendMessage();
+                });
+
+                // Clear chat
+                document.getElementById('clear-chat').addEventListener('click', () => {
+                    this.clearChat();
+                });
+
+                // Export chat
+                document.getElementById('export-chat').addEventListener('click', () => {
+                    this.exportChat();
+                });
+
+                // Settings
+                document.getElementById('chat-settings').addEventListener('click', () => {
+                    new bootstrap.Modal(document.getElementById('settingsModal')).show();
+                });
+
+                // Logout
+                document.getElementById('logout-button').addEventListener('click', () => {
+                    DevstralCommon.logout();
+                });
+
+                // Enter key handling
+                document.getElementById('chat-input').addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+            }
+
+            setupTextareaAutoResize() {
+                const textarea = document.getElementById('chat-input');
+                textarea.addEventListener('input', () => {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
+                });
+            }
+
+            async sendMessage() {
+                const input = document.getElementById('chat-input');
+                const message = input.value.trim();
+                
+                if (!message || this.isTyping) return;
+
+                // Hide welcome message
+                document.getElementById('welcome-message').style.display = 'none';
+
+                // Add user message
+                this.addMessage('user', message);
+                input.value = '';
+                input.style.height = 'auto';
+
+                // Show typing indicator
+                this.showTyping();
+
+                try {
+                    // Simulate API call (replace with actual Ollama endpoint)
+                    await this.simulateAPICall(message);
+                } catch (error) {
+                    this.hideTyping();
+                    this.addMessage('ai', 'Sorry, I encountered an error. Please try again.');
+                }
+            }
+
+            async simulateAPICall(message) {
+                // This would be replaced with actual Ollama API call
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        this.hideTyping();
+                        const responses = [
+                            "I understand you're asking about: " + message + ". Let me help you with that.",
+                            "Here's my analysis of your question...",
+                            "Based on your query, I recommend the following approach...",
+                            "This is an interesting problem. Let me break it down for you..."
+                        ];
+                        const response = responses[Math.floor(Math.random() * responses.length)];
+                        this.addMessage('ai', response);
+                        resolve();
+                    }, 2000);
+                });
+            }
+
+            addMessage(sender, content) {
+                const messagesContainer = document.getElementById('chat-messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message message-${sender}`;
+
+                const avatar = document.createElement('div');
+                avatar.className = `message-avatar avatar-${sender}`;
+                avatar.innerHTML = sender === 'user' ? '<i class="bi bi-person"></i>' : '<i class="bi bi-robot"></i>';
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                messageContent.innerHTML = this.formatMessage(content);
+
+                const messageTime = document.createElement('div');
+                messageTime.className = 'message-time';
+                messageTime.textContent = new Date().toLocaleTimeString();
+
+                if (sender === 'user') {
+                    messageDiv.appendChild(messageContent);
+                    messageDiv.appendChild(avatar);
+                    messageContent.appendChild(messageTime);
+                } else {
+                    messageDiv.appendChild(avatar);
+                    messageDiv.appendChild(messageContent);
+                    messageContent.appendChild(messageTime);
+                }
+
+                messagesContainer.appendChild(messageDiv);
+                this.scrollToBottom();
+
+                // Save to history
+                this.messages.push({ sender, content, timestamp: Date.now() });
+                this.saveChatHistory();
+            }
+
+            formatMessage(content) {
+                // Basic formatting - could be enhanced with markdown support
+                return content
+                    .replace(/\n/g, '<br>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+            }
+
+            showTyping() {
+                this.isTyping = true;
+                document.getElementById('typing-indicator').style.display = 'flex';
+                document.getElementById('send-button').disabled = true;
+                this.scrollToBottom();
+            }
+
+            hideTyping() {
+                this.isTyping = false;
+                document.getElementById('typing-indicator').style.display = 'none';
+                document.getElementById('send-button').disabled = false;
+            }
+
+            clearChat() {
+                if (confirm('Are you sure you want to clear the chat history?')) {
+                    document.getElementById('chat-messages').innerHTML = `
+                        <div class="welcome-message" id="welcome-message" style="display: block;">
+                            <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
+                            <p>I'm your advanced coding and reasoning assistant. Ask me anything about programming, problem-solving, or technical questions.</p>
+                            
+                            <div class="suggestions">
+                                <div class="suggestion-card" onclick="sendSuggestion('How do I implement a binary search algorithm in Python?')">
+                                    <strong><i class="bi bi-code-slash"></i> Binary Search</strong>
+                                    <p>Learn algorithm implementation</p>
+                                </div>
+                                <div class="suggestion-card" onclick="sendSuggestion('Explain the difference between async/await and Promises in JavaScript')">
+                                    <strong><i class="bi bi-lightning"></i> Async Programming</strong>
+                                    <p>JavaScript concurrency concepts</p>
+                                </div>
+                                <div class="suggestion-card" onclick="sendSuggestion('Help me debug this SQL query performance issue')">
+                                    <strong><i class="bi bi-database"></i> SQL Optimization</strong>
+                                    <p>Database performance tuning</p>
+                                </div>
+                                <div class="suggestion-card" onclick="sendSuggestion('What are the best practices for React component architecture?')">
+                                    <strong><i class="bi bi-layers"></i> React Architecture</strong>
+                                    <p>Frontend development patterns</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    this.messages = [];
+                    this.saveChatHistory();
+                }
+            }
+
+            exportChat() {
+                const chatData = {
+                    timestamp: new Date().toISOString(),
+                    messages: this.messages
+                };
+                
+                const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `devstral-chat-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            scrollToBottom() {
+                if (this.autoScroll) {
+                    const messagesContainer = document.getElementById('chat-messages');
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+            }
+
+            saveChatHistory() {
+                // In a real implementation, this would save to server
+                // For now, using localStorage
+                try {
+                    localStorage.setItem('devstral_chat_history', JSON.stringify(this.messages));
+                } catch (e) {
+                    console.warn('Could not save chat history');
+                }
+            }
+
+            loadChatHistory() {
+                try {
+                    const saved = localStorage.getItem('devstral_chat_history');
+                    if (saved) {
+                        this.messages = JSON.parse(saved);
+                        this.messages.forEach(msg => {
+                            this.addMessageToDOM(msg.sender, msg.content);
+                        });
+                        if (this.messages.length > 0) {
+                            document.getElementById('welcome-message').style.display = 'none';
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not load chat history');
+                }
+            }
+
+            addMessageToDOM(sender, content) {
+                // Similar to addMessage but without saving to history
+                const messagesContainer = document.getElementById('chat-messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message message-${sender}`;
+
+                const avatar = document.createElement('div');
+                avatar.className = `message-avatar avatar-${sender}`;
+                avatar.innerHTML = sender === 'user' ? '<i class="bi bi-person"></i>' : '<i class="bi bi-robot"></i>';
+
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                messageContent.innerHTML = this.formatMessage(content);
+
+                if (sender === 'user') {
+                    messageDiv.appendChild(messageContent);
+                    messageDiv.appendChild(avatar);
+                } else {
+                    messageDiv.appendChild(avatar);
+                    messageDiv.appendChild(messageContent);
+                }
+
+                messagesContainer.appendChild(messageDiv);
+            }
+        }
+
+        // Global function for suggestion cards
+        function sendSuggestion(text) {
+            document.getElementById('chat-input').value = text;
+            chat.sendMessage();
+        }
+
+        // Initialize chat when page loads
+        let chat;
+        document.addEventListener('DOMContentLoaded', () => {
+            chat = new DevstralChat();
+        });
+    </script>
 </body>
 </html>
