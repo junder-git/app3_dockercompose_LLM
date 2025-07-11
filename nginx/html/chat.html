@@ -6,7 +6,7 @@
     <title>Chat - ai.junder.uk</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/css/common.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -162,7 +162,7 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/static/js/common.js"></script>
+    <script src="/js/common.js"></script>
     <script>
         class DevstralChat {
             constructor() {
@@ -176,7 +176,20 @@
                 this.setupEventListeners();
                 this.loadChatHistory();
                 this.setupTextareaAutoResize();
-                DevstralCommon.loadUser();
+                this.initializeNavigation();
+            }
+
+            initializeNavigation() {
+                // Show admin nav if user is admin (will be populated by template)
+                const username = '{{ username }}';
+                if (username && username !== '{{ username }}') {
+                    // User data is available from template
+                    document.getElementById('navbar-username').textContent = username;
+                    
+                    // Show user nav, hide guest nav
+                    const userNav = document.getElementById('user-nav');
+                    if (userNav) userNav.style.display = 'block';
+                }
             }
 
             setupEventListeners() {
@@ -438,6 +451,10 @@
         // Initialize chat when page loads
         let chat;
         document.addEventListener('DOMContentLoaded', () => {
+            // Initialize navigation first
+            DevstralCommon.loadUser();
+            
+            // Then initialize chat
             chat = new DevstralChat();
         });
     </script>

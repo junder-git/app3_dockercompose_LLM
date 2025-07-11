@@ -6,10 +6,64 @@
     <title>ai.junder.uk - Devstral AI</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        /* Inline critical CSS to ensure it loads after Bootstrap */
+        body.index-page .hero-section {
+            background: linear-gradient(135deg, #0d1421 0%, #1a2332 100%) !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            overflow: hidden !important;
+            z-index: 1 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        body.index-page .hero-content {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            height: 100% !important;
+            text-align: center !important;
+            z-index: 10 !important;
+            position: relative !important;
+        }
+        
+        body.index-page .hero-content .container {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            max-width: 1200px !important;
+            margin: 0 auto !important;
+            padding: 2rem !important;
+        }
+        
+        body.index-page .hero-content .row {
+            width: 100% !important;
+            margin: 0 !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        
+        body.index-page .col-lg-6:first-child {
+            text-align: center !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+    </style>
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+<body class="index-page">
+    <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
             <a class="navbar-brand logo-brand" href="/">
                 <i class="bi bi-lightning-charge-fill"></i> ai.junder.uk
@@ -58,56 +112,58 @@
 
     <main class="hero-section">
         <canvas id="bg"></canvas>
-        <div class="container hero-content">
-            <div class="row align-items-center">
-                <div class="col-lg-6">
-                    <h1 class="hero-title">Welcome to Devstral AI</h1>
-                    <p class="hero-subtitle">Advanced coding and reasoning model powered by cutting-edge AI technology</p>
-                    <div class="mb-4">
-                        <a href="/chat.html" class="cta-button text-white">
-                            <i class="bi bi-chat-dots"></i> Start Chatting
-                        </a>
-                        <a href="/register.html" class="btn btn-outline-primary">
-                            <i class="bi bi-person-plus"></i> Get Started
-                        </a>
+        <div class="hero-content">
+            <div class="container">
+                <div class="row align-items-center">
+                    <div class="col-lg-6">
+                        <h1 class="hero-title">Welcome to Devstral AI</h1>
+                        <p class="hero-subtitle">Advanced coding and reasoning model powered by cutting-edge AI technology</p>
+                        <div class="mb-4">
+                            <a href="/chat.html" class="cta-button text-white">
+                                <i class="bi bi-chat-dots"></i> Start Chatting
+                            </a>
+                            <a href="/register.html" class="btn btn-outline-primary">
+                                <i class="bi bi-person-plus"></i> Get Started
+                            </a>
+                        </div>
                     </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="feature-card text-center">
-                                <div class="feature-icon">
-                                    <i class="bi bi-code-slash"></i>
+                    <div class="col-lg-6">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="feature-card text-center">
+                                    <div class="feature-icon">
+                                        <i class="bi bi-code-slash"></i>
+                                    </div>
+                                    <h5>Advanced Coding</h5>
+                                    <p>Expert programming assistance and code analysis</p>
                                 </div>
-                                <h5>Advanced Coding</h5>
-                                <p>Expert-level programming assistance across multiple languages</p>
                             </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="feature-card text-center">
-                                <div class="feature-icon">
-                                    <i class="bi bi-brain"></i>
+                            <div class="col-md-6">
+                                <div class="feature-card text-center">
+                                    <div class="feature-icon">
+                                        <i class="bi bi-lightbulb"></i>
+                                    </div>
+                                    <h5>Smart Reasoning</h5>
+                                    <p>Complex problem-solving with logical analysis</p>
                                 </div>
-                                <h5>Smart Reasoning</h5>
-                                <p>Complex problem-solving with logical analysis</p>
                             </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="feature-card text-center">
-                                <div class="feature-icon">
-                                    <i class="bi bi-lightning-charge"></i>
+                            <div class="col-md-6">
+                                <div class="feature-card text-center">
+                                    <div class="feature-icon">
+                                        <i class="bi bi-lightning-charge"></i>
+                                    </div>
+                                    <h5>High Performance</h5>
+                                    <p>Optimized for speed and accuracy</p>
                                 </div>
-                                <h5>High Performance</h5>
-                                <p>Optimized for speed and accuracy</p>
                             </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="feature-card text-center">
-                                <div class="feature-icon">
-                                    <i class="bi bi-shield-check"></i>
+                            <div class="col-md-6">
+                                <div class="feature-card text-center">
+                                    <div class="feature-icon">
+                                        <i class="bi bi-shield-check"></i>
+                                    </div>
+                                    <h5>Secure & Private</h5>
+                                    <p>Your conversations are protected</p>
                                 </div>
-                                <h5>Secure & Private</h5>
-                                <p>Your conversations are protected</p>
                             </div>
                         </div>
                     </div>
@@ -118,48 +174,67 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/static/js/common.js"></script>
+    <script src="/js/common.js"></script>
     <script>
-        // Animated background
+        // Animated background with improved performance
         const canvas = document.getElementById("bg");
         const ctx = canvas.getContext("2d");
         let nodes = [];
         const numNodes = 50;
+        let animationId;
         
         function resize() { 
             canvas.width = window.innerWidth; 
-            canvas.height = window.innerHeight; 
+            canvas.height = window.innerHeight;
+            
+            // Reinitialize nodes on resize
+            initializeNodes();
+        }
+        
+        function initializeNodes() {
+            nodes = [];
+            for (let i = 0; i < numNodes; i++) {
+                nodes.push({ 
+                    x: Math.random() * canvas.width, 
+                    y: Math.random() * canvas.height, 
+                    vx: (Math.random() - 0.5) * 0.3, 
+                    vy: (Math.random() - 0.5) * 0.3 
+                });
+            }
         }
         
         window.addEventListener("resize", resize); 
         resize();
         
-        for (let i = 0; i < numNodes; i++) {
-            nodes.push({ 
-                x: Math.random() * canvas.width, 
-                y: Math.random() * canvas.height, 
-                vx: (Math.random() - 0.5) * 0.5, 
-                vy: (Math.random() - 0.5) * 0.5 
-            });
-        }
-        
         function animate() {
+            // Clear with transparent background
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
+            // Update node positions
             nodes.forEach(n => { 
                 n.x += n.vx; 
                 n.y += n.vy; 
+                
+                // Bounce off edges
                 if (n.x < 0 || n.x > canvas.width) n.vx *= -1; 
                 if (n.y < 0 || n.y > canvas.height) n.vy *= -1; 
+                
+                // Keep within bounds
+                n.x = Math.max(0, Math.min(canvas.width, n.x));
+                n.y = Math.max(0, Math.min(canvas.height, n.y));
             });
             
+            // Draw connections
             for (let i = 0; i < numNodes; i++) {
                 for (let j = i + 1; j < numNodes; j++) {
                     const dx = nodes[i].x - nodes[j].x;
                     const dy = nodes[i].y - nodes[j].y;
                     const dist = Math.sqrt(dx*dx + dy*dy);
+                    
                     if (dist < 120) { 
-                        ctx.strokeStyle = "rgba(13, 110, 253, 0.1)"; 
+                        const opacity = (120 - dist) / 120 * 0.2;
+                        ctx.strokeStyle = `rgba(13, 110, 253, ${opacity})`; 
+                        ctx.lineWidth = 1;
                         ctx.beginPath(); 
                         ctx.moveTo(nodes[i].x, nodes[i].y); 
                         ctx.lineTo(nodes[j].x, nodes[j].y); 
@@ -168,16 +243,18 @@
                 }
             }
             
+            // Draw nodes
             nodes.forEach(n => { 
-                ctx.fillStyle = "rgba(13, 110, 253, 0.6)"; 
+                ctx.fillStyle = "rgba(13, 110, 253, 0.4)"; 
                 ctx.beginPath(); 
                 ctx.arc(n.x, n.y, 2, 0, Math.PI*2); 
                 ctx.fill(); 
             });
             
-            requestAnimationFrame(animate);
+            animationId = requestAnimationFrame(animate);
         }
         
+        // Start animation
         animate();
 
         // Enhanced user loading with admin detection
@@ -438,10 +515,14 @@
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
                 // Pause animations when tab is not visible
-                console.log('Tab hidden - pausing animations');
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                }
+                console.log('Tab hidden - animations paused');
             } else {
                 // Resume animations when tab becomes visible
-                console.log('Tab visible - resuming animations');
+                animate();
+                console.log('Tab visible - animations resumed');
             }
         });
 

@@ -1,4 +1,6 @@
 // Enhanced Common JavaScript Functions for ai.junder.uk
+// nginx/html/js/common.js
+
 const DevstralCommon = {
     // API base configuration
     config: {

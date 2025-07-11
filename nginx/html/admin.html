@@ -6,7 +6,7 @@
     <title>Admin Dashboard - ai.junder.uk</title>
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/css/common.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -261,7 +261,7 @@
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/static/js/common.js"></script>
+    <script src="/js/common.js"></script>
     <script>
         // Admin Dashboard JavaScript
         class AdminDashboard {
@@ -271,7 +271,23 @@
 
             init() {
                 this.setupEventListeners();
-                DevstralCommon.loadUser();
+                this.initializeNavigation();
+            }
+
+            initializeNavigation() {
+                // Show admin nav and user info (populated by template)
+                const username = '{{ username }}';
+                if (username && username !== '{{ username }}') {
+                    // User data is available from template
+                    document.getElementById('navbar-username').textContent = username;
+                    
+                    // Show admin nav since this page requires admin access
+                    const adminNav = document.getElementById('admin-nav');
+                    if (adminNav) adminNav.style.display = 'block';
+                    
+                    const userNav = document.getElementById('user-nav');
+                    if (userNav) userNav.style.display = 'block';
+                }
             }
 
             setupEventListeners() {
@@ -433,6 +449,10 @@
         // Initialize dashboard
         let adminDashboard;
         document.addEventListener('DOMContentLoaded', () => {
+            // Initialize navigation first
+            DevstralCommon.loadUser();
+            
+            // Then initialize admin dashboard
             adminDashboard = new AdminDashboard();
         });
     </script>
