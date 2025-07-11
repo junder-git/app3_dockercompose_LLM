@@ -3,9 +3,9 @@ local redis = require "resty.redis"
 local jwt = require "resty.jwt"
 local template = require "template"
 
-local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
-local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
+local REDIS_HOST = os.getenv("REDIS_HOST")
+local REDIS_PORT = tonumber(os.getenv("REDIS_PORT"))
+local JWT_SECRET = os.getenv("JWT_SECRET")
 
 local function send_json(status, tbl)
     ngx.status = status
@@ -64,7 +64,12 @@ local function handle_login()
         send_json(403, { error = "User not approved" })
     end
 
-    if not verify_password(password, user.password_hash) then
+    -- 🔥 Debug logs
+    ngx.log(ngx.ERR, "Password hash in Redis: ", user.password_hash)
+    local match = verify_password(password, user.password_hash)
+    ngx.log(ngx.ERR, "Password match result: ", tostring(match))
+
+    if not match then
         send_json(401, { error = "Invalid credentials" })
     end
 

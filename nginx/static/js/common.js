@@ -1,10 +1,10 @@
 const DevstralCommon = {};
 
-// Load user info and update navbar
+// Load user info to update navbar
 DevstralCommon.loadUser = function() {
     fetch('/api/auth/me', {
         method: 'GET',
-        credentials: 'include'  // Important: send cookies
+        credentials: 'include'
     })
     .then(res => res.json())
     .then(data => {
@@ -33,12 +33,13 @@ DevstralCommon.setupLogin = function() {
         fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', // Important: receive cookies
+            credentials: 'include',
             body: JSON.stringify(formData)
         })
         .then(res => res.json())
         .then(data => {
-            if (data.token) { // ✅ only check for token
+            console.log("Login response:", data);
+            if (data.token) {
                 const redirect = new URLSearchParams(window.location.search).get('redirect') || '/chat.html';
                 location.href = redirect;
             } else {
@@ -66,8 +67,8 @@ DevstralCommon.setupRegister = function() {
         })
         .then(res => res.json())
         .then(data => {
-            if (data.success) {
-                alert('Registration successful. Please wait for approval.');
+            if (data.message) {
+                alert(data.message);
                 window.location.href = '/login.html';
             } else {
                 alert(data.error || 'Registration failed.');
@@ -79,7 +80,7 @@ DevstralCommon.setupRegister = function() {
     });
 };
 
-// Setup logout button
+// Logout
 document.getElementById('logout-button').addEventListener('click', function() {
     document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
     location.reload();
