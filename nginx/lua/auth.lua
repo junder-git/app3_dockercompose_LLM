@@ -14,32 +14,26 @@ local function send_json(status, tbl)
 end
 
 local function connect_redis()
-    ngx.log(ngx.ERR, "DEBUG: Connecting to Redis at ", REDIS_HOST, ":", REDIS_PORT)
     local red = redis:new()
     red:set_timeout(1000)
     local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
     if not ok then
-        ngx.log(ngx.ERR, "Failed to connect to Redis: ", err)
         send_json(500, { error = "Internal server error" })
     end
-    ngx.log(ngx.ERR, "DEBUG: Successfully connected to Redis")
     return red
 end
 
 local function verify_password(password, stored_hash)
-    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2", 
-                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
+                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local computed_hash = handle:read("*a"):gsub("\n", "")
     handle:close()
-
-    ngx.log(ngx.ERR, "DEBUG: Computed hash: ", computed_hash)
-    ngx.log(ngx.ERR, "DEBUG: Stored hash: ", stored_hash)
-
     return computed_hash == stored_hash
 end
 
 local function handle_login()
+    ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
         send_json(400, { error = "Missing request body" })
@@ -65,14 +59,11 @@ local function handle_login()
         user[user_data[i]] = user_data[i + 1]
     end
 
-    ngx.log(ngx.ERR, "DEBUG: User data dump: ", cjson.encode(user))
-
     if user.is_approved ~= "true" then
         send_json(403, { error = "User not approved" })
     end
 
     if not verify_password(password, user.password_hash) then
-        ngx.log(ngx.ERR, "Password verification failed for user: ", username)
         send_json(401, { error = "Invalid credentials" })
     end
 
@@ -80,15 +71,12 @@ local function handle_login()
         header = { typ = "JWT", alg = "HS256" },
         payload = {
             username = username,
-            is_admin = user.is_admin == "true",
             exp = ngx.time() + 86400
         }
     })
 
     ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. "; Path=/; HttpOnly"
-    ngx.log(ngx.ERR, "DEBUG: Set-Cookie header set with token")
-
-    send_json(200, { success = true, token = jwt_token })
+    send_json(200, { success = true })
 end
 
 local function handle_me()
@@ -112,8 +100,7 @@ local function handle_me()
     ngx.say(cjson.encode({ success = true, username = username }))
 end
 
-
 return {
-  handle_login = handle_login,
-  handle_me = handle_me
+    handle_login = handle_login,
+    handle_me = handle_me
 }

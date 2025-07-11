@@ -23,6 +23,7 @@ local function connect_redis()
 end
 
 function handle_register()
+    ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
         send_json(400, { error = "Missing body" })

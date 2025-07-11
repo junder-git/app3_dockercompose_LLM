@@ -26,13 +26,13 @@ end
 
 function handle_chat_message()
     local username = require_auth()
+    ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
         send_json(400, { error = "Missing body" })
     end
     local data = cjson.decode(body)
     local message = data.message or ""
-    -- You can implement further logic here, e.g., store or forward message
     send_json(200, { success = true, echo = message, user = username })
 end
 
