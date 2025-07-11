@@ -43,7 +43,7 @@ DevstralCommon.setupLogin = function() {
                 const redirect = new URLSearchParams(window.location.search).get('redirect') || '/chat.html';
                 location.href = redirect;
             } else {
-                alert('Invalid login');
+                alert(data.error || 'Invalid login');
             }
         })
         .catch(() => {
