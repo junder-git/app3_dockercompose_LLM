@@ -33,6 +33,21 @@ local function verify_password(password, stored_hash)
     return computed_hash == stored_hash
 end
 
+local function get_user_info(red, username)
+    local user_key = "user:" .. username
+    local user_data = red:hgetall(user_key)
+    if not user_data or #user_data == 0 then
+        return nil
+    end
+
+    local user = {}
+    for i = 1, #user_data, 2 do
+        user[user_data[i]] = user_data[i + 1]
+    end
+    
+    return user
+end
+
 local function handle_login()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -49,15 +64,9 @@ local function handle_login()
     end
 
     local red = connect_redis()
-    local user_key = "user:" .. username
-    local user_data = red:hgetall(user_key)
-    if not user_data or #user_data == 0 then
+    local user = get_user_info(red, username)
+    if not user then
         send_json(401, { error = "Invalid credentials" })
-    end
-
-    local user = {}
-    for i = 1, #user_data, 2 do
-        user[user_data[i]] = user_data[i + 1]
     end
 
     if user.is_approved ~= "true" then
@@ -73,10 +82,14 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
 
+    -- Update last active timestamp
+    red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
+
     local jwt_token = jwt:sign(JWT_SECRET, {
         header = { typ = "JWT", alg = "HS256" },
         payload = {
             username = username,
+            is_admin = user.is_admin == "true",
             exp = ngx.time() + 86400
         }
     })
@@ -85,6 +98,44 @@ local function handle_login()
     send_json(200, { token = jwt_token })
 end
 
+local function handle_me()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        send_json(401, { success = false, error = "No token" })
+    end
+
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        send_json(401, { success = false, error = "Invalid token" })
+    end
+
+    local username = jwt_obj.payload.username
+    
+    -- Get fresh user info from Redis to ensure current admin status
+    local red = connect_redis()
+    local user = get_user_info(red, username)
+    
+    if not user then
+        send_json(401, { success = false, error = "User not found" })
+    end
+
+    if user.is_approved ~= "true" then
+        send_json(403, { success = false, error = "User not approved" })
+    end
+
+    -- Debug log for admin status
+    ngx.log(ngx.ERR, "User admin status check - username: ", username, " is_admin field: ", tostring(user.is_admin), " comparison result: ", tostring(user.is_admin == "true"))
+    
+    send_json(200, {
+        success = true,
+        username = username,
+        is_admin = user.is_admin == "true",
+        is_approved = user.is_approved == "true",
+        last_active = user.last_active or "Never"
+    })
+end
+
 return {
-    handle_login = handle_login
+    handle_login = handle_login,
+    handle_me = handle_me
 }

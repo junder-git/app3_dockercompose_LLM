@@ -56,6 +56,8 @@ const DevstralCommon = {
         try {
             const data = await this.apiCall('/api/auth/me');
             
+            console.log('User data received:', data); // Debug log
+            
             if (data.success && data.username) {
                 this.updateNavbarForLoggedInUser(data);
                 return data;
@@ -72,6 +74,8 @@ const DevstralCommon = {
 
     // Update navbar for logged-in user
     updateNavbarForLoggedInUser(userData) {
+        console.log('Updating navbar for user:', userData); // Debug log
+        
         const elements = {
             username: document.getElementById('navbar-username'),
             userNav: document.getElementById('user-nav'),
@@ -89,8 +93,15 @@ const DevstralCommon = {
             elements.userNav.style.display = 'block';
         }
 
-        if (elements.adminNav && userData.is_admin) {
-            elements.adminNav.style.display = 'block';
+        // Show admin nav if user is admin
+        if (elements.adminNav) {
+            if (userData.is_admin === true) {
+                console.log('User is admin - showing admin nav'); // Debug log
+                elements.adminNav.style.display = 'block';
+            } else {
+                console.log('User is not admin - hiding admin nav'); // Debug log
+                elements.adminNav.style.display = 'none';
+            }
         }
 
         if (elements.guestNav) {
@@ -411,7 +422,15 @@ const DevstralCommon = {
     // Initialize common functionality
     init() {
         this.loadTheme();
-        this.loadUser();
+        
+        // Load user data and update navbar
+        this.loadUser().then(userData => {
+            if (userData) {
+                console.log('User loaded successfully:', userData);
+            } else {
+                console.log('No user logged in');
+            }
+        });
         
         // Set up global error handler
         window.addEventListener('unhandledrejection', (event) => {
