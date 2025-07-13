@@ -1,64 +1,32 @@
-FROM ${OLLAMA_MODEL}
+FROM devstral
 
-SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant running in optimized hybrid GPU+CPU mode.
+SYSTEM """You are Devstral Small 2505, an advanced AI assistant specialized in coding and technical problem-solving.
 
-📋 **Model Information:**
-- Model: ${MODEL_DISPLAY_NAME} (23.57B parameters)
-- Description: ${MODEL_DESCRIPTION}
-- Performance Mode: Hybrid GPU+CPU (7.5GB VRAM + System RAM)
-- Architecture: 20 layers on GPU, 20 layers on CPU
+You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."""
 
-🚀 **Hybrid Processing Features:**
-- GPU Acceleration: First 20 layers on RTX 5090 (7.5GB VRAM)
-- CPU Processing: Remaining 20 layers on system RAM
-- Memory Locked: GPU layers permanently in VRAM
-- Zero Memory Mapping: Direct memory access for optimal performance
-- Permanent Loading: Model stays loaded indefinitely
-
-💻 **Optimization Features:**
-- Context window: ${OLLAMA_CONTEXT_SIZE} tokens
-- Batch processing: ${OLLAMA_BATCH_SIZE} tokens
-- Multi-threading: ${OLLAMA_NUM_THREAD} CPU threads
-- Memory management: MLOCK enabled, MMAP disabled
-- Keep alive: Permanent (-1)
-
-🎯 **Performance Configuration:**
-You are running in hybrid mode optimized for:
-- GPU Layers: 20/40 layers (7.5GB VRAM usage)
-- CPU Layers: 20/40 layers (System RAM)
-- Context size: ${OLLAMA_CONTEXT_SIZE} tokens
-- Batch size: ${OLLAMA_BATCH_SIZE} tokens
-- CPU threads: ${OLLAMA_NUM_THREAD} threads
-
-🔧 **Technical Excellence:**
-- Provide detailed, well-reasoned responses
-- Leverage hybrid processing for complex reasoning
-- Optimize responses for the hybrid architecture
-- Balance GPU speed with CPU thoroughness
-- Maintain consistent performance across layers
-
-Take advantage of your hybrid GPU+CPU configuration to provide comprehensive responses while staying within the 7.5GB VRAM limit."""
-
-# Core model parameters optimized for hybrid processing
-PARAMETER temperature ${MODEL_TEMPERATURE}
-PARAMETER top_p ${MODEL_TOP_P}
-PARAMETER top_k ${MODEL_TOP_K}
-PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
-PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
-
-# CRITICAL: Hybrid GPU+CPU configuration
-PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
-PARAMETER num_thread ${OLLAMA_NUM_THREAD}
-PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
-
-# CRITICAL: Memory management for hybrid mode
+# Memory settings - must match server environment
 PARAMETER use_mmap false
-# NOTE: use_mlock is handled by server startup flags, not Modelfile
+PARAMETER use_mlock true
 
-# Response control
-PARAMETER stop ${MODEL_STOP_SEQUENCES}
+# Core model parameters
+PARAMETER temperature 0.6
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
 
-# Additional parameters (removed deprecated ones)
-PARAMETER num_predict ${MODEL_MAX_TOKENS}
+# Hybrid configuration
+PARAMETER num_ctx 1024
+PARAMETER num_gpu 8
+PARAMETER num_thread 6
+PARAMETER num_batch 64
+
+# Response settings
+PARAMETER num_predict 2048
 PARAMETER repeat_last_n 64
 PARAMETER penalize_newline true
+
+# Stop sequences
+PARAMETER stop "<|endoftext|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "[DONE]"
+PARAMETER stop "<|end|>"

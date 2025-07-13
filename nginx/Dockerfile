@@ -9,8 +9,9 @@ RUN apk add --no-cache \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install lua-resty-jwt
-RUN /usr/local/openresty/bin/opm get SkyLothar/lua-resty-jwt
+# Install lua-resty-jwt and lua-resty-http
+RUN /usr/local/openresty/bin/opm get SkyLothar/lua-resty-jwt && \
+    /usr/local/openresty/bin/opm get ledgetech/lua-resty-http
 
 # Set working directory
 WORKDIR /usr/local/openresty/nginx/html

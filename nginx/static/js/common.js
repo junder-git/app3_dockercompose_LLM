@@ -263,26 +263,49 @@ const DevstralCommon = {
 
     // Logout with cleanup
     logout() {
-        // Clear all authentication cookies
-        document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        console.log('Logout function called'); // Debug log
         
-        // Clear any stored session data
-        if (typeof(Storage) !== "undefined") {
-            try {
-                localStorage.removeItem('devstral_chat_history');
-                localStorage.removeItem('devstral_user_preferences');
-            } catch (e) {
-                console.warn('Could not clear localStorage');
+        try {
+            // Clear all authentication cookies with multiple variations
+            const cookiesToClear = ['access_token', 'session', 'auth_token'];
+            cookiesToClear.forEach(cookieName => {
+                // Clear for current path
+                document.cookie = `${cookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+                // Clear for root path
+                document.cookie = `${cookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure=false`;
+                // Clear with domain
+                document.cookie = `${cookieName}=; Path=/; Domain=${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            });
+            
+            console.log('Cookies cleared'); // Debug log
+            
+            // Clear any stored session data
+            if (typeof(Storage) !== "undefined") {
+                try {
+                    localStorage.removeItem('devstral_chat_history');
+                    localStorage.removeItem('devstral_user_preferences');
+                    sessionStorage.clear();
+                    console.log('Local storage cleared'); // Debug log
+                } catch (e) {
+                    console.warn('Could not clear localStorage:', e);
+                }
             }
-        }
 
-        // Show logout message
-        this.showAlert('Logged out successfully', 'info');
-        
-        // Redirect to home page
-        setTimeout(() => {
+            // Show logout message
+            this.showAlert('Logged out successfully', 'success', 2000);
+            
+            console.log('Redirecting to home page...'); // Debug log
+            
+            // Redirect to home page immediately
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 500);
+            
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Force redirect even if there's an error
             window.location.href = '/';
-        }, 1000);
+        }
     },
 
     // Enhanced alert system

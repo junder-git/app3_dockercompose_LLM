@@ -173,7 +173,7 @@ local function get_recent_activity_logs()
     ]]
 end
 
-function handle_admin_page()
+local function handle_admin_page()
     local token = ngx.var.cookie_access_token
     if not token then
         return ngx.redirect("/login.html?redirect=admin.html", 302)

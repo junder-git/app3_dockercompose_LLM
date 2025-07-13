@@ -254,30 +254,32 @@
                 this.showTyping();
 
                 try {
-                    // Simulate API call (replace with actual Ollama endpoint)
-                    await this.simulateAPICall(message);
+                    // Call the real Ollama API
+                    const response = await fetch('/api/chat/message', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ 
+                            message: message,
+                            include_history: true 
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    this.hideTyping();
+
+                    if (data.success) {
+                        this.addMessage('ai', data.message);
+                        // Don't save to localStorage since it's persisted in Redis
+                    } else {
+                        this.addMessage('ai', 'Error: ' + (data.error || 'Failed to get response'));
+                    }
                 } catch (error) {
                     this.hideTyping();
-                    this.addMessage('ai', 'Sorry, I encountered an error. Please try again.');
+                    console.error('Chat API error:', error);
+                    this.addMessage('ai', 'Sorry, I encountered a connection error. Please try again.');
                 }
-            }
-
-            async simulateAPICall(message) {
-                // This would be replaced with actual Ollama API call
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        this.hideTyping();
-                        const responses = [
-                            "I understand you're asking about: " + message + ". Let me help you with that.",
-                            "Here's my analysis of your question...",
-                            "Based on your query, I recommend the following approach...",
-                            "This is an interesting problem. Let me break it down for you..."
-                        ];
-                        const response = responses[Math.floor(Math.random() * responses.length)];
-                        this.addMessage('ai', response);
-                        resolve();
-                    }, 2000);
-                });
             }
 
             addMessage(sender, content) {
@@ -309,17 +311,16 @@
 
                 messagesContainer.appendChild(messageDiv);
                 this.scrollToBottom();
-
-                // Save to history
-                this.messages.push({ sender, content, timestamp: Date.now() });
-                this.saveChatHistory();
             }
 
             formatMessage(content) {
-                // Basic formatting - could be enhanced with markdown support
+                // Enhanced formatting for code blocks and markdown
                 return content
                     .replace(/\n/g, '<br>')
-                    .replace(/`([^`]+)`/g, '<code>$1</code>');
+                    .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
             }
 
             showTyping() {
@@ -335,51 +336,74 @@
                 document.getElementById('send-button').disabled = false;
             }
 
-            clearChat() {
-                if (confirm('Are you sure you want to clear the chat history?')) {
-                    document.getElementById('chat-messages').innerHTML = `
-                        <div class="welcome-message" id="welcome-message" style="display: block;">
-                            <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
-                            <p>I'm your advanced coding and reasoning assistant. Ask me anything about programming, problem-solving, or technical questions.</p>
-                            
-                            <div class="suggestions">
-                                <div class="suggestion-card" onclick="sendSuggestion('How do I implement a binary search algorithm in Python?')">
-                                    <strong><i class="bi bi-code-slash"></i> Binary Search</strong>
-                                    <p>Learn algorithm implementation</p>
+            async clearChat() {
+                if (confirm('Are you sure you want to clear the chat history? This will permanently delete all messages.')) {
+                    try {
+                        const response = await fetch('/api/chat/clear', {
+                            method: 'POST',
+                            credentials: 'include'
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            // Clear the UI
+                            document.getElementById('chat-messages').innerHTML = `
+                                <div class="welcome-message" id="welcome-message" style="display: block;">
+                                    <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
+                                    <p>I'm your advanced coding and reasoning assistant. Ask me anything about programming, problem-solving, or technical questions.</p>
+                                    
+                                    <div class="suggestions">
+                                        <div class="suggestion-card" onclick="sendSuggestion('How do I implement a binary search algorithm in Python?')">
+                                            <strong><i class="bi bi-code-slash"></i> Binary Search</strong>
+                                            <p>Learn algorithm implementation</p>
+                                        </div>
+                                        <div class="suggestion-card" onclick="sendSuggestion('Explain the difference between async/await and Promises in JavaScript')">
+                                            <strong><i class="bi bi-lightning"></i> Async Programming</strong>
+                                            <p>JavaScript concurrency concepts</p>
+                                        </div>
+                                        <div class="suggestion-card" onclick="sendSuggestion('Help me debug this SQL query performance issue')">
+                                            <strong><i class="bi bi-database"></i> SQL Optimization</strong>
+                                            <p>Database performance tuning</p>
+                                        </div>
+                                        <div class="suggestion-card" onclick="sendSuggestion('What are the best practices for React component architecture?')">
+                                            <strong><i class="bi bi-layers"></i> React Architecture</strong>
+                                            <p>Frontend development patterns</p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="suggestion-card" onclick="sendSuggestion('Explain the difference between async/await and Promises in JavaScript')">
-                                    <strong><i class="bi bi-lightning"></i> Async Programming</strong>
-                                    <p>JavaScript concurrency concepts</p>
-                                </div>
-                                <div class="suggestion-card" onclick="sendSuggestion('Help me debug this SQL query performance issue')">
-                                    <strong><i class="bi bi-database"></i> SQL Optimization</strong>
-                                    <p>Database performance tuning</p>
-                                </div>
-                                <div class="suggestion-card" onclick="sendSuggestion('What are the best practices for React component architecture?')">
-                                    <strong><i class="bi bi-layers"></i> React Architecture</strong>
-                                    <p>Frontend development patterns</p>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    this.messages = [];
-                    this.saveChatHistory();
+                            `;
+                            this.messages = [];
+                        } else {
+                            alert('Failed to clear chat: ' + data.error);
+                        }
+                    } catch (error) {
+                        console.error('Clear chat error:', error);
+                        alert('Failed to clear chat. Please try again.');
+                    }
                 }
             }
 
             exportChat() {
-                const chatData = {
-                    timestamp: new Date().toISOString(),
-                    messages: this.messages
-                };
-                
-                const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `devstral-chat-${new Date().toISOString().split('T')[0]}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
+                // Export from server-side chat history
+                this.loadServerChatHistory().then(messages => {
+                    const chatData = {
+                        timestamp: new Date().toISOString(),
+                        messages: messages,
+                        exported_from: 'ai.junder.uk'
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `devstral-chat-${new Date().toISOString().split('T')[0]}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }).catch(error => {
+                    console.error('Export error:', error);
+                    alert('Failed to export chat history.');
+                });
             }
 
             scrollToBottom() {
@@ -389,30 +413,48 @@
                 }
             }
 
-            saveChatHistory() {
-                // In a real implementation, this would save to server
-                // For now, using localStorage
+            // Load chat history from server instead of localStorage
+            async loadChatHistory() {
                 try {
-                    localStorage.setItem('devstral_chat_history', JSON.stringify(this.messages));
-                } catch (e) {
-                    console.warn('Could not save chat history');
+                    const response = await fetch('/api/chat/history?limit=20', {
+                        method: 'GET',
+                        credentials: 'include'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.messages.length > 0) {
+                            // Clear welcome message
+                            document.getElementById('welcome-message').style.display = 'none';
+                            
+                            // Display messages
+                            data.messages.forEach(msg => {
+                                this.addMessageToDOM(msg.role === 'user' ? 'user' : 'ai', msg.content);
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not load chat history:', error);
                 }
             }
 
-            loadChatHistory() {
+            async loadServerChatHistory() {
                 try {
-                    const saved = localStorage.getItem('devstral_chat_history');
-                    if (saved) {
-                        this.messages = JSON.parse(saved);
-                        this.messages.forEach(msg => {
-                            this.addMessageToDOM(msg.sender, msg.content);
-                        });
-                        if (this.messages.length > 0) {
-                            document.getElementById('welcome-message').style.display = 'none';
+                    const response = await fetch('/api/chat/history?limit=50', {
+                        method: 'GET',
+                        credentials: 'include'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            return data.messages;
                         }
                     }
-                } catch (e) {
-                    console.warn('Could not load chat history');
+                    return [];
+                } catch (error) {
+                    console.error('Failed to load server chat history:', error);
+                    return [];
                 }
             }
 

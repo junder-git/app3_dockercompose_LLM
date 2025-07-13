@@ -1,8 +1,13 @@
 #!/bin/bash
 # ollama/scripts/init-ollama.sh - Optimized for 7.5GB VRAM Hybrid Mode
 
+# ADD: Memory debugging to catch double free errors
+export MALLOC_CHECK_=2
+export MALLOC_PERTURB_=165
+
 echo "=== HYBRID GPU+CPU MODE: 7.5GB VRAM + System RAM ==="
 echo "Optimizing Devstral 24B for hybrid processing"
+echo "Memory debugging enabled: MALLOC_CHECK_=2, MALLOC_PERTURB_=165"
 echo "=================================================="
 
 # Display hybrid configuration
@@ -10,8 +15,8 @@ echo ""
 echo "=== Hybrid Configuration ==="
 echo "OLLAMA_MODEL: $OLLAMA_MODEL"
 echo "MODEL_DISPLAY_NAME: $MODEL_DISPLAY_NAME"
-echo "GPU_LAYERS: 20 (out of 40 total layers)"
-echo "CPU_LAYERS: 20 (remaining layers)"
+echo "GPU_LAYERS: $OLLAMA_GPU_LAYERS (from .env)"
+echo "CPU_LAYERS: Remaining layers"
 echo "VRAM_TARGET: 7.5GB maximum"
 echo "CONTEXT_SIZE: $OLLAMA_CONTEXT_SIZE"
 echo "BATCH_SIZE: $OLLAMA_BATCH_SIZE"
@@ -136,17 +141,20 @@ export OLLAMA_KEEP_ALIVE=-1
 
 echo ""
 echo "🚀 Starting Ollama in HYBRID mode..."
-echo "   GPU Layers: 20 (target 7.5GB VRAM)"
-echo "   CPU Layers: 20 (system RAM)"
+echo "   GPU Layers: $OLLAMA_GPU_LAYERS (from .env)"
+echo "   CPU Layers: Remaining"
 echo "   MMAP: DISABLED"
 echo "   MLOCK: ENABLED"
 echo "   CPU_THREADS: $OLLAMA_NUM_THREAD"
 echo "   CONTEXT_SIZE: $OLLAMA_CONTEXT_SIZE"
 echo "   BATCH_SIZE: $OLLAMA_BATCH_SIZE"
 echo "   KEEP_ALIVE: PERMANENT"
+echo "   MEMORY_DEBUG: ENABLED"
 
-# Start Ollama with hybrid-optimized settings
+# Start Ollama with hybrid-optimized settings AND memory debugging
 exec env \
+    MALLOC_CHECK_=2 \
+    MALLOC_PERTURB_=165 \
     OLLAMA_HOST="$OLLAMA_HOST" \
     OLLAMA_MODELS="$OLLAMA_MODELS" \
     OLLAMA_MMAP=0 \
@@ -225,7 +233,7 @@ fi
 echo ""
 echo "🧪 Testing hybrid model: $HYBRID_MODEL"
 
-# Build test payload with hybrid settings
+# Build test payload with hybrid settings (use .env value)
 TEST_PAYLOAD="{
     \"model\": \"$HYBRID_MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"Hello! Please respond with 'Hybrid mode active' and tell me how many layers are on GPU vs CPU.\"}],
@@ -234,7 +242,7 @@ TEST_PAYLOAD="{
         \"temperature\": 0.1,
         \"num_predict\": 50,
         \"num_ctx\": $OLLAMA_CONTEXT_SIZE,
-        \"num_gpu\": 20,
+        \"num_gpu\": $OLLAMA_GPU_LAYERS,
         \"num_thread\": $OLLAMA_NUM_THREAD,
         \"num_batch\": $OLLAMA_BATCH_SIZE,
         \"use_mmap\": false,
@@ -252,7 +260,7 @@ TEST_RESPONSE=$(curl -s --max-time 120 -X POST http://localhost:11434/api/chat \
 
 if echo "$TEST_RESPONSE" | grep -q "\"content\""; then
     echo "✅ Hybrid model test SUCCESSFUL!"
-    echo "🔒 Model loaded with 20 GPU layers + 20 CPU layers"
+    echo "🔒 Model loaded with $OLLAMA_GPU_LAYERS GPU layers + CPU layers"
     
     # Show VRAM usage after loading
     if command -v nvidia-smi >/dev/null 2>&1; then
@@ -281,7 +289,7 @@ else
     echo "$TEST_RESPONSE"
     echo ""
     echo "💡 Troubleshooting:"
-    echo "   - Try reducing GPU layers to 16 or 18"
+    echo "   - Try reducing GPU layers to 8 or 6"
     echo "   - Check if other processes are using VRAM"
     echo "   - Ensure sufficient system RAM (24GB+ recommended)"
 fi
@@ -296,14 +304,15 @@ echo "========================================================="
 echo "🎯 HYBRID MODE READY - 7.5GB VRAM + System RAM"
 echo "========================================================="
 echo "✅ Active Model: $HYBRID_MODEL"
-echo "✅ GPU Layers: 20/40 (targeting 7.5GB VRAM)"
-echo "✅ CPU Layers: 20/40 (system RAM)"
+echo "✅ GPU Layers: $OLLAMA_GPU_LAYERS (from .env)"
+echo "✅ CPU Layers: Remaining layers"
 echo "✅ Context Size: $OLLAMA_CONTEXT_SIZE tokens"
 echo "✅ Batch Size: $OLLAMA_BATCH_SIZE tokens"
 echo "✅ CPU Threads: $OLLAMA_NUM_THREAD"
 echo "✅ MMAP: DISABLED"
 echo "✅ MLOCK: ENABLED"
 echo "✅ Keep Alive: PERMANENT"
+echo "✅ Memory Debug: ENABLED"
 echo "✅ API URL: http://localhost:11434"
 echo "========================================================="
 
