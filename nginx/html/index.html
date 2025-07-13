@@ -11,17 +11,35 @@
         body.index-page {
             overflow-x: hidden;
         }
-        .hero-section {
-            text-align: center;
-            padding: 100px 20px;
-        }
         canvas#bg-canvas {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            z-index: -1;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .hero-section {
+            text-align: center;
+            padding: 120px 20px;
+            position: relative;
+            z-index: 20;
+        }
+        .hero-box {
+            display: inline-block;
+            padding: 20px 30px;
+            background: rgba(13, 110, 253, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(4px);
+        }
+        .hero-section h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .hero-section p {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
         }
         .feature-card {
             transition: all 0.3s ease;
@@ -34,34 +52,13 @@
     <canvas id="bg-canvas"></canvas>
 
     <main class="hero-section">
-        <h1>Welcome to Devstral AI</h1>
-        <p>Advanced coding and reasoning model powered by cutting-edge AI technology.</p>
-        <a href="/chat.html" class="btn btn-primary cta-button">Start Chatting</a>
-        <a href="/register.html" class="btn btn-outline-primary">Get Started</a>
-    </main>
-
-    <section class="container my-5">
-        <div class="row">
-            <div class="col-md-4">
-                <div class="feature-card card p-3">
-                    <h3>Code Understanding</h3>
-                    <p>Explain code, find bugs, or suggest improvements in seconds.</p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="feature-card card p-3">
-                    <h3>Document Assistance</h3>
-                    <p>Summarize, translate, or generate technical documents easily.</p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="feature-card card p-3">
-                    <h3>Creative Generation</h3>
-                    <p>Write articles, stories, or brainstorm ideas interactively.</p>
-                </div>
-            </div>
+        <div class="hero-box">
+            <h1><i class="bi bi-lightning-charge-fill"></i></h1>
+            <h2>ai.junder.uk</h2>
+            <p>Advanced coding model,<br>powered by Devstral.</p>
+            <a href="#" id="start-chat-button" class="btn btn-primary cta-button">Start Chat</a>
         </div>
-    </section>
+    </main>
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
@@ -71,14 +68,30 @@
             window.location.href = '/';
         }
 
-        // Canvas background animation
+        document.getElementById('start-chat-button').addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'include' });
+                const data = await res.json();
+                if (data.success) {
+                    window.location.href = '/chat.html';
+                } else {
+                    window.location.href = '/login.html';
+                }
+            } catch (err) {
+                console.error('Check login error:', err);
+                window.location.href = '/login.html';
+            }
+        });
+
+
         const canvas = document.getElementById('bg-canvas');
         const ctx = canvas.getContext('2d');
         let width = canvas.width = window.innerWidth;
         let height = canvas.height = window.innerHeight;
 
         let particles = [];
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 75; i++) {
             particles.push({
                 x: Math.random() * width,
                 y: Math.random() * height,
@@ -124,24 +137,6 @@
                 DevstralCommon.setupPerformanceMonitoring();
             }
         });
-
-        function setupFeatureCardAnimations() {
-            const cards = document.querySelectorAll('.feature-card');
-            cards.forEach((card, index) => {
-                card.style.animationDelay = `${index * 0.1}s`;
-                card.classList.add('animate-in');
-
-                card.addEventListener('mouseenter', function () {
-                    this.style.transform = 'translateY(-8px) scale(1.02)';
-                    this.style.boxShadow = '0 15px 40px rgba(13, 110, 253, 0.3)';
-                });
-
-                card.addEventListener('mouseleave', function () {
-                    this.style.transform = 'translateY(0) scale(1)';
-                    this.style.boxShadow = '0 10px 30px rgba(13, 110, 253, 0.2)';
-                });
-            });
-        }
     </script>
 </body>
 </html>

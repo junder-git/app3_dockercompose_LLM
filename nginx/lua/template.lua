@@ -1,16 +1,23 @@
-local function render_template(file_path, context)
-    local file = io.open(file_path, "r")
+local function render_template(path, context, depth)
+    local file = io.open(path, "r")
     if not file then
-        return nil, "Template file not found: " .. file_path
+        ngx.status = 500
+        ngx.say("Template file not found: " .. path)
+        return ngx.exit(500)
     end
     local content = file:read("*a")
     file:close()
 
-    for key, value in pairs(context) do
-        content = content:gsub("{{%s*" .. key .. "%s*}}", value or "")
+    depth = depth or 2
+
+    for i = 1, depth do
+        for key, value in pairs(context) do
+            content = content:gsub("{{%s*" .. key .. "%s*}}", value or "")
+        end
     end
 
-    return content
+    ngx.header.content_type = "text/html"
+    ngx.say(content)
 end
 
 return {
