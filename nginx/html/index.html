@@ -47,7 +47,24 @@
     </style>
 </head>
 <body class="index-page">
-    {{ navigation }}
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand logo-brand" href="/">
+                <i class="bi bi-lightning-charge-fill"></i> ai.junder.uk
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/chat.html">
+                    <i class="bi bi-chat-dots"></i> Chat
+                </a>
+                <a class="nav-link" href="/login.html">
+                    <i class="bi bi-box-arrow-in-right"></i> Login
+                </a>
+                <a class="nav-link" href="/register.html">
+                    <i class="bi bi-person-plus"></i> Register
+                </a>
+            </div>
+        </div>
+    </nav>
 
     <canvas id="bg-canvas"></canvas>
 
@@ -55,8 +72,8 @@
         <div class="hero-box">
             <h1><i class="bi bi-lightning-charge-fill"></i></h1>
             <h2>ai.junder.uk</h2>
-            <p>Advanced coding model,<br>powered by Devstral.</p>
-            <a href="#" id="start-chat-button" class="btn btn-primary cta-button">Start Chat</a>
+            <p>Advanced coding model,<br>powered by Devstral.</p><br>No login:</p>
+            <a href="#" id="start-chat-button" class="btn btn-primary cta-button">Start guest chat</a>
         </div>
     </main>
 
@@ -68,22 +85,11 @@
             window.location.href = '/';
         }
 
-        document.getElementById('start-chat-button').addEventListener('click', async (e) => {
+        // Simplified - no auth check needed, chat page handles everything
+        document.getElementById('start-chat-button').addEventListener('click', (e) => {
             e.preventDefault();
-            try {
-                const res = await fetch('/api/auth/me', { credentials: 'include' });
-                const data = await res.json();
-                if (data.success) {
-                    window.location.href = '/chat.html';
-                } else {
-                    window.location.href = '/login.html';
-                }
-            } catch (err) {
-                console.error('Check login error:', err);
-                window.location.href = '/login.html';
-            }
+            window.location.href = '/chat.html';
         });
-
 
         const canvas = document.getElementById('bg-canvas');
         const ctx = canvas.getContext('2d');
@@ -127,7 +133,8 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 ai.junder.uk - Devstral AI initialized');
 
-            DevstralCommon.loadUser();
+            // Optional user loading - won't break if it fails
+            DevstralCommon.loadUser?.();
             DevstralCommon.setupFeatureCardAnimations();
             DevstralCommon.setupAnalytics();
             DevstralCommon.setupSmoothScrolling();

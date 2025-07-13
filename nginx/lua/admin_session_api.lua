@@ -1,11 +1,10 @@
--- nginx/lua/admin_session_api.lua - Admin session management endpoints
+-- nginx/lua/admin_session_api_enhanced.lua - Enhanced admin session management
 local cjson = require "cjson"
 local redis = require "resty.redis"
-local jwt = require "resty.jwt"
+local unified_auth = require "unified_auth"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local function send_json(status, tbl)
     ngx.status = status
@@ -19,63 +18,60 @@ local function connect_redis()
     red:set_timeout(1000)
     local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
     if not ok then
-        send_json(500, { error = "Internal server error", details = "Redis connection failed" })
+        ngx.log(ngx.WARN, "Redis connection failed: " .. (err or "unknown"))
+        return nil, err
     end
-    return red
+    return red, nil
 end
 
-local function verify_admin_token()
-    local token = ngx.var.cookie_access_token
-    if not token then
-        send_json(401, { error = "Authentication required" })
-    end
-
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        send_json(401, { error = "Invalid token" })
-    end
-
-    local username = jwt_obj.payload.username
-    
-    -- Get user info from Redis to verify admin status
-    local red = connect_redis()
-    local user_key = "user:" .. username
-    local user_data = red:hgetall(user_key)
-    
-    if not user_data or #user_data == 0 then
-        send_json(401, { error = "User not found" })
-    end
-
-    local user = {}
-    for i = 1, #user_data, 2 do
-        user[user_data[i]] = user_data[i + 1]
-    end
-
-    if user.is_admin ~= "true" then
-        send_json(403, { error = "Admin privileges required" })
-    end
-
-    return username, red
+local function get_redis_guest_sessions(red)
+    -- This would be for any Redis-based guest sessions (legacy)
+    -- For now, return empty array since we're using hardcoded tokens
+    return {}
 end
 
 local function handle_get_sessions()
-    local admin_username, red = verify_admin_token()
+    local admin_username = ngx.var.auth_username
     
-    local unified_auth = require "unified_auth"
-    local sessions = unified_auth.get_all_chat_sessions(red)
-    local active_count = unified_auth.count_active_chat_sessions(red)
+    -- Get hardcoded guest sessions
+    local guest_sessions = unified_auth.get_all_guest_sessions()
+    local active_count = unified_auth.count_active_guest_sessions()
+    
+    -- Optionally get Redis-based sessions too
+    local red, err = connect_redis()
+    local redis_sessions = {}
+    if red then
+        redis_sessions = get_redis_guest_sessions(red)
+    end
+    
+    -- Combine all sessions
+    local all_sessions = {}
+    
+    -- Add hardcoded guest sessions
+    for _, session in ipairs(guest_sessions) do
+        session.type = "hardcoded_guest"
+        table.insert(all_sessions, session)
+    end
+    
+    -- Add Redis sessions if any
+    for _, session in ipairs(redis_sessions) do
+        session.type = "redis_guest"
+        table.insert(all_sessions, session)
+    end
     
     send_json(200, {
         success = true,
-        sessions = sessions,
+        sessions = all_sessions,
         active_count = active_count,
         max_sessions = unified_auth.MAX_CHAT_GUESTS,
-        session_duration_minutes = unified_auth.GUEST_SESSION_DURATION / 60
+        session_duration_minutes = unified_auth.GUEST_SESSION_DURATION / 60,
+        hardcoded_sessions = #guest_sessions,
+        redis_sessions = #redis_sessions
     })
 end
 
 local function handle_kick_session()
-    local admin_username, red = verify_admin_token()
+    local admin_username = ngx.var.auth_username
     
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -91,8 +87,20 @@ local function handle_kick_session()
         send_json(400, { error = "Session ID required" })
     end
 
-    local unified_auth = require "unified_auth"
-    local success = unified_auth.kick_chat_session(red, session_id)
+    local success = false
+    
+    -- Try to kick hardcoded guest session
+    if string.match(session_id, "^guest_slot_") then
+        success = unified_auth.kick_guest_session(session_id)
+    else
+        -- Try to kick Redis-based session (legacy support)
+        local red, err = connect_redis()
+        if red then
+            -- Implementation for Redis-based session kicking would go here
+            -- For now, return false since we're not using Redis sessions
+            success = false
+        end
+    end
     
     if success then
         -- Log the action
@@ -114,41 +122,57 @@ local function handle_kick_session()
 end
 
 local function handle_cleanup_sessions()
-    local admin_username, red = verify_admin_token()
+    local admin_username = ngx.var.auth_username
     
-    local unified_auth = require "unified_auth"
-    local cleaned = unified_auth.cleanup_expired_sessions(red)
+    -- Cleanup hardcoded guest sessions
+    local cleaned_hardcoded = unified_auth.cleanup_expired_guest_sessions()
+    
+    -- Cleanup Redis sessions if needed
+    local cleaned_redis = 0
+    local red, err = connect_redis()
+    if red then
+        -- Redis session cleanup would go here
+        -- For now, no Redis sessions to clean
+        cleaned_redis = 0
+    end
+    
+    local total_cleaned = cleaned_hardcoded + cleaned_redis
     
     -- Log the action
-    ngx.log(ngx.ERR, "Admin ", admin_username, " triggered session cleanup - Cleaned: ", cleaned)
+    ngx.log(ngx.ERR, "Admin ", admin_username, " triggered session cleanup - Cleaned: ", total_cleaned, 
+            " (hardcoded: ", cleaned_hardcoded, ", redis: ", cleaned_redis, ")")
     
     send_json(200, {
         success = true,
         message = "Session cleanup completed",
-        cleaned_sessions = cleaned,
+        cleaned_sessions = total_cleaned,
+        hardcoded_cleaned = cleaned_hardcoded,
+        redis_cleaned = cleaned_redis,
         triggered_by = admin_username
     })
 end
 
 local function handle_get_session_stats()
-    local admin_username, red = verify_admin_token()
+    local admin_username = ngx.var.auth_username
     
-    local unified_auth = require "unified_auth"
-    local active_count = unified_auth.count_active_chat_sessions(red)
-    local sessions = unified_auth.get_all_chat_sessions(red)
+    local guest_sessions = unified_auth.get_all_guest_sessions()
+    local active_count = unified_auth.count_active_guest_sessions()
     
     -- Calculate statistics
     local total_age = 0
     local oldest_age = 0
     local newest_age = math.huge
+    local total_messages = 0
     
-    for _, session in ipairs(sessions) do
+    for _, session in ipairs(guest_sessions) do
         total_age = total_age + session.age_seconds
         oldest_age = math.max(oldest_age, session.age_seconds)
         newest_age = math.min(newest_age, session.age_seconds)
+        total_messages = total_messages + (session.message_count or 0)
     end
     
-    local average_age = #sessions > 0 and (total_age / #sessions) or 0
+    local average_age = #guest_sessions > 0 and (total_age / #guest_sessions) or 0
+    local average_messages = #guest_sessions > 0 and (total_messages / #guest_sessions) or 0
     
     send_json(200, {
         success = true,
@@ -160,8 +184,54 @@ local function handle_get_session_stats()
             average_session_age_minutes = math.floor(average_age / 60),
             oldest_session_age_minutes = math.floor(oldest_age / 60),
             newest_session_age_minutes = math.floor(newest_age / 60),
-            sessions_can_be_kicked = #sessions
+            total_messages_sent = total_messages,
+            average_messages_per_session = math.floor(average_messages),
+            sessions_can_be_kicked = #guest_sessions,
+            message_limit_per_session = unified_auth.GUEST_MESSAGE_LIMIT
         }
+    })
+end
+
+local function handle_create_guest_session()
+    local admin_username = ngx.var.auth_username
+    
+    -- Admin can manually create a guest session
+    local session_data, error_msg, slot_num = unified_auth.create_guest_session()
+    
+    if not session_data then
+        send_json(400, {
+            error = "Failed to create guest session",
+            message = error_msg
+        })
+    end
+    
+    -- Log the action
+    ngx.log(ngx.ERR, "Admin ", admin_username, " manually created guest session for slot ", slot_num)
+    
+    send_json(200, {
+        success = true,
+        message = "Guest session created successfully",
+        session = session_data,
+        created_by = admin_username
+    })
+end
+
+local function handle_get_guest_limits()
+    local slot_num = tonumber(ngx.var.arg_slot)
+    
+    if not slot_num then
+        send_json(400, { error = "Slot number required" })
+    end
+    
+    local limits = unified_auth.get_guest_limits(slot_num)
+    
+    if not limits then
+        send_json(404, { error = "Guest session not found or expired" })
+    end
+    
+    send_json(200, {
+        success = true,
+        limits = limits
     })
 end
 
@@ -178,6 +248,10 @@ local function handle_session_api()
         handle_cleanup_sessions()
     elseif uri == "/api/admin/sessions/stats" and method == "GET" then
         handle_get_session_stats()
+    elseif uri == "/api/admin/sessions/create" and method == "POST" then
+        handle_create_guest_session()
+    elseif uri == "/api/admin/sessions/limits" and method == "GET" then
+        handle_get_guest_limits()
     else
         send_json(404, { error = "Session API endpoint not found" })
     end
@@ -188,5 +262,7 @@ return {
     handle_get_sessions = handle_get_sessions,
     handle_kick_session = handle_kick_session,
     handle_cleanup_sessions = handle_cleanup_sessions,
-    handle_get_session_stats = handle_get_session_stats
+    handle_get_session_stats = handle_get_session_stats,
+    handle_create_guest_session = handle_create_guest_session,
+    handle_get_guest_limits = handle_get_guest_limits
 }

@@ -4,7 +4,7 @@ const DevstralCommon = {
             await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 
             // Clear cookies
-            const cookies = ['access_token', 'session', 'auth_token'];
+            const cookies = ['access_token', 'session', 'auth_token', 'guest_session'];
             cookies.forEach(name => {
                 document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
             });
@@ -18,6 +18,64 @@ const DevstralCommon = {
         } catch (err) {
             console.error('Logout failed', err);
         }
+    },
+
+    // Optional user loading - doesn't fail if auth is broken
+    async loadUser() {
+        try {
+            const response = await fetch('/api/auth/me', { 
+                credentials: 'include',
+                // Add timeout to prevent hanging
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.username) {
+                    // Update any username displays
+                    const usernameElements = document.querySelectorAll('#navbar-username, .username-display');
+                    usernameElements.forEach(el => {
+                        if (el) el.textContent = data.username;
+                    });
+                    
+                    // Show authenticated nav items
+                    const authElements = document.querySelectorAll('.auth-required');
+                    authElements.forEach(el => {
+                        if (el) el.style.display = 'block';
+                    });
+                    
+                    // Hide guest nav items
+                    const guestElements = document.querySelectorAll('.guest-only');
+                    guestElements.forEach(el => {
+                        if (el) el.style.display = 'none';
+                    });
+                    
+                    return data;
+                }
+            }
+        } catch (error) {
+            console.warn('Auth check failed (this is normal for guests):', error);
+        }
+        
+        // Fallback for guests/unauthenticated users
+        const usernameElements = document.querySelectorAll('#navbar-username, .username-display');
+        usernameElements.forEach(el => {
+            if (el) el.textContent = 'Guest';
+        });
+        
+        // Show guest nav items
+        const guestElements = document.querySelectorAll('.guest-only');
+        guestElements.forEach(el => {
+            if (el) el.style.display = 'block';
+        });
+        
+        // Hide authenticated nav items
+        const authElements = document.querySelectorAll('.auth-required');
+        authElements.forEach(el => {
+            if (el) el.style.display = 'none';
+        });
+        
+        return null;
     },
 
     setupSmoothScrolling() {
@@ -77,7 +135,7 @@ const DevstralCommon = {
 
     setupAnalytics() {
         const trackableElements = {
-            'cta-start-chat': document.querySelector('.cta-button[href*="chat"]'),
+            'cta-start-chat': document.querySelector('.cta-button'),
             'cta-get-started': document.querySelector('.btn[href*="register"]'),
             'nav-chat': document.querySelector('.nav-link[href*="chat"]'),
             'nav-login': document.querySelector('.nav-link[href*="login"]'),
@@ -275,6 +333,25 @@ const DevstralCommon = {
     generateId(prefix) {
         prefix = prefix || 'id';
         return prefix + '-' + Math.random().toString(36).substr(2, 9);
+    },
+
+    // Check current authentication status (optional)
+    async checkAuthStatus() {
+        try {
+            const response = await fetch('/api/guest/status', { 
+                credentials: 'include',
+                signal: AbortSignal.timeout(3000)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                return data;
+            }
+        } catch (error) {
+            console.warn('Auth status check failed:', error);
+        }
+        
+        return { success: false, user_type: 'none' };
     }
 };
 
