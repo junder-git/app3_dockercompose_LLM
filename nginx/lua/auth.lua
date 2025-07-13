@@ -1,4 +1,3 @@
--- nginx/lua/auth.lua - Secured with proper logout
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local jwt = require "resty.jwt"
@@ -26,7 +25,7 @@ end
 
 local function verify_password(password, stored_hash)
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
-                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
+        password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local computed_hash = handle:read("*a"):gsub("\n", "")
     handle:close()
@@ -39,12 +38,10 @@ local function get_user_info(red, username)
     if not user_data or #user_data == 0 then
         return nil
     end
-
     local user = {}
     for i = 1, #user_data, 2 do
         user[user_data[i]] = user_data[i + 1]
     end
-    
     return user
 end
 
@@ -77,30 +74,22 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
 
-    -- Update last active timestamp
     red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
 
-    -- Create JWT with minimal payload - NO sensitive data
     local jwt_token = jwt:sign(JWT_SECRET, {
         header = { typ = "JWT", alg = "HS256" },
         payload = {
             username = username,
-            exp = ngx.time() + 86400  -- 24 hours
-            -- Removed is_admin - server will check this from Redis when needed
+            exp = ngx.time() + 86400
         }
     })
 
-    -- Set secure HTTP-only cookie
-    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. 
+    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token ..
         "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
     
-    send_json(200, { 
-        token = jwt_token,
-        success = true
-    })
+    send_json(200, { token = jwt_token, success = true })
 end
 
--- Simplified /me endpoint - only returns what client needs
 local function handle_me()
     local token = ngx.var.cookie_access_token
     if not token then
@@ -113,43 +102,32 @@ local function handle_me()
     end
 
     local username = jwt_obj.payload.username
-    
-    -- Get minimal user info from Redis
     local red = connect_redis()
     local user_key = "user:" .. username
     local is_approved = red:hget(user_key, "is_approved")
     local is_admin = red:hget(user_key, "is_admin")
-    
+
     if is_approved ~= "true" then
         send_json(403, { success = false, error = "User not approved" })
     end
 
-    -- Only send what the client actually needs
     send_json(200, {
         success = true,
         username = username,
-        -- Only send admin status for navigation purposes
-        -- All actual admin checks are done server-side
         is_admin = is_admin == "true"
     })
 end
 
--- NEW: Proper logout endpoint that clears cookies
 local function handle_logout()
-    -- Clear the cookie properly on server side
-    ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
-    
-    -- Also clear any other auth cookies that might exist
     ngx.header["Set-Cookie"] = {
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
         "session=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
         "auth_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
     }
-    
-    send_json(200, { 
-        success = true, 
-        message = "Logged out successfully" 
-    })
+    ngx.header["Cache-Control"] = "no-store"
+    ngx.header["Pragma"] = "no-cache"
+
+    send_json(200, { success = true, message = "Logged out successfully" })
 end
 
 return {
