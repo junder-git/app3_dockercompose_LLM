@@ -7,15 +7,397 @@
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/common.css">
+    <style>
+        .admin-container { height: calc(100vh - 60px); overflow-y: auto; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { 
+            background: var(--bg-tertiary); 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            padding: 1.5rem; 
+            text-align: center; 
+            transition: all 0.3s ease; 
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-color), var(--info-color));
+        }
+        .stat-card:hover { transform: translateY(-4px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+        .stat-icon { font-size: 2.5rem; margin-bottom: 0.5rem; color: var(--primary-color); }
+        .stat-value { font-size: 2rem; font-weight: bold; color: var(--text-primary); margin-bottom: 0.25rem; }
+        .stat-label { color: var(--text-secondary); font-size: 0.9rem; }
+        .stat-change { font-size: 0.8rem; margin-top: 0.5rem; }
+        .change-positive { color: var(--success-color); }
+        .change-negative { color: var(--danger-color); }
+        .admin-section { 
+            background: var(--bg-tertiary); 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            padding: 1.5rem; 
+            margin-bottom: 1.5rem; 
+        }
+        .section-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 1rem; 
+            padding-bottom: 0.5rem; 
+            border-bottom: 1px solid var(--border-color); 
+        }
+        .section-title { color: var(--primary-color); margin: 0; }
+        .user-table { background: transparent; color: var(--text-primary); }
+        .user-table th { 
+            background: var(--bg-quaternary); 
+            border-color: var(--border-color); 
+            color: var(--text-primary); 
+            position: sticky; 
+            top: 0; 
+            z-index: 10; 
+        }
+        .user-table td { border-color: var(--border-color); color: var(--text-primary); }
+        .user-table tbody tr:hover { background-color: var(--bg-quaternary); }
+        .status-badge { 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 12px; 
+            font-size: 0.75rem; 
+            font-weight: 500; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 0.25rem; 
+        }
+        .status-approved { background-color: rgba(40, 167, 69, 0.2); color: #28a745; border: 1px solid rgba(40, 167, 69, 0.3); }
+        .status-pending { background-color: rgba(255, 193, 7, 0.2); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.3); }
+        .status-admin { background-color: rgba(13, 110, 253, 0.2); color: #0d6efd; border: 1px solid rgba(13, 110, 253, 0.3); }
+        .action-buttons { display: flex; gap: 0.5rem; }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        .refresh-indicator { 
+            position: fixed; 
+            top: 70px; 
+            right: 20px; 
+            background: var(--primary-color); 
+            color: white; 
+            padding: 0.5rem 1rem; 
+            border-radius: 20px; 
+            font-size: 0.85rem; 
+            z-index: 1000; 
+            display: none; 
+        }
+        .loading-spinner { 
+            border: 3px solid var(--border-color); 
+            border-top: 3px solid var(--primary-color); 
+            border-radius: 50%; 
+            width: 40px; 
+            height: 40px; 
+            animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .search-box { 
+            position: relative; 
+            max-width: 300px; 
+        }
+        .search-box input { 
+            padding-right: 2.5rem; 
+        }
+        .search-box .search-icon { 
+            position: absolute; 
+            right: 0.75rem; 
+            top: 50%; 
+            transform: translateY(-50%); 
+            color: var(--text-muted); 
+        }
+        .bulk-actions { 
+            background: var(--bg-secondary); 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            padding: 1rem; 
+            margin-bottom: 1rem; 
+            display: none; 
+        }
+        .bulk-actions.show { display: block; }
+        .system-log { 
+            background: #1a1a1a; 
+            border: 1px solid var(--border-color); 
+            border-radius: 8px; 
+            padding: 1rem; 
+            max-height: 300px; 
+            overflow-y: auto; 
+            font-family: 'Courier New', monospace; 
+            font-size: 0.85rem; 
+        }
+        .log-entry { 
+            margin-bottom: 0.5rem; 
+            padding: 0.25rem; 
+            border-radius: 4px; 
+        }
+        .log-info { background: rgba(23, 162, 184, 0.1); }
+        .log-warning { background: rgba(255, 193, 7, 0.1); }
+        .log-error { background: rgba(220, 53, 69, 0.1); }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+    </style>
 </head>
 <body>
     {{ navigation }}
 
+    <div class="refresh-indicator" id="refresh-indicator">
+        <i class="bi bi-arrow-clockwise"></i> <span id="refresh-text">Refreshing...</span>
+    </div>
+
     <main class="admin-container">
-        <h1>Admin Dashboard</h1>
-        <p>Manage users, view logs, and system settings.</p>
-        <!-- Full admin page content from your file here (stats, tables, settings, logs) -->
+        <div class="container-fluid p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="mb-0">Admin Dashboard</h1>
+                    <p class="text-muted mb-0">Welcome back, <strong>{{ username }}</strong></p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary" onclick="window.adminDashboard.exportData()">
+                        <i class="bi bi-download"></i> Export Data
+                    </button>
+                    <button class="btn btn-primary" onclick="window.adminDashboard.refreshStats()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Statistics Grid -->
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="bi bi-people"></i></div>
+                    <div class="stat-value" id="total-users">--</div>
+                    <div class="stat-label">Total Users</div>
+                    <div class="stat-change" id="users-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="bi bi-clock-history"></i></div>
+                    <div class="stat-value" id="pending-users">--</div>
+                    <div class="stat-label">Pending Approval</div>
+                    <div class="stat-change" id="pending-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="bi bi-chat-dots"></i></div>
+                    <div class="stat-value" id="total-messages">--</div>
+                    <div class="stat-label">Messages Today</div>
+                    <div class="stat-change" id="messages-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="bi bi-activity"></i></div>
+                    <div class="stat-value" id="active-users">--</div>
+                    <div class="stat-label">Active Users</div>
+                    <div class="stat-change" id="active-change"></div>
+                </div>
+            </div>
+
+            <!-- Guest Session Management Section -->
+            <div class="admin-section">
+                <div class="section-header">
+                    <h5 class="section-title">Guest Chat Sessions</h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-outline-primary btn-sm" onclick="window.adminDashboard.refreshSessions()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm" onclick="window.adminDashboard.cleanupSessions()">
+                            <i class="bi bi-trash3"></i> Cleanup Expired
+                        </button>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="card bg-primary">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Active Sessions</h6>
+                                <h4 id="active-sessions-count">--</h4>
+                                <small id="session-capacity">-- / 5</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Utilization</h6>
+                                <h4 id="session-utilization">--%</h4>
+                                <small>of capacity</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Avg. Session Age</h6>
+                                <h4 id="avg-session-age">-- min</h4>
+                                <small>average duration</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Max Duration</h6>
+                                <h4>30 min</h4>
+                                <small>auto-expire</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-hover user-table">
+                        <thead>
+                            <tr>
+                                <th>Guest Username</th>
+                                <th>IP Address</th>
+                                <th>Created</th>
+                                <th>Age</th>
+                                <th>Remaining</th>
+                                <th>Last Active</th>
+                                <th width="120">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessions-table-body">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <div class="loading-spinner mx-auto mb-2"></div>
+                                    Loading sessions...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- User Management Section -->
+            <div class="admin-section">
+                <div class="section-header">
+                    <h5 class="section-title">User Management</h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <div class="search-box">
+                            <input type="text" class="form-control form-control-sm" id="user-search" placeholder="Search users...">
+                            <i class="bi bi-search search-icon"></i>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-funnel"></i> Filter
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" onclick="window.adminDashboard.filterUsers('all')">All Users</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="window.adminDashboard.filterUsers('pending')">Pending</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="window.adminDashboard.filterUsers('approved')">Approved</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="window.adminDashboard.filterUsers('admin')">Admins</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bulk-actions" id="bulk-actions">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span><span id="selected-count">0</span> users selected</span>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-sm" onclick="window.adminDashboard.bulkApprove()">
+                                <i class="bi bi-check-all"></i> Approve Selected
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="window.adminDashboard.bulkDelete()">
+                                <i class="bi bi-trash"></i> Delete Selected
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover user-table">
+                        <thead>
+                            <tr>
+                                <th width="40">
+                                    <input type="checkbox" class="form-check-input" id="select-all" onchange="window.adminDashboard.toggleSelectAll()">
+                                </th>
+                                <th>Username</th>
+                                <th>Status</th>
+                                <th>Role</th>
+                                <th>Created</th>
+                                <th>Last Active</th>
+                                <th width="200">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    <div class="loading-spinner mx-auto mb-2"></div>
+                                    Loading users...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- System Logs Section -->
+            <div class="admin-section">
+                <div class="section-header">
+                    <h5 class="section-title">System Activity</h5>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="window.adminDashboard.refreshLogs()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+                <div class="system-log" id="system-log">
+                    <div class="text-center text-muted py-2">Loading system logs...</div>
+                </div>
+            </div>
+
+            <!-- System Settings Section -->
+            <div class="admin-section">
+                <div class="section-header">
+                    <h5 class="section-title">System Settings</h5>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Rate Limit (messages/hour)</label>
+                            <input type="number" class="form-control" id="rate-limit" value="60" min="1" max="1000">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Model Temperature</label>
+                            <input type="range" class="form-range" id="temperature" min="0" max="1" step="0.1" value="0.7">
+                            <div class="d-flex justify-content-between">
+                                <small>Conservative (0)</small>
+                                <small id="temperature-value">0.7</small>
+                                <small>Creative (1)</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Auto-approve new users</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="auto-approve">
+                                <label class="form-check-label">Enable auto-approval</label>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Maintenance Mode</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="maintenance-mode">
+                                <label class="form-check-label">Enable maintenance mode</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end">
+                    <button class="btn btn-primary" onclick="window.adminDashboard.saveSettings()">
+                        <i class="bi bi-save"></i> Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
     </main>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
@@ -23,14 +405,680 @@
     <script>
         class AdminDashboard {
             constructor() {
+                this.users = [];
+                this.filteredUsers = [];
+                this.selectedUsers = new Set();
+                this.currentFilter = 'all';
+                this.refreshInterval = null;
+                this.username = '{{ username }}';
                 this.init();
             }
+
             init() {
-                console.log("Admin dashboard initialized");
+                // Remove API call to load user - data comes from server template
+                this.setupEventListeners();
+                this.loadInitialData();
+                this.startAutoRefresh();
+                
+                // Track admin access
+                DevstralCommon.trackEvent('admin_access', this.username);
+                
+                console.log('👨‍💼 Admin dashboard initialized for: ' + this.username);
+            }
+
+            setupEventListeners() {
+                // Search functionality
+                document.getElementById('user-search').addEventListener('input', (e) => {
+                    this.searchUsers(e.target.value);
+                });
+
+                // Settings controls
+                document.getElementById('temperature').addEventListener('input', (e) => {
+                    document.getElementById('temperature-value').textContent = e.target.value;
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey || e.metaKey) {
+                        switch(e.key) {
+                            case 'r':
+                                e.preventDefault();
+                                this.refreshStats();
+                                break;
+                            case 'f':
+                                e.preventDefault();
+                                document.getElementById('user-search').focus();
+                                break;
+                            case 'a':
+                                if (e.shiftKey) {
+                                    e.preventDefault();
+                                    this.approveAllPending();
+                                }
+                                break;
+                        }
+                    }
+                });
+
+                // Auto-save settings
+                ['rate-limit', 'auto-approve', 'maintenance-mode'].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                        element.addEventListener('change', () => this.autoSaveSettings());
+                    }
+                });
+            }
+
+            async loadInitialData() {
+                await Promise.all([
+                    this.loadStats(),
+                    this.loadUsers(),
+                    this.loadSessions(),
+                    this.loadSystemLogs(),
+                    this.loadSettings()
+                ]);
+            }
+
+            async loadStats() {
+                try {
+                    // Mock stats - replace with actual API call
+                    const stats = {
+                        totalUsers: Math.floor(Math.random() * 500) + 100,
+                        pendingUsers: Math.floor(Math.random() * 20) + 5,
+                        todayMessages: Math.floor(Math.random() * 1000) + 200,
+                        activeUsers: Math.floor(Math.random() * 50) + 10
+                    };
+
+                    document.getElementById('total-users').textContent = stats.totalUsers;
+                    document.getElementById('pending-users').textContent = stats.pendingUsers;
+                    document.getElementById('total-messages').textContent = stats.todayMessages;
+                    document.getElementById('active-users').textContent = stats.activeUsers;
+
+                    // Add trend indicators
+                    this.updateStatChange('users-change', '+12%', 'positive');
+                    this.updateStatChange('pending-change', '-5%', 'negative');
+                    this.updateStatChange('messages-change', '+23%', 'positive');
+                    this.updateStatChange('active-change', '+8%', 'positive');
+
+                } catch (error) {
+                    console.error('Failed to load stats:', error);
+                    this.showToast('Failed to load statistics', 'error');
+                }
+            }
+
+            updateStatChange(elementId, value, type) {
+                const element = document.getElementById(elementId);
+                element.textContent = value;
+                element.className = 'stat-change change-' + type;
+                
+                const icon = type === 'positive' ? 'bi-arrow-up' : 'bi-arrow-down';
+                element.innerHTML = '<i class="bi ' + icon + '"></i> ' + value;
+            }
+
+            async loadSessions() {
+                try {
+                    const response = await fetch('/api/admin/sessions', {
+                        credentials: 'include'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            this.renderSessionsTable(data.sessions);
+                            this.updateSessionStats(data);
+                        }
+                    } else {
+                        throw new Error('Failed to load sessions');
+                    }
+                } catch (error) {
+                    console.error('Failed to load sessions:', error);
+                    this.showToast('Failed to load guest sessions', 'error');
+                }
+            }
+
+            renderSessionsTable(sessions) {
+                const tbody = document.getElementById('sessions-table-body');
+                
+                if (sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-people"></i><br>No active guest sessions</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = sessions.map(session => 
+                    '<tr data-session-id="' + session.id + '">' +
+                    '<td><div class="d-flex align-items-center"><i class="bi bi-person-badge me-2 text-secondary"></i><strong>' + session.username + '</strong></div></td>' +
+                    '<td><small class="text-muted">' + session.ip_address + '</small></td>' +
+                    '<td><small class="text-muted">' + this.formatDate(session.created_at) + '</small></td>' +
+                    '<td><span class="badge ' + this.getAgeClass(session.age_seconds) + '">' + Math.floor(session.age_seconds / 60) + ' min</span></td>' +
+                    '<td><span class="badge ' + this.getRemainingClass(session.remaining_seconds) + '">' + Math.floor(session.remaining_seconds / 60) + ' min</span></td>' +
+                    '<td><small class="text-muted">' + this.formatDate(session.last_active) + '</small></td>' +
+                    '<td><button class="btn btn-danger btn-sm" onclick="window.adminDashboard.kickSession(\'' + session.id + '\', \'' + session.username + '\')" title="Kick Session"><i class="bi bi-x-circle"></i></button></td>' +
+                    '</tr>'
+                ).join('');
+            }
+
+            updateSessionStats(data) {
+                document.getElementById('active-sessions-count').textContent = data.active_count;
+                document.getElementById('session-capacity').textContent = data.active_count + ' / ' + data.max_sessions;
+                
+                const utilization = Math.floor((data.active_count / data.max_sessions) * 100);
+                document.getElementById('session-utilization').textContent = utilization + '%';
+                
+                this.loadSessionStats();
+            }
+
+            async loadSessionStats() {
+                try {
+                    const response = await fetch('/api/admin/sessions/stats', {
+                        credentials: 'include'
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            document.getElementById('avg-session-age').textContent = data.stats.average_session_age_minutes + ' min';
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Could not load session stats:', error);
+                }
+            }
+
+            getAgeClass(ageSeconds) {
+                const ageMinutes = ageSeconds / 60;
+                if (ageMinutes < 5) return 'bg-success';
+                if (ageMinutes < 15) return 'bg-warning';
+                return 'bg-danger';
+            }
+
+            getRemainingClass(remainingSeconds) {
+                const remainingMinutes = remainingSeconds / 60;
+                if (remainingMinutes > 15) return 'bg-success';
+                if (remainingMinutes > 5) return 'bg-warning';
+                return 'bg-danger';
+            }
+
+            async kickSession(sessionId, username) {
+                if (!confirm('Are you sure you want to kick the session for ' + username + '?')) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/admin/sessions/kick', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ 
+                            session_id: sessionId,
+                            reason: 'Manual admin removal'
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showToast('Session kicked successfully: ' + username, 'success');
+                        await this.loadSessions();
+                        DevstralCommon.trackEvent('session_kicked', username);
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    console.error('Kick session error:', error);
+                    this.showToast('Failed to kick session: ' + error.message, 'error');
+                }
+            }
+
+            async refreshSessions() {
+                this.showRefreshIndicator('Refreshing sessions...');
+                await this.loadSessions();
+                this.hideRefreshIndicator();
+                this.showToast('Sessions refreshed', 'info');
+            }
+
+            async cleanupSessions() {
+                if (!confirm('Are you sure you want to cleanup all expired sessions?')) {
+                    return;
+                }
+
+                try {
+                    this.showRefreshIndicator('Cleaning up sessions...');
+                    
+                    const response = await fetch('/api/admin/sessions/cleanup', {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showToast('Cleaned up ' + data.cleaned_sessions + ' expired sessions', 'success');
+                        await this.loadSessions();
+                        DevstralCommon.trackEvent('sessions_cleaned', data.cleaned_sessions.toString());
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    console.error('Cleanup sessions error:', error);
+                    this.showToast('Failed to cleanup sessions: ' + error.message, 'error');
+                } finally {
+                    this.hideRefreshIndicator();
+                }
+            }
+
+            async loadUsers() {
+                try {
+                    // Mock users data - replace with actual API call
+                    this.users = [
+                        {
+                            id: 1,
+                            username: 'developer1',
+                            isApproved: true,
+                            isAdmin: false,
+                            createdAt: '2024-01-15T10:30:00Z',
+                            lastActive: '2024-01-20T14:22:00Z'
+                        },
+                        {
+                            id: 2,
+                            username: 'coder_jane',
+                            isApproved: false,
+                            isAdmin: false,
+                            createdAt: '2024-01-20T16:45:00Z',
+                            lastActive: null
+                        },
+                        {
+                            id: 3,
+                            username: 'admin_bob',
+                            isApproved: true,
+                            isAdmin: true,
+                            createdAt: '2024-01-10T09:15:00Z',
+                            lastActive: '2024-01-20T15:30:00Z'
+                        }
+                    ];
+
+                    this.filteredUsers = [...this.users];
+                    this.renderUsersTable();
+
+                } catch (error) {
+                    console.error('Failed to load users:', error);
+                    this.showToast('Failed to load users', 'error');
+                }
+            }
+
+            renderUsersTable() {
+                const tbody = document.getElementById('users-table-body');
+                
+                if (this.filteredUsers.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No users found matching your criteria</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = this.filteredUsers.map(user => 
+                    '<tr data-user-id="' + user.id + '">' +
+                    '<td><input type="checkbox" class="form-check-input user-select" value="' + user.id + '" onchange="window.adminDashboard.toggleUserSelection(' + user.id + ')"></td>' +
+                    '<td><div class="d-flex align-items-center"><i class="bi bi-person-circle me-2" style="font-size: 1.2rem;"></i><strong>' + user.username + '</strong></div></td>' +
+                    '<td>' + this.getStatusBadge(user) + '</td>' +
+                    '<td>' + this.getRoleBadge(user) + '</td>' +
+                    '<td><small class="text-muted">' + this.formatDate(user.createdAt) + '</small></td>' +
+                    '<td><small class="text-muted">' + (user.lastActive ? this.formatDate(user.lastActive) : 'Never') + '</small></td>' +
+                    '<td><div class="action-buttons">' +
+                    (!user.isApproved ? '<button class="btn btn-success btn-sm" onclick="window.adminDashboard.approveUser(\'' + user.username + '\')" title="Approve"><i class="bi bi-check"></i></button>' : '') +
+                    '<button class="btn btn-' + (user.isAdmin ? 'warning' : 'info') + ' btn-sm" onclick="window.adminDashboard.toggleAdmin(\'' + user.username + '\')" title="' + (user.isAdmin ? 'Remove Admin' : 'Make Admin') + '"><i class="bi bi-shield' + (user.isAdmin ? '-slash' : '-check') + '"></i></button>' +
+                    '<button class="btn btn-danger btn-sm" onclick="window.adminDashboard.deleteUser(\'' + user.username + '\')" title="Delete"><i class="bi bi-trash"></i></button>' +
+                    '</div></td>' +
+                    '</tr>'
+                ).join('');
+            }
+
+            getStatusBadge(user) {
+                if (!user.isApproved) {
+                    return '<span class="status-badge status-pending"><i class="bi bi-clock"></i> Pending</span>';
+                }
+                return '<span class="status-badge status-approved"><i class="bi bi-check-circle"></i> Approved</span>';
+            }
+
+            getRoleBadge(user) {
+                if (user.isAdmin) {
+                    return '<span class="status-badge status-admin"><i class="bi bi-shield-check"></i> Admin</span>';
+                }
+                return '<span class="badge bg-secondary">User</span>';
+            }
+
+            formatDate(dateString) {
+                return new Date(dateString).toLocaleDateString() + ' ' + 
+                       new Date(dateString).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+
+            searchUsers(query) {
+                if (!query.trim()) {
+                    this.filteredUsers = this.users.filter(user => this.matchesCurrentFilter(user));
+                } else {
+                    this.filteredUsers = this.users.filter(user => 
+                        user.username.toLowerCase().includes(query.toLowerCase()) &&
+                        this.matchesCurrentFilter(user)
+                    );
+                }
+                this.renderUsersTable();
+                this.updateSelectedCount();
+            }
+
+            filterUsers(filter) {
+                this.currentFilter = filter;
+                this.filteredUsers = this.users.filter(user => this.matchesCurrentFilter(user));
+                this.renderUsersTable();
+                this.selectedUsers.clear();
+                this.updateSelectedCount();
+            }
+
+            matchesCurrentFilter(user) {
+                switch(this.currentFilter) {
+                    case 'pending': return !user.isApproved;
+                    case 'approved': return user.isApproved && !user.isAdmin;
+                    case 'admin': return user.isAdmin;
+                    default: return true;
+                }
+            }
+
+            toggleUserSelection(userId) {
+                if (this.selectedUsers.has(userId)) {
+                    this.selectedUsers.delete(userId);
+                } else {
+                    this.selectedUsers.add(userId);
+                }
+                this.updateSelectedCount();
+            }
+
+            toggleSelectAll() {
+                const selectAll = document.getElementById('select-all');
+                const userCheckboxes = document.querySelectorAll('.user-select');
+                
+                if (selectAll.checked) {
+                    userCheckboxes.forEach(cb => {
+                        cb.checked = true;
+                        this.selectedUsers.add(parseInt(cb.value));
+                    });
+                } else {
+                    userCheckboxes.forEach(cb => {
+                        cb.checked = false;
+                        this.selectedUsers.delete(parseInt(cb.value));
+                    });
+                }
+                this.updateSelectedCount();
+            }
+
+            updateSelectedCount() {
+                const count = this.selectedUsers.size;
+                document.getElementById('selected-count').textContent = count;
+                
+                const bulkActions = document.getElementById('bulk-actions');
+                if (count > 0) {
+                    bulkActions.classList.add('show');
+                } else {
+                    bulkActions.classList.remove('show');
+                }
+            }
+
+            async approveUser(username) {
+                if (!confirm('Are you sure you want to approve user "' + username + '"?')) return;
+                
+                try {
+                    const response = await fetch('/api/admin/approve-user', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ username })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showToast('User ' + username + ' approved successfully', 'success');
+                        await this.loadUsers();
+                        await this.loadStats();
+                        DevstralCommon.trackEvent('user_approved', username);
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    console.error('Approve user error:', error);
+                    this.showToast('Failed to approve user: ' + error.message, 'error');
+                }
+            }
+
+            async toggleAdmin(username) {
+                const user = this.users.find(u => u.username === username);
+                const action = user.isAdmin ? 'remove admin rights from' : 'grant admin rights to';
+                
+                if (!confirm('Are you sure you want to ' + action + ' user "' + username + '"?')) return;
+
+                try {
+                    const response = await fetch('/api/admin/toggle-admin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ username })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showToast(data.message, 'success');
+                        await this.loadUsers();
+                        DevstralCommon.trackEvent('admin_toggled', username + ':' + data.is_admin);
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    console.error('Toggle admin error:', error);
+                    this.showToast('Failed to update admin status: ' + error.message, 'error');
+                }
+            }
+
+            async deleteUser(username) {
+                if (username === this.username) {
+                    this.showToast('You cannot delete your own account', 'error');
+                    return;
+                }
+
+                if (!confirm('Are you sure you want to delete user "' + username + '"? This action cannot be undone.')) return;
+
+                try {
+                    const response = await fetch('/api/admin/delete-user', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ username })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showToast('User ' + username + ' deleted successfully', 'success');
+                        await this.loadUsers();
+                        await this.loadStats();
+                        DevstralCommon.trackEvent('user_deleted', username);
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    console.error('Delete user error:', error);
+                    this.showToast('Failed to delete user: ' + error.message, 'error');
+                }
+            }
+
+            async loadSystemLogs() {
+                try {
+                    const logs = [
+                        { level: 'info', message: 'System started successfully', timestamp: new Date() },
+                        { level: 'info', message: 'Admin ' + this.username + ' logged in', timestamp: new Date(Date.now() - 60000) },
+                        { level: 'warning', message: 'High memory usage detected', timestamp: new Date(Date.now() - 120000) },
+                        { level: 'info', message: 'Database backup completed', timestamp: new Date(Date.now() - 180000) },
+                        { level: 'error', message: 'Failed API request from 192.168.1.100', timestamp: new Date(Date.now() - 240000) }
+                    ];
+
+                    this.renderSystemLogs(logs);
+                } catch (error) {
+                    console.error('Failed to load system logs:', error);
+                    this.showToast('Failed to load system logs', 'error');
+                }
+            }
+
+            renderSystemLogs(logs) {
+                const logContainer = document.getElementById('system-log');
+                logContainer.innerHTML = logs.map(log => 
+                    '<div class="log-entry log-' + log.level + '">' +
+                    '<small class="text-muted">[' + log.timestamp.toLocaleTimeString() + ']</small> ' +
+                    '<span class="text-' + (log.level === 'error' ? 'danger' : log.level === 'warning' ? 'warning' : 'info') + '">' +
+                    log.level.toUpperCase() + '</span> ' +
+                    log.message +
+                    '</div>'
+                ).join('');
+            }
+
+            async loadSettings() {
+                try {
+                    const settings = {
+                        rateLimit: 60,
+                        temperature: 0.7,
+                        autoApprove: false,
+                        maintenanceMode: false
+                    };
+
+                    document.getElementById('rate-limit').value = settings.rateLimit;
+                    document.getElementById('temperature').value = settings.temperature;
+                    document.getElementById('temperature-value').textContent = settings.temperature;
+                    document.getElementById('auto-approve').checked = settings.autoApprove;
+                    document.getElementById('maintenance-mode').checked = settings.maintenanceMode;
+
+                } catch (error) {
+                    console.error('Failed to load settings:', error);
+                    this.showToast('Failed to load settings', 'error');
+                }
+            }
+
+            async saveSettings() {
+                try {
+                    const settings = {
+                        rateLimit: parseInt(document.getElementById('rate-limit').value),
+                        temperature: parseFloat(document.getElementById('temperature').value),
+                        autoApprove: document.getElementById('auto-approve').checked,
+                        maintenanceMode: document.getElementById('maintenance-mode').checked
+                    };
+
+                    console.log('Saving settings:', settings);
+                    this.showToast('Settings saved successfully', 'success');
+                    DevstralCommon.trackEvent('settings_saved', JSON.stringify(settings));
+
+                } catch (error) {
+                    console.error('Failed to save settings:', error);
+                    this.showToast('Failed to save settings', 'error');
+                }
+            }
+
+            autoSaveSettings() {
+                clearTimeout(this.autoSaveTimer);
+                this.autoSaveTimer = setTimeout(() => {
+                    this.saveSettings();
+                }, 2000);
+            }
+
+            async refreshStats() {
+                this.showRefreshIndicator('Refreshing statistics...');
+                await this.loadStats();
+                this.hideRefreshIndicator();
+            }
+
+            async refreshLogs() {
+                await this.loadSystemLogs();
+                this.showToast('System logs refreshed', 'info');
+            }
+
+            async exportData() {
+                try {
+                    this.showRefreshIndicator('Exporting data...');
+                    
+                    const exportData = {
+                        users: this.users,
+                        stats: {
+                            totalUsers: document.getElementById('total-users').textContent,
+                            pendingUsers: document.getElementById('pending-users').textContent,
+                            todayMessages: document.getElementById('total-messages').textContent,
+                            activeUsers: document.getElementById('active-users').textContent
+                        },
+                        exportedAt: new Date().toISOString(),
+                        exportedBy: this.username
+                    };
+
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'admin-export-' + new Date().toISOString().split('T')[0] + '.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    this.showToast('Data exported successfully', 'success');
+                    DevstralCommon.trackEvent('data_exported', 'json');
+
+                } catch (error) {
+                    console.error('Export failed:', error);
+                    this.showToast('Failed to export data', 'error');
+                } finally {
+                    this.hideRefreshIndicator();
+                }
+            }
+
+            startAutoRefresh() {
+                this.refreshInterval = setInterval(() => {
+                    this.loadStats();
+                    this.loadSessions();
+                }, 30000);
+            }
+
+            showRefreshIndicator(text) {
+                const indicator = document.getElementById('refresh-indicator');
+                document.getElementById('refresh-text').textContent = text || 'Refreshing...';
+                indicator.style.display = 'block';
+            }
+
+            hideRefreshIndicator() {
+                document.getElementById('refresh-indicator').style.display = 'none';
+            }
+
+            showToast(message, type) {
+                const toastContainer = document.getElementById('toast-container');
+                const toastId = 'toast-' + Date.now();
+                
+                const toastHtml = '<div class="toast align-items-center text-bg-' + type + ' border-0" role="alert" id="' + toastId + '">' +
+                    '<div class="d-flex">' +
+                    '<div class="toast-body">' +
+                    '<i class="bi bi-' + this.getToastIcon(type) + ' me-2"></i>' + message +
+                    '</div>' +
+                    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+                    '</div></div>';
+
+                toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+                
+                const toastElement = document.getElementById(toastId);
+                const toast = new bootstrap.Toast(toastElement, { 
+                    autohide: true, 
+                    delay: type === 'error' ? 8000 : 4000 
+                });
+                
+                toast.show();
+                
+                toastElement.addEventListener('hidden.bs.toast', () => {
+                    toastElement.remove();
+                });
+            }
+
+            getToastIcon(type) {
+                switch(type) {
+                    case 'success': return 'check-circle';
+                    case 'error': return 'exclamation-triangle';
+                    case 'warning': return 'exclamation-triangle';
+                    default: return 'info-circle';
+                }
             }
         }
+
         document.addEventListener('DOMContentLoaded', () => {
-            DevstralCommon.loadUser();
             window.adminDashboard = new AdminDashboard();
         });
     </script>

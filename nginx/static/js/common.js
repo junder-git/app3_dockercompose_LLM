@@ -6,7 +6,7 @@ const DevstralCommon = {
             // Clear cookies
             const cookies = ['access_token', 'session', 'auth_token'];
             cookies.forEach(name => {
-                document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+                document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
             });
 
             // Clear storage
@@ -17,50 +17,6 @@ const DevstralCommon = {
             window.location.href = '/?clear_cache=1';
         } catch (err) {
             console.error('Logout failed', err);
-        }
-    },
-
-    async loadUser() {
-        try {
-            const response = await fetch('/api/auth/me', { credentials: 'include' });
-            const data = await response.json();
-            if (data.success) {
-                if (document.getElementById('navbar-username')) {
-                    document.getElementById('navbar-username').textContent = data.username;
-                }
-                if (data.is_admin && document.getElementById('admin-nav')) {
-                    document.getElementById('admin-nav').style.display = 'block';
-                }
-                if (document.getElementById('user-nav')) {
-                    document.getElementById('user-nav').style.display = 'block';
-                }
-                if (document.getElementById('guest-nav')) {
-                    document.getElementById('guest-nav').style.display = 'none';
-                }
-                if (document.getElementById('guest-nav-2')) {
-                    document.getElementById('guest-nav-2').style.display = 'none';
-                }
-            } else {
-                this.showGuest();
-            }
-        } catch (error) {
-            console.warn('Failed to load user info:', error);
-            this.showGuest();
-        }
-    },
-
-    showGuest() {
-        if (document.getElementById('guest-nav')) {
-            document.getElementById('guest-nav').style.display = 'block';
-        }
-        if (document.getElementById('guest-nav-2')) {
-            document.getElementById('guest-nav-2').style.display = 'block';
-        }
-        if (document.getElementById('user-nav')) {
-            document.getElementById('user-nav').style.display = 'none';
-        }
-        if (document.getElementById('admin-nav')) {
-            document.getElementById('admin-nav').style.display = 'none';
         }
     },
 
@@ -83,7 +39,7 @@ const DevstralCommon = {
         const featureCards = document.querySelectorAll('.feature-card');
 
         featureCards.forEach((card, index) => {
-            card.style.animationDelay = `${index * 0.1}s`;
+            card.style.animationDelay = (index * 0.1) + 's';
             card.classList.add('animate-in');
 
             card.addEventListener('mouseenter', function () {
@@ -131,7 +87,7 @@ const DevstralCommon = {
         Object.entries(trackableElements).forEach(([key, element]) => {
             if (element) {
                 element.addEventListener('click', function () {
-                    console.log(`User interaction: ${key}`);
+                    console.log('User interaction: ' + key);
                     DevstralCommon.trackEvent('button_click', key);
                 });
             }
@@ -156,7 +112,7 @@ const DevstralCommon = {
     setupPerformanceMonitoring() {
         window.addEventListener('load', function () {
             const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
-            console.log(`Page load time: ${loadTime}ms`);
+            console.log('Page load time: ' + loadTime + 'ms');
 
             if (loadTime > 3000) {
                 console.warn('Page load time is slow, consider optimization');
@@ -177,7 +133,7 @@ const DevstralCommon = {
                 lastFrameTime = currentTime;
 
                 if (fps < 30) {
-                    console.warn(`Low FPS detected: ${fps} fps`);
+                    console.warn('Low FPS detected: ' + fps + ' fps');
                 }
             }
 
@@ -187,6 +143,138 @@ const DevstralCommon = {
         setTimeout(() => {
             monitorFPS();
         }, 2000);
+    },
+
+    // Utility function to show notifications
+    showNotification(message, type, duration) {
+        type = type || 'info';
+        duration = duration || 3000;
+
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-' + type + ' alert-dismissible fade show position-fixed';
+        notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+        notification.innerHTML = message + 
+            '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+        document.body.appendChild(notification);
+
+        // Auto-remove after duration
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, duration);
+    },
+
+    // Utility function to format dates consistently
+    formatDate(dateString) {
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + 
+                   date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        } catch (error) {
+            return 'Invalid date';
+        }
+    },
+
+    // Utility function to debounce function calls
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    },
+
+    // Utility function to validate input
+    validateInput(input, type) {
+        switch (type) {
+            case 'username':
+                return /^[a-zA-Z0-9_]{3,20}$/.test(input);
+            case 'password':
+                return input.length >= 6;
+            case 'email':
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+            default:
+                return true;
+        }
+    },
+
+    // Copy text to clipboard
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            this.showNotification('Copied to clipboard!', 'success', 2000);
+            return true;
+        } catch (error) {
+            console.error('Failed to copy to clipboard:', error);
+            this.showNotification('Failed to copy to clipboard', 'error', 3000);
+            return false;
+        }
+    },
+
+    // Safe JSON parse
+    safeJSONParse(jsonString, defaultValue) {
+        try {
+            return JSON.parse(jsonString);
+        } catch (error) {
+            console.warn('Failed to parse JSON:', error);
+            return defaultValue || null;
+        }
+    },
+
+    // Get URL parameters
+    getUrlParameter(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+    },
+
+    // Set URL parameter without page reload
+    setUrlParameter(name, value) {
+        const url = new URL(window.location);
+        url.searchParams.set(name, value);
+        window.history.pushState({}, '', url);
+    },
+
+    // Remove URL parameter without page reload
+    removeUrlParameter(name) {
+        const url = new URL(window.location);
+        url.searchParams.delete(name);
+        window.history.pushState({}, '', url);
+    },
+
+    // Check if user is on mobile device
+    isMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    },
+
+    // Check if user prefers dark mode
+    prefersDarkMode() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    },
+
+    // Escape HTML to prevent XSS
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+
+    // Truncate text with ellipsis
+    truncateText(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        return text.substr(0, maxLength) + '...';
+    },
+
+    // Generate random ID
+    generateId(prefix) {
+        prefix = prefix || 'id';
+        return prefix + '-' + Math.random().toString(36).substr(2, 9);
     }
 };
 
@@ -198,5 +286,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             DevstralCommon.logout();
         });
+    }
+
+    // Initialize performance monitoring in development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        DevstralCommon.setupPerformanceMonitoring();
     }
 });
