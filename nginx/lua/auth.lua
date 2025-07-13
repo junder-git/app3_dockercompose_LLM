@@ -1,7 +1,7 @@
+-- nginx/lua/auth.lua - Secured with proper logout
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local jwt = require "resty.jwt"
-local template = require "template"
 
 local REDIS_HOST = os.getenv("REDIS_HOST")
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT"))
@@ -73,31 +73,34 @@ local function handle_login()
         send_json(403, { error = "User not approved" })
     end
 
-    -- 🔥 Debug logs
-    ngx.log(ngx.ERR, "Password hash in Redis: ", user.password_hash)
-    local match = verify_password(password, user.password_hash)
-    ngx.log(ngx.ERR, "Password match result: ", tostring(match))
-
-    if not match then
+    if not verify_password(password, user.password_hash) then
         send_json(401, { error = "Invalid credentials" })
     end
 
     -- Update last active timestamp
     red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
 
+    -- Create JWT with minimal payload - NO sensitive data
     local jwt_token = jwt:sign(JWT_SECRET, {
         header = { typ = "JWT", alg = "HS256" },
         payload = {
             username = username,
-            is_admin = user.is_admin == "true",
-            exp = ngx.time() + 86400
+            exp = ngx.time() + 86400  -- 24 hours
+            -- Removed is_admin - server will check this from Redis when needed
         }
     })
 
-    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. "; Path=/; HttpOnly"
-    send_json(200, { token = jwt_token })
+    -- Set secure HTTP-only cookie
+    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. 
+        "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
+    
+    send_json(200, { 
+        token = jwt_token,
+        success = true
+    })
 end
 
+-- Simplified /me endpoint - only returns what client needs
 local function handle_me()
     local token = ngx.var.cookie_access_token
     if not token then
@@ -111,31 +114,46 @@ local function handle_me()
 
     local username = jwt_obj.payload.username
     
-    -- Get fresh user info from Redis to ensure current admin status
+    -- Get minimal user info from Redis
     local red = connect_redis()
-    local user = get_user_info(red, username)
+    local user_key = "user:" .. username
+    local is_approved = red:hget(user_key, "is_approved")
+    local is_admin = red:hget(user_key, "is_admin")
     
-    if not user then
-        send_json(401, { success = false, error = "User not found" })
-    end
-
-    if user.is_approved ~= "true" then
+    if is_approved ~= "true" then
         send_json(403, { success = false, error = "User not approved" })
     end
 
-    -- Debug log for admin status
-    ngx.log(ngx.ERR, "User admin status check - username: ", username, " is_admin field: ", tostring(user.is_admin), " comparison result: ", tostring(user.is_admin == "true"))
-    
+    -- Only send what the client actually needs
     send_json(200, {
         success = true,
         username = username,
-        is_admin = user.is_admin == "true",
-        is_approved = user.is_approved == "true",
-        last_active = user.last_active or "Never"
+        -- Only send admin status for navigation purposes
+        -- All actual admin checks are done server-side
+        is_admin = is_admin == "true"
+    })
+end
+
+-- NEW: Proper logout endpoint that clears cookies
+local function handle_logout()
+    -- Clear the cookie properly on server side
+    ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    
+    -- Also clear any other auth cookies that might exist
+    ngx.header["Set-Cookie"] = {
+        "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+        "session=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+        "auth_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    }
+    
+    send_json(200, { 
+        success = true, 
+        message = "Logged out successfully" 
     })
 end
 
 return {
     handle_login = handle_login,
-    handle_me = handle_me
+    handle_me = handle_me,
+    handle_logout = handle_logout
 }

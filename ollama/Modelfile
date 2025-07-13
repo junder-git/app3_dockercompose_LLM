@@ -2,12 +2,12 @@ FROM ${OLLAMA_MODEL}
 
 SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant specialized in coding and technical problem-solving.
 
+${MODEL_DESCRIPTION}
+
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."""
 
-
-# Memory settings - must match server environment
+# Memory settings from .env (FIXED - removed unsupported use_mlock)
 PARAMETER use_mmap ${MODEL_USE_MMAP}
-# PARAMETER use_mlock true
 
 # Core model parameters from .env
 PARAMETER temperature ${MODEL_TEMPERATURE}
