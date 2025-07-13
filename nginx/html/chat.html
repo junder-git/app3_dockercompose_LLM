@@ -7,22 +7,26 @@
   <link href="/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet" />
   <link rel="stylesheet" href="/css/common.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    /* Enhance chat input area */
+    .chat-input-container {
+      width: 100%;
+    }
+    .chat-input-form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: nowrap;
+      width: 100%;
+    }
     .chat-input {
+      flex: 1;
       min-height: 100px;
       max-height: 250px;
+      resize: none;
     }
-    .input-controls .btn-icon {
+    .btn-icon {
       min-width: 44px;
       height: 44px;
-    }
-    .stop-button {
-      background-color: var(--danger-color);
-      color: white;
-    }
-    .stop-button:hover {
-      background-color: #c82333;
     }
   </style>
 </head>
@@ -36,6 +40,9 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav me-auto">
           <li class="nav-item"><a class="nav-link active" href="/chat.html"><i class="bi bi-chat-dots"></i> Chat</a></li>
+          <li class="nav-item" id="admin-nav" style="display: none;">
+            <a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a>
+          </li>
         </ul>
         <ul class="navbar-nav">
           <li class="nav-item dropdown" id="user-nav">
@@ -58,13 +65,14 @@
 
     <div class="chat-input-container">
       <form id="chat-form" class="chat-input-form">
-        <div class="input-controls">
-          <textarea class="form-control chat-input" id="chat-input" placeholder="Ask me anything..." required></textarea>
-          <button type="submit" class="btn btn-primary btn-icon" id="send-button"><i class="bi bi-send"></i></button>
-          <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation">
-            <i class="bi bi-stop-fill"></i>
-          </button>
-        </div>
+        <textarea class="form-control chat-input" id="chat-input" placeholder="Ask me anything..." required></textarea>
+        <button type="submit" class="btn btn-primary btn-icon" id="send-button"><i class="bi bi-send"></i></button>
+        <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation">
+          <i class="bi bi-stop-fill"></i>
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-icon" id="clear-chat" title="Clear Chat">
+          <i class="bi bi-trash"></i>
+        </button>
       </form>
     </div>
   </main>
@@ -76,10 +84,14 @@
       constructor() {
         this.isTyping = false;
         this.abortController = null;
+        this.autoScroll = true;
         this.init();
       }
 
       init() {
+        this.loadUserInfo();
+        this.loadChatHistory();
+
         document.getElementById('chat-form').addEventListener('submit', (e) => {
           e.preventDefault();
           this.sendMessage();
@@ -89,15 +101,61 @@
           this.stopGeneration();
         });
 
+        document.getElementById('clear-chat').addEventListener('click', () => {
+          this.clearChat();
+        });
+
         document.getElementById('logout-button').addEventListener('click', () => {
           this.logout();
         });
 
         const textarea = document.getElementById('chat-input');
+        textarea.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (this.isTyping) {
+              this.stopGeneration();
+            } else {
+              this.sendMessage();
+            }
+          }
+        });
+
         textarea.addEventListener('input', () => {
           textarea.style.height = 'auto';
           textarea.style.height = Math.min(textarea.scrollHeight, 250) + 'px';
         });
+      }
+
+      async loadUserInfo() {
+        try {
+          const response = await fetch('/api/auth/me', { credentials: 'include' });
+          const data = await response.json();
+          if (data.success) {
+            document.getElementById('navbar-username').textContent = data.username;
+            if (data.is_admin) {
+              document.getElementById('admin-nav').style.display = 'block';
+            }
+          }
+        } catch (error) {
+          console.warn('Could not load user info:', error);
+        }
+      }
+
+      async loadChatHistory() {
+        try {
+          const response = await fetch('/api/chat/history?limit=20', { credentials: 'include' });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.messages.length > 0) {
+              data.messages.reverse().forEach(msg => {
+                this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content);
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('Could not load history:', error);
+        }
       }
 
       async sendMessage() {
@@ -151,7 +209,7 @@
                   const data = JSON.parse(jsonStr);
                   if (data.content) {
                     accumulated += data.content;
-                    aiDiv.querySelector('.streaming-content').innerHTML = accumulated.replace(/\n/g, '<br>') + '<span class="cursor">▋</span>';
+                    aiDiv.querySelector('.streaming-content').innerHTML = marked.parse(accumulated) + '<span class="cursor">▋</span>';
                   }
                   if (data.error) {
                     throw new Error(data.error);
@@ -164,7 +222,7 @@
           this.finishStreaming();
         } catch (error) {
           if (error.name === 'AbortError') {
-            aiDiv.querySelector('.streaming-content').innerHTML = accumulated + '<br><em>[Interrupted]</em>';
+            aiDiv.querySelector('.streaming-content').innerHTML = marked.parse(accumulated + '\n\n*Interrupted by user*');
             this.finishStreaming();
           } else {
             aiDiv.querySelector('.streaming-content').innerHTML = '<em>Error occurred</em>';
@@ -193,9 +251,30 @@
         const messagesContainer = document.getElementById('chat-messages');
         const div = document.createElement('div');
         div.className = `message message-${sender}`;
-        div.innerHTML = `<i class="bi bi-${sender === 'user' ? 'person' : 'robot'}"></i> ${content.replace(/\n/g, '<br>')}`;
+        div.innerHTML = `<i class="bi bi-${sender === 'user' ? 'person' : 'robot'}"></i> ${marked.parse(content)}`;
         messagesContainer.appendChild(div);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      async clearChat() {
+        if (!confirm('Are you sure you want to clear your chat history?')) return;
+
+        try {
+          const response = await fetch('/api/chat/clear', {
+            method: 'POST',
+            credentials: 'include'
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            document.getElementById('chat-messages').innerHTML = '';
+          } else {
+            alert('Failed to clear chat: ' + (data.error || 'Unknown error'));
+          }
+        } catch (error) {
+          console.error('Clear chat error:', error);
+          alert('Failed to clear chat. Please try again.');
+        }
       }
 
       async logout() {
