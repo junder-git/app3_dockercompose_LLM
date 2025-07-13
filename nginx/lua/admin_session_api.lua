@@ -1,4 +1,4 @@
--- nginx/lua/admin_session_api_enhanced.lua - Enhanced admin session management
+-- nginx/lua/admin_session_api.lua - Enhanced admin session management
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local unified_auth = require "unified_auth"

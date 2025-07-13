@@ -1,4 +1,4 @@
--- nginx/lua/chat_enhanced.lua - Enhanced chat handler with hardcoded guest support
+-- nginx/lua/chat.lua - Enhanced chat handler with hardcoded guest support
 local template = require "template"
 local redis = require "resty.redis"
 local unified_auth = require "unified_auth"

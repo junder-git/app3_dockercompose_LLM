@@ -1,4 +1,4 @@
--- nginx/lua/guest_api_enhanced.lua - Enhanced guest API with hardcoded tokens
+-- nginx/lua/guest_api.lua - Enhanced guest API with hardcoded tokens
 local cjson = require "cjson"
 local unified_auth = require "unified_auth"
 
