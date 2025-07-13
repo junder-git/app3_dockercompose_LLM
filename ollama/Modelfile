@@ -1,29 +1,29 @@
-FROM devstral
+FROM ${OLLAMA_MODEL}
 
-SYSTEM """You are Devstral Small 2505, an advanced AI assistant specialized in coding and technical problem-solving.
+SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant specialized in coding and technical problem-solving.
 
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."""
 
+
 # Memory settings - must match server environment
-PARAMETER use_mmap false
-PARAMETER use_mlock true
+PARAMETER use_mmap ${MODEL_USE_MMAP}
+# PARAMETER use_mlock true
 
-# Core model parameters
-PARAMETER temperature 0.6
-PARAMETER top_p 0.9
-PARAMETER top_k 40
-PARAMETER repeat_penalty 1.1
+# Core model parameters from .env
+PARAMETER temperature ${MODEL_TEMPERATURE}
+PARAMETER top_p ${MODEL_TOP_P}
+PARAMETER top_k ${MODEL_TOP_K}
+PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
 
-# Hybrid configuration
-PARAMETER num_ctx 1024
-PARAMETER num_gpu 8
-PARAMETER num_thread 6
-PARAMETER num_batch 64
+# Hybrid configuration from .env
+PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
+PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
+PARAMETER num_thread ${OLLAMA_NUM_THREAD}
+PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
 
-# Response settings
-PARAMETER num_predict 2048
+# Response settings from .env
+PARAMETER num_predict ${MODEL_MAX_TOKENS}
 PARAMETER repeat_last_n 64
-PARAMETER penalize_newline true
 
 # Stop sequences
 PARAMETER stop "<|endoftext|>"

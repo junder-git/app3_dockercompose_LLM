@@ -261,20 +261,27 @@ const DevstralCommon = {
         });
     },
 
-    // Logout with cleanup
+    // Fixed logout with proper cookie clearing
     logout() {
         console.log('Logout function called'); // Debug log
         
         try {
             // Clear all authentication cookies with multiple variations
             const cookiesToClear = ['access_token', 'session', 'auth_token'];
+            const cookiePaths = ['/', '/api', '/chat', '/admin'];
+            const domains = [window.location.hostname, '.' + window.location.hostname, 'localhost', '127.0.0.1'];
+            
             cookiesToClear.forEach(cookieName => {
-                // Clear for current path
-                document.cookie = `${cookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-                // Clear for root path
-                document.cookie = `${cookieName}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure=false`;
-                // Clear with domain
-                document.cookie = `${cookieName}=; Path=/; Domain=${window.location.hostname}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                cookiePaths.forEach(path => {
+                    // Clear for each path
+                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure=false`;
+                    
+                    // Clear for each domain
+                    domains.forEach(domain => {
+                        document.cookie = `${cookieName}=; Path=${path}; Domain=${domain}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                    });
+                });
             });
             
             console.log('Cookies cleared'); // Debug log
@@ -291,15 +298,14 @@ const DevstralCommon = {
                 }
             }
 
-            // Show logout message
-            this.showAlert('Logged out successfully', 'success', 2000);
+            // Update navbar immediately to show guest state
+            this.updateNavbarForGuest();
             
-            console.log('Redirecting to home page...'); // Debug log
+            // Show logout message without alert popup
+            console.log('Logout successful - redirecting to home page...'); // Debug log
             
-            // Redirect to home page immediately
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 500);
+            // Redirect to home page immediately without popup
+            window.location.href = '/';
             
         } catch (error) {
             console.error('Logout error:', error);

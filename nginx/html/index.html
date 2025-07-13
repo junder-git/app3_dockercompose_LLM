@@ -312,21 +312,36 @@
             document.getElementById('admin-nav').style.display = 'none';
         }
 
-        // Logout function
         function logout() {
-            document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            // Clear all authentication cookies with multiple variations
+            const cookiesToClear = ['access_token', 'session', 'auth_token'];
+            const cookiePaths = ['/', '/api', '/chat', '/admin'];
+            const domains = [window.location.hostname, '.' + window.location.hostname, 'localhost', '127.0.0.1'];
+            
+            cookiesToClear.forEach(cookieName => {
+                cookiePaths.forEach(path => {
+                    // Clear for each path
+                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure=false`;
+                    
+                    // Clear for each domain
+                    domains.forEach(domain => {
+                        document.cookie = `${cookieName}=; Path=${path}; Domain=${domain}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                    });
+                });
+            });
             
             // Clear any stored data
             try {
                 localStorage.removeItem('devstral_chat_history');
+                localStorage.removeItem('devstral_user_preferences');
                 sessionStorage.clear();
             } catch (e) {
                 console.warn('Could not clear stored data');
             }
             
-            // Show logout message and reload
-            alert('Logged out successfully');
-            window.location.reload();
+            // Immediately redirect without popup
+            window.location.href = '/';
         }
 
         // Add interactive hover effects to feature cards
