@@ -142,7 +142,7 @@
     </div>
 
     <div class="chat-messages" id="chat-messages">
-    <div class="welcome-prompt" id="welcome-prompt">
+      <div class="welcome-prompt" id="welcome-prompt">
         <h4><i class="bi bi-robot"></i> Welcome to ai.junder.uk</h4>
         <div id="welcome-content">
           <!-- Content will be dynamically set based on user type -->
@@ -167,6 +167,18 @@
               <i class="bi bi-arrow-clockwise"></i> Try Again
             </button>
             <a href="/register.html" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-person-plus"></i> Register for Full Access
+            </a>
+          </div>
+        </div>
+        <div id="guest-start-message" class="mt-3" style="display: none;">
+          <div class="alert alert-primary">
+            <h6><i class="bi bi-chat-dots"></i> Start Guest Chat Session</h6>
+            <p>Try our AI assistant with a free guest session. No registration required!</p>
+            <button class="btn btn-primary" id="start-guest-session">
+              <i class="bi bi-play-circle"></i> Start Guest Chat
+            </button>
+            <a href="/register.html" class="btn btn-outline-primary btn-sm ms-2">
               <i class="bi bi-person-plus"></i> Register for Full Access
             </a>
           </div>
@@ -243,7 +255,9 @@
         
         if (!this.isPlaceholder && !this.chatFull) {
           this.loadChatHistory();
-          this.setupSessionCountdown();
+          if (this.isGuest) {
+            this.setupSessionCountdown();
+          }
         }
         
         this.updateStatus('online', 'Ready');
@@ -271,6 +285,7 @@
         const suggestionChips = document.getElementById('suggestion-chips');
         const sessionInfo = document.getElementById('session-info');
         const chatFullMessage = document.getElementById('chat-full-message');
+        const guestStartMessage = document.getElementById('guest-start-message');
 
         if (this.chatFull) {
           // Show chat full message
@@ -278,9 +293,16 @@
           chatFullMessage.style.display = 'block';
           this.disableChatInput();
         } else if (this.isPlaceholder) {
-          // Show placeholder message
-          welcomeContent.innerHTML = '<p>Hello <strong>Guest</strong>! Click below to start a demo chat session.</p>';
+          // Show placeholder message with guest session option
+          welcomeContent.innerHTML = '<p>Hello! Welcome to ai.junder.uk. Start a free guest session to try our AI assistant.</p>';
+          guestStartMessage.style.display = 'block';
           this.disableChatInput();
+          
+          // Set up guest session creation button
+          const startButton = document.getElementById('start-guest-session');
+          if (startButton) {
+            startButton.addEventListener('click', () => this.createGuestSession());
+          }
         } else if (this.isGuest) {
           // Show guest session info
           welcomeContent.innerHTML = '<p>Hello <strong>' + this.username + '</strong>! You have a limited demo session.</p>';
@@ -291,6 +313,72 @@
           welcomeContent.innerHTML = '<p>Hello <strong>' + this.username + '</strong>! I\'m your advanced coding assistant powered by Devstral AI.</p><p>What would you like to build today?</p>';
           suggestionChips.style.display = 'flex';
         }
+      }
+
+      async createGuestSession() {
+        const startButton = document.getElementById('start-guest-session');
+        const originalText = startButton.innerHTML;
+        
+        try {
+          startButton.disabled = true;
+          startButton.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
+          
+          const response = await fetch('/api/guest/create-session', {
+            method: 'POST',
+            credentials: 'include'
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            this.showToast('Guest session created successfully!', 'success');
+            
+            // Update page state
+            this.username = data.session.username;
+            this.isGuest = true;
+            this.isPlaceholder = false;
+            this.guestLimits = data.limits;
+            
+            // Refresh the page to load with new session
+            setTimeout(() => {
+              window.location.reload();
+            }, 1000);
+          } else {
+            throw new Error(data.message || 'Failed to create guest session');
+          }
+        } catch (error) {
+          console.error('Create guest session error:', error);
+          this.showToast('Failed to create guest session: ' + error.message, 'error');
+          
+          startButton.disabled = false;
+          startButton.innerHTML = originalText;
+        }
+      }
+
+      showToast(message, type, duration) {
+        type = type || 'info';
+        duration = duration || 3000;
+
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = 'position-fixed';
+        toast.style.cssText = 'top: 80px; right: 20px; z-index: 9999; min-width: 300px;';
+        
+        toast.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+
+        document.body.appendChild(toast);
+
+        // Auto-remove after duration
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, duration);
       }
 
       setupSessionCountdown() {
@@ -643,10 +731,10 @@
           const actionsDiv = document.createElement('div');
           actionsDiv.className = 'message-actions';
           actionsDiv.innerHTML = `
-            <button class="action-btn" onclick="DevstralChat.copyMessage(this)" title="Copy">
+            <button class="action-btn" onclick="window.chat.copyMessage(this)" title="Copy">
               <i class="bi bi-clipboard"></i>
             </button>
-            <button class="action-btn" onclick="DevstralChat.regenerateMessage(this)" title="Regenerate">
+            <button class="action-btn" onclick="window.chat.regenerateMessage(this)" title="Regenerate">
               <i class="bi bi-arrow-clockwise"></i>
             </button>
           `;

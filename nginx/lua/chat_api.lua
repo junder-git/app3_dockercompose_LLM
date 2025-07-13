@@ -154,28 +154,29 @@ local function call_ollama_streaming(messages, options, callback)
         }
     }
 
-    local res, err = httpc:request({
-        url = OLLAMA_URL .. "/api/chat",
+    local url = OLLAMA_URL .. "/api/chat"
+    local res, err = httpc:request_uri(url, {
         method = "POST",
         body = cjson.encode(payload),
-        headers = { ["Content-Type"] = "application/json" }
+        headers = { 
+            ["Content-Type"] = "application/json",
+            ["Accept"] = "text/event-stream"
+        }
     })
 
     if not res then
-        return nil, "Failed to connect to AI service: " .. (err or "unknown")
+        return nil, "Failed to connect to AI service: " .. (err or "unknown error")
     end
 
-    local reader = res.body_reader
-    if not reader then
-        return nil, "No body reader available"
+    if res.status ~= 200 then
+        return nil, "AI service error: HTTP " .. res.status
     end
 
     local accumulated = ""
-    repeat
-        local chunk, err = reader(8192)
-        if not chunk then break end
-
-        for line in chunk:gmatch("[^\r\n]+") do
+    
+    -- Process the response body line by line
+    for line in res.body:gmatch("[^\r\n]+") do
+        if line and line ~= "" then
             local ok, data = pcall(cjson.decode, line)
             if ok and data.message and data.message.content then
                 accumulated = accumulated .. data.message.content
@@ -184,13 +185,13 @@ local function call_ollama_streaming(messages, options, callback)
                     accumulated = accumulated,
                     done = data.done or false
                 })
+                
+                if data.done then
+                    break
+                end
             end
         end
-
-        if ngx.worker.exiting() or ngx.is_subrequest then
-            break
-        end
-    until false
+    end
 
     httpc:close()
     return accumulated, nil
