@@ -9,56 +9,14 @@
   <link rel="stylesheet" href="/css/common.css" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    .chat-input-container {
-      width: 100%;
-    }
-    .chat-input-form {
-      display: flex;
-      gap: 8px;
-      flex-wrap: nowrap;
-      width: 100%;
-    }
-    .chat-input {
-      flex: 1;
-      min-height: 100px;
-      max-height: 250px;
-      resize: none;
-    }
-    .btn-icon {
-      min-width: 44px;
-      height: 44px;
-    }
+    .chat-input-container { width: 100%; }
+    .chat-input-form { display: flex; gap: 8px; flex-wrap: nowrap; width: 100%; }
+    .chat-input { flex: 1; min-height: 100px; max-height: 250px; resize: none; }
+    .btn-icon { min-width: 44px; height: 44px; }
   </style>
 </head>
 <body>
-  <nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav me-auto">
-          <li class="nav-item"><a class="nav-link active" href="/chat.html"><i class="bi bi-chat-dots"></i> Chat</a></li>
-          <li class="nav-item" id="admin-nav" style="display: none;">
-            <a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a>
-          </li>
-        </ul>
-        <ul class="navbar-nav">
-          <li class="nav-item dropdown" id="user-nav">
-            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-              <i class="bi bi-person-circle"></i> <span id="navbar-username">{{ username }}</span>
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li><a class="dropdown-item" href="/"><i class="bi bi-house"></i> Home</a></li>
-              <li><hr class="dropdown-divider" /></li>
-              <li><a class="dropdown-item" href="#" id="logout-button"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
-            </ul>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </nav>
+  {{ navigation }}
 
   <main class="chat-container">
     <div class="chat-messages" id="chat-messages"></div>
@@ -67,29 +25,25 @@
       <form id="chat-form" class="chat-input-form">
         <textarea class="form-control chat-input" id="chat-input" placeholder="Ask me anything..." required></textarea>
         <button type="submit" class="btn btn-primary btn-icon" id="send-button"><i class="bi bi-send"></i></button>
-        <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation">
-          <i class="bi bi-stop-fill"></i>
-        </button>
-        <button type="button" class="btn btn-outline-secondary btn-icon" id="clear-chat" title="Clear Chat">
-          <i class="bi bi-trash"></i>
-        </button>
+        <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation"><i class="bi bi-stop-fill"></i></button>
+        <button type="button" class="btn btn-outline-secondary btn-icon" id="clear-chat" title="Clear Chat"><i class="bi bi-trash"></i></button>
       </form>
     </div>
   </main>
 
   <script src="/js/lib/jquery.min.js"></script>
   <script src="/js/lib/bootstrap.min.js"></script>
+  <script src="/js/common.js"></script>
   <script>
     class DevstralChat {
       constructor() {
         this.isTyping = false;
         this.abortController = null;
-        this.autoScroll = true;
         this.init();
       }
 
       init() {
-        this.loadUserInfo();
+        DevstralCommon.loadUser();
         this.loadChatHistory();
 
         document.getElementById('chat-form').addEventListener('submit', (e) => {
@@ -97,17 +51,8 @@
           this.sendMessage();
         });
 
-        document.getElementById('stop-button').addEventListener('click', () => {
-          this.stopGeneration();
-        });
-
-        document.getElementById('clear-chat').addEventListener('click', () => {
-          this.clearChat();
-        });
-
-        document.getElementById('logout-button').addEventListener('click', () => {
-          this.logout();
-        });
+        document.getElementById('stop-button').addEventListener('click', () => this.stopGeneration());
+        document.getElementById('clear-chat').addEventListener('click', () => this.clearChat());
 
         const textarea = document.getElementById('chat-input');
         textarea.addEventListener('keydown', (e) => {
@@ -125,21 +70,6 @@
           textarea.style.height = 'auto';
           textarea.style.height = Math.min(textarea.scrollHeight, 250) + 'px';
         });
-      }
-
-      async loadUserInfo() {
-        try {
-          const response = await fetch('/api/auth/me', { credentials: 'include' });
-          const data = await response.json();
-          if (data.success) {
-            document.getElementById('navbar-username').textContent = data.username;
-            if (data.is_admin) {
-              document.getElementById('admin-nav').style.display = 'block';
-            }
-          }
-        } catch (error) {
-          console.warn('Could not load user info:', error);
-        }
       }
 
       async loadChatHistory() {
@@ -275,13 +205,6 @@
           console.error('Clear chat error:', error);
           alert('Failed to clear chat. Please try again.');
         }
-      }
-
-      async logout() {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-        localStorage.clear();
-        sessionStorage.clear();
-        window.location.href = '/?clear_cache=1';
       }
     }
 

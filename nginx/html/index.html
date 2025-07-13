@@ -8,169 +8,60 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/common.css">
     <style>
-        /* Inline critical CSS to ensure it loads after Bootstrap */
-        body.index-page .hero-section {
-            background: linear-gradient(135deg, #0d1421 0%, #1a2332 100%) !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            overflow: hidden !important;
-            z-index: 1 !important;
-            margin: 0 !important;
-            padding: 0 !important;
+        body.index-page {
+            overflow-x: hidden;
         }
-        
-        body.index-page .hero-content {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            width: 100% !important;
-            height: 100% !important;
-            text-align: center !important;
-            z-index: 10 !important;
-            position: relative !important;
+        .hero-section {
+            text-align: center;
+            padding: 100px 20px;
         }
-        
-        body.index-page .hero-content .container {
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            width: 100% !important;
-            max-width: 1200px !important;
-            margin: 0 auto !important;
-            padding: 2rem !important;
+        canvas#bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
         }
-        
-        body.index-page .hero-content .row {
-            width: 100% !important;
-            margin: 0 !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }
-        
-        body.index-page .col-lg-6:first-child {
-            text-align: center !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
+        .feature-card {
+            transition: all 0.3s ease;
         }
     </style>
 </head>
 <body class="index-page">
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand logo-brand" href="/">
-                <i class="bi bi-lightning-charge-fill"></i> ai.junder.uk
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/chat.html">
-                            <i class="bi bi-chat-dots"></i> Chat
-                        </a>
-                    </li>
-                    <li class="nav-item" id="admin-nav" style="display: none;">
-                        <a class="nav-link" href="/admin.html">
-                            <i class="bi bi-gear"></i> Admin
-                        </a>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item" id="guest-nav">
-                        <a class="nav-link" href="/login.html">
-                            <i class="bi bi-box-arrow-in-right"></i> Login
-                        </a>
-                    </li>
-                    <li class="nav-item" id="guest-nav-2">
-                        <a class="nav-link" href="/register.html">
-                            <i class="bi bi-person-plus"></i> Register
-                        </a>
-                    </li>
-                    <li class="nav-item dropdown" id="user-nav" style="display: none;">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-person-circle"></i> <span id="navbar-username">User</span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="/chat.html"><i class="bi bi-chat-dots"></i> Chat</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="#" id="logout-button"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
-                        </ul>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+    {{ navigation }}
+
+    <canvas id="bg-canvas"></canvas>
 
     <main class="hero-section">
-        <canvas id="bg"></canvas>
-        <div class="hero-content">
-            <div class="container">
-                <div class="row align-items-center">
-                    <div class="col-lg-6">
-                        <h1 class="hero-title">Welcome to Devstral AI</h1>
-                        <p class="hero-subtitle">Advanced coding and reasoning model powered by cutting-edge AI technology</p>
-                        <div class="mb-4">
-                            <a href="/chat.html" class="cta-button text-white">
-                                <i class="bi bi-chat-dots"></i> Start Chatting
-                            </a>
-                            <a href="/register.html" class="btn btn-outline-primary">
-                                <i class="bi bi-person-plus"></i> Get Started
-                            </a>
-                        </div>
-                    </div>
-                    <div class="col-lg-6">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="feature-card text-center">
-                                    <div class="feature-icon">
-                                        <i class="bi bi-code-slash"></i>
-                                    </div>
-                                    <h5>Advanced Coding</h5>
-                                    <p>Expert programming assistance and code analysis</p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="feature-card text-center">
-                                    <div class="feature-icon">
-                                        <i class="bi bi-lightbulb"></i>
-                                    </div>
-                                    <h5>Smart Reasoning</h5>
-                                    <p>Complex problem-solving with logical analysis</p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="feature-card text-center">
-                                    <div class="feature-icon">
-                                        <i class="bi bi-lightning-charge"></i>
-                                    </div>
-                                    <h5>High Performance</h5>
-                                    <p>Optimized for speed and accuracy</p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="feature-card text-center">
-                                    <div class="feature-icon">
-                                        <i class="bi bi-shield-check"></i>
-                                    </div>
-                                    <h5>Secure & Private</h5>
-                                    <p>Your conversations are protected</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+        <h1>Welcome to Devstral AI</h1>
+        <p>Advanced coding and reasoning model powered by cutting-edge AI technology.</p>
+        <a href="/chat.html" class="btn btn-primary cta-button">Start Chatting</a>
+        <a href="/register.html" class="btn btn-outline-primary">Get Started</a>
+    </main>
+
+    <section class="container my-5">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="feature-card card p-3">
+                    <h3>Code Understanding</h3>
+                    <p>Explain code, find bugs, or suggest improvements in seconds.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card card p-3">
+                    <h3>Document Assistance</h3>
+                    <p>Summarize, translate, or generate technical documents easily.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card card p-3">
+                    <h3>Creative Generation</h3>
+                    <p>Write articles, stories, or brainstorm ideas interactively.</p>
                 </div>
             </div>
         </div>
-    </main>
+    </section>
 
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
@@ -178,405 +69,79 @@
     <script>
         if (new URLSearchParams(window.location.search).has("clear_cache")) {
             window.location.href = '/';
-            }
+        }
 
-        // Animated background with improved performance
-        const canvas = document.getElementById("bg");
-        const ctx = canvas.getContext("2d");
-        let nodes = [];
-        const numNodes = 50;
-        let animationId;
-        
-        function resize() { 
-            canvas.width = window.innerWidth; 
-            canvas.height = window.innerHeight;
-            
-            // Reinitialize nodes on resize
-            initializeNodes();
+        // Canvas background animation
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        let particles = [];
+        for (let i = 0; i < 50; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: (Math.random() - 0.5) * 0.5,
+                radius: Math.random() * 2 + 1
+            });
         }
-        
-        function initializeNodes() {
-            nodes = [];
-            for (let i = 0; i < numNodes; i++) {
-                nodes.push({ 
-                    x: Math.random() * canvas.width, 
-                    y: Math.random() * canvas.height, 
-                    vx: (Math.random() - 0.5) * 0.3, 
-                    vy: (Math.random() - 0.5) * 0.3 
-                });
-            }
-        }
-        
-        window.addEventListener("resize", resize); 
-        resize();
-        
+
         function animate() {
-            // Clear with transparent background
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Update node positions
-            nodes.forEach(n => { 
-                n.x += n.vx; 
-                n.y += n.vy; 
-                
-                // Bounce off edges
-                if (n.x < 0 || n.x > canvas.width) n.vx *= -1; 
-                if (n.y < 0 || n.y > canvas.height) n.vy *= -1; 
-                
-                // Keep within bounds
-                n.x = Math.max(0, Math.min(canvas.width, n.x));
-                n.y = Math.max(0, Math.min(canvas.height, n.y));
-            });
-            
-            // Draw connections
-            for (let i = 0; i < numNodes; i++) {
-                for (let j = i + 1; j < numNodes; j++) {
-                    const dx = nodes[i].x - nodes[j].x;
-                    const dy = nodes[i].y - nodes[j].y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    
-                    if (dist < 120) { 
-                        const opacity = (120 - dist) / 120 * 0.2;
-                        ctx.strokeStyle = `rgba(13, 110, 253, ${opacity})`; 
-                        ctx.lineWidth = 1;
-                        ctx.beginPath(); 
-                        ctx.moveTo(nodes[i].x, nodes[i].y); 
-                        ctx.lineTo(nodes[j].x, nodes[j].y); 
-                        ctx.stroke(); 
-                    }
-                }
+            ctx.clearRect(0, 0, width, height);
+            for (let p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+
+                if (p.x < 0 || p.x > width) p.vx *= -1;
+                if (p.y < 0 || p.y > height) p.vy *= -1;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#0d6efd';
+                ctx.fill();
             }
-            
-            // Draw nodes
-            nodes.forEach(n => { 
-                ctx.fillStyle = "rgba(13, 110, 253, 0.4)"; 
-                ctx.beginPath(); 
-                ctx.arc(n.x, n.y, 2, 0, Math.PI*2); 
-                ctx.fill(); 
-            });
-            
-            animationId = requestAnimationFrame(animate);
+            requestAnimationFrame(animate);
         }
-        
-        // Start animation
         animate();
 
-        // Enhanced user loading with admin detection
-        async function loadUserInfo() {
-            try {
-                const response = await fetch('/api/auth/me', {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.success && data.username) {
-                        // User is logged in
-                        document.getElementById('guest-nav').style.display = 'none';
-                        document.getElementById('guest-nav-2').style.display = 'none';
-                        document.getElementById('user-nav').style.display = 'block';
-                        document.getElementById('navbar-username').textContent = data.username;
-                        
-                        // Show admin nav if user is admin
-                        if (data.is_admin) {
-                            document.getElementById('admin-nav').style.display = 'block';
-                        }
-                        
-                        // Update CTA buttons for logged-in users
-                        const startChatBtn = document.querySelector('.cta-button[href="/chat.html"]');
-                        if (startChatBtn) {
-                            startChatBtn.innerHTML = '<i class="bi bi-chat-dots"></i> Continue Chatting';
-                        }
-                        
-                        const getStartedBtn = document.querySelector('.btn[href="/register.html"]');
-                        if (getStartedBtn) {
-                            getStartedBtn.href = '/chat.html';
-                            getStartedBtn.innerHTML = '<i class="bi bi-chat-dots"></i> Go to Chat';
-                            getStartedBtn.className = 'btn btn-outline-success';
-                        }
-                    } else {
-                        // User is not logged in
-                        showGuestState();
-                    }
-                } else {
-                    // Error or not logged in
-                    showGuestState();
-                }
-            } catch (error) {
-                console.warn('Could not load user info:', error);
-                showGuestState();
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 ai.junder.uk - Devstral AI initialized');
+
+            DevstralCommon.loadUser();
+            DevstralCommon.setupFeatureCardAnimations();
+            DevstralCommon.setupAnalytics();
+            DevstralCommon.setupSmoothScrolling();
+            DevstralCommon.setupKeyboardNavigation();
+
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                DevstralCommon.setupPerformanceMonitoring();
             }
-        }
+        });
 
-        function showGuestState() {
-            document.getElementById('guest-nav').style.display = 'block';
-            document.getElementById('guest-nav-2').style.display = 'block';
-            document.getElementById('user-nav').style.display = 'none';
-            document.getElementById('admin-nav').style.display = 'none';
-        }
-
-        function logout() {
-            // Clear all authentication cookies with multiple variations
-            const cookiesToClear = ['access_token', 'session', 'auth_token'];
-            const cookiePaths = ['/', '/api', '/chat', '/admin'];
-            const domains = [window.location.hostname, '.' + window.location.hostname, 'localhost', '127.0.0.1'];
-            
-            cookiesToClear.forEach(cookieName => {
-                cookiePaths.forEach(path => {
-                    // Clear for each path
-                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-                    document.cookie = `${cookieName}=; Path=${path}; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure=false`;
-                    
-                    // Clear for each domain
-                    domains.forEach(domain => {
-                        document.cookie = `${cookieName}=; Path=${path}; Domain=${domain}; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-                    });
-                });
-            });
-            
-            // Clear any stored data
-            try {
-                localStorage.removeItem('devstral_chat_history');
-                localStorage.removeItem('devstral_user_preferences');
-                sessionStorage.clear();
-            } catch (e) {
-                console.warn('Could not clear stored data');
-            }
-            
-            // Immediately redirect without popup
-            window.location.href = '/';
-        }
-
-        // Add interactive hover effects to feature cards
         function setupFeatureCardAnimations() {
-            const featureCards = document.querySelectorAll('.feature-card');
-            
-            featureCards.forEach((card, index) => {
-                // Stagger animation entrance
+            const cards = document.querySelectorAll('.feature-card');
+            cards.forEach((card, index) => {
                 card.style.animationDelay = `${index * 0.1}s`;
                 card.classList.add('animate-in');
-                
-                card.addEventListener('mouseenter', function() {
+
+                card.addEventListener('mouseenter', function () {
                     this.style.transform = 'translateY(-8px) scale(1.02)';
                     this.style.boxShadow = '0 15px 40px rgba(13, 110, 253, 0.3)';
                 });
-                
-                card.addEventListener('mouseleave', function() {
+
+                card.addEventListener('mouseleave', function () {
                     this.style.transform = 'translateY(0) scale(1)';
                     this.style.boxShadow = '0 10px 30px rgba(13, 110, 253, 0.2)';
                 });
             });
         }
-
-        // Track user interactions for analytics
-        function setupAnalytics() {
-            const trackableElements = {
-                'cta-start-chat': document.querySelector('.cta-button[href*="chat"]'),
-                'cta-get-started': document.querySelector('.btn[href*="register"]'),
-                'nav-chat': document.querySelector('.nav-link[href*="chat"]'),
-                'nav-login': document.querySelector('.nav-link[href*="login"]'),
-                'nav-register': document.querySelector('.nav-link[href*="register"]')
-            };
-
-            Object.entries(trackableElements).forEach(([key, element]) => {
-                if (element) {
-                    element.addEventListener('click', function() {
-                        console.log(`User interaction: ${key}`);
-                        // Here you could send to analytics service
-                        trackEvent('button_click', key);
-                    });
-                }
-            });
-        }
-
-        function trackEvent(action, label) {
-            // Simple event tracking (could be enhanced with proper analytics)
-            const event = {
-                timestamp: new Date().toISOString(),
-                action: action,
-                label: label,
-                page: 'index',
-                userAgent: navigator.userAgent.substring(0, 100)
-            };
-            
-            console.log('Event tracked:', event);
-            
-            // In a real application, you'd send this to your analytics service
-            // fetch('/api/analytics/track', { method: 'POST', body: JSON.stringify(event) });
-        }
-
-        // Add smooth scrolling for any anchor links
-        function setupSmoothScrolling() {
-            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-                anchor.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    const target = document.querySelector(this.getAttribute('href'));
-                    if (target) {
-                        target.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                    }
-                });
-            });
-        }
-
-        // Add keyboard navigation support
-        function setupKeyboardNavigation() {
-            document.addEventListener('keydown', function(e) {
-                // Alt + H = Home
-                if (e.altKey && e.key === 'h') {
-                    e.preventDefault();
-                    window.location.href = '/';
-                }
-                
-                // Alt + C = Chat (if logged in)
-                if (e.altKey && e.key === 'c') {
-                    e.preventDefault();
-                    window.location.href = '/chat.html';
-                }
-                
-                // Alt + L = Login
-                if (e.altKey && e.key === 'l') {
-                    e.preventDefault();
-                    window.location.href = '/login.html';
-                }
-                
-                // Alt + R = Register
-                if (e.altKey && e.key === 'r') {
-                    e.preventDefault();
-                    window.location.href = '/register.html';
-                }
-            });
-        }
-
-        // Performance monitoring
-        function setupPerformanceMonitoring() {
-            // Monitor page load time
-            window.addEventListener('load', function() {
-                const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
-                console.log(`Page load time: ${loadTime}ms`);
-                
-                if (loadTime > 3000) {
-                    console.warn('Page load time is slow, consider optimization');
-                }
-            });
-
-            // Monitor animation performance
-            let animationFrameId;
-            let lastFrameTime = performance.now();
-            let frameCount = 0;
-            let fps = 0;
-
-            function monitorFPS() {
-                const currentTime = performance.now();
-                frameCount++;
-                
-                if (currentTime - lastFrameTime >= 1000) {
-                    fps = Math.round((frameCount * 1000) / (currentTime - lastFrameTime));
-                    frameCount = 0;
-                    lastFrameTime = currentTime;
-                    
-                    if (fps < 30) {
-                        console.warn(`Low FPS detected: ${fps} fps`);
-                    }
-                }
-                
-                animationFrameId = requestAnimationFrame(monitorFPS);
-            }
-            
-            // Start FPS monitoring after a delay
-            setTimeout(() => {
-                monitorFPS();
-            }, 2000);
-        }
-
-        // Initialize everything when DOM is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 ai.junder.uk - Devstral AI initialized');
-            
-            // Core functionality
-            loadUserInfo();
-            setupFeatureCardAnimations();
-            setupAnalytics();
-            setupSmoothScrolling();
-            setupKeyboardNavigation();
-            
-            // Performance monitoring (optional, can be disabled in production)
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                setupPerformanceMonitoring();
-            }
-            
-            // Set up logout button if it exists
-            const logoutButton = document.getElementById('logout-button');
-            if (logoutButton) {
-                logoutButton.addEventListener('click', logout);
-            }
-            
-            // Add a subtle entrance animation to the hero content
-            const heroContent = document.querySelector('.hero-content');
-            if (heroContent) {
-                heroContent.style.opacity = '0';
-                heroContent.style.transform = 'translateY(20px)';
-                
-                setTimeout(() => {
-                    heroContent.style.transition = 'opacity 0.8s ease, transform 0.8s ease';
-                    heroContent.style.opacity = '1';
-                    heroContent.style.transform = 'translateY(0)';
-                }, 100);
-            }
-            
-            console.log('✅ All systems initialized successfully');
-        });
-
-        // Handle visibility change to pause/resume animations
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                // Pause animations when tab is not visible
-                if (animationId) {
-                    cancelAnimationFrame(animationId);
-                }
-                console.log('Tab hidden - animations paused');
-            } else {
-                // Resume animations when tab becomes visible
-                animate();
-                console.log('Tab visible - animations resumed');
-            }
-        });
-
-        // Add CSS animation classes
-        const style = document.createElement('style');
-        style.textContent = `
-            .animate-in {
-                animation: slideInUp 0.6s ease-out forwards;
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            
-            @keyframes slideInUp {
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-            
-            .hero-content {
-                animation: fadeInUp 1s ease-out;
-            }
-            
-            @keyframes fadeInUp {
-                from {
-                    opacity: 0;
-                    transform: translateY(30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-        `;
-        document.head.appendChild(style);
     </script>
 </body>
 </html>
