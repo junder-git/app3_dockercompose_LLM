@@ -40,6 +40,8 @@ local function handle_chat()
 
     local template_data = {
         navigation = nav_html,
+        username = username,
+        admin_link = is_admin == "true" and '<li class="nav-item"><a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a></li>' or ""
     }
 
     template.render_template("/usr/local/openresty/nginx/html/chat.html", template_data)

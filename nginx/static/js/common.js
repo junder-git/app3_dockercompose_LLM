@@ -20,7 +20,7 @@ const DevstralCommon = {
         }
     },
 
-    async loadUserInfo() {
+    async loadUser() {
         try {
             const response = await fetch('/api/auth/me', { credentials: 'include' });
             const data = await response.json();

@@ -44,6 +44,8 @@ local function handle_admin()
 
     local template_data = {
         navigation = nav_html,
+        username = username,
+        admin_link = '<li class="nav-item"><a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a></li>'
     }
 
     template.render_template("/usr/local/openresty/nginx/html/admin.html", template_data)
