@@ -45,6 +45,63 @@ local function get_user_info(red, username)
     return user
 end
 
+-- NEW: Reusable auth check for approved users
+local function check_approved_user()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        send_json(401, { error = "Authentication required" })
+    end
+    
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        send_json(401, { error = "Invalid token" })
+    end
+    
+    local username = jwt_obj.payload.username
+    local red = connect_redis()
+    local user_key = "user:" .. username
+    local is_approved = red:hget(user_key, "is_approved")
+    
+    if is_approved ~= "true" then
+        send_json(403, { error = "User not approved" })
+    end
+    
+    return username, red
+end
+
+-- NEW: Reusable auth check for admin users
+local function check_admin_user()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        send_json(401, { error = "Authentication required" })
+    end
+    
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        send_json(401, { error = "Invalid token" })
+    end
+    
+    local username = jwt_obj.payload.username
+    local red = connect_redis()
+    local user_key = "user:" .. username
+    local user_data = red:hgetall(user_key)
+    
+    if not user_data or #user_data == 0 then
+        send_json(401, { error = "User not found" })
+    end
+    
+    local user = {}
+    for i = 1, #user_data, 2 do
+        user[user_data[i]] = user_data[i + 1]
+    end
+    
+    if user.is_admin ~= "true" then
+        send_json(403, { error = "Admin privileges required" })
+    end
+    
+    return username, red
+end
+
 local function handle_login()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -133,5 +190,7 @@ end
 return {
     handle_login = handle_login,
     handle_me = handle_me,
-    handle_logout = handle_logout
+    handle_logout = handle_logout,
+    check_approved_user = check_approved_user,
+    check_admin_user = check_admin_user
 }
