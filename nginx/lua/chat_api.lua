@@ -1,12 +1,11 @@
--- nginx/lua/chat_api.lua - Fixed and complete
+-- nginx/lua/chat_api_enhanced.lua - Enhanced with guest token support
 local cjson = require "cjson"
 local redis = require "resty.redis"
-local jwt = require "resty.jwt"
 local http = require "resty.http"
+local unified_auth = require "unified_auth"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 local OLLAMA_URL = os.getenv("OLLAMA_URL") or "http://ollama:11434"
 local OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "devstral"
 
@@ -37,35 +36,13 @@ local function connect_redis()
     red:set_timeout(1000)
     local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
     if not ok then
-        send_json(500, { error = "Internal server error", details = "Redis connection failed" })
+        ngx.log(ngx.WARN, "Redis connection failed: " .. (err or "unknown"))
+        return nil, err
     end
-    return red
+    return red, nil
 end
 
-local function verify_user_token()
-    local token = ngx.var.cookie_access_token
-    if not token then
-        send_json(401, { error = "Authentication required" })
-    end
-    
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        send_json(401, { error = "Invalid token" })
-    end
-    
-    local username = jwt_obj.payload.username
-    local red = connect_redis()
-    local user_key = "user:" .. username
-    local is_approved = red:hget(user_key, "is_approved")
-    
-    if is_approved ~= "true" then
-        send_json(403, { error = "User not approved" })
-    end
-    
-    return username, red
-end
-
-local function check_rate_limit(red, username)
+local function check_rate_limit_user(red, username)
     local time_window = 3600 -- 1 hour
     local message_limit = DEFAULT_RATE_LIMIT
     local current_time = ngx.time()
@@ -104,7 +81,31 @@ local function check_rate_limit(red, username)
     return current_count + 1
 end
 
+local function check_rate_limit_guest(slot_num)
+    -- For guests, we use the built-in message limit system
+    local success = unified_auth.use_guest_message(slot_num)
+    if not success then
+        local limits = unified_auth.get_guest_limits(slot_num)
+        if not limits then
+            send_json(401, { error = "Guest session expired" })
+        else
+            send_json(429, { 
+                error = "Guest message limit exceeded",
+                limit = limits.max_messages,
+                used = limits.used_messages,
+                session_remaining = limits.session_remaining
+            })
+        end
+    end
+    return true
+end
+
 local function save_message_to_history(red, username, role, content)
+    if not red then
+        ngx.log(ngx.WARN, "Cannot save message - Redis unavailable")
+        return
+    end
+    
     local chat_key = "chat:" .. username
     local message = {
         role = role,
@@ -118,14 +119,20 @@ local function save_message_to_history(red, username, role, content)
 end
 
 local function get_chat_history(red, username, limit)
+    if not red then
+        return {} -- Return empty history if Redis unavailable
+    end
+    
     limit = math.min(limit or 20, 50)
     local chat_key = "chat:" .. username
     local history = red:lrange(chat_key, 0, limit - 1)
     local messages = {}
     
     for i = #history, 1, -1 do
-        local message = cjson.decode(history[i])
-        table.insert(messages, message)
+        local ok, message = pcall(cjson.decode, history[i])
+        if ok then
+            table.insert(messages, message)
+        end
     end
     
     return messages
@@ -198,7 +205,9 @@ local function call_ollama_streaming(messages, options, callback)
 end
 
 local function handle_chat_stream()
-    local username, red = verify_user_token()
+    local user_type = ngx.var.auth_user_type
+    local username = ngx.var.auth_username
+    local slot_num = tonumber(ngx.var.auth_slot_num)
     
     ngx.req.read_body()
     local data = cjson.decode(ngx.req.get_body_data() or "{}")
@@ -210,11 +219,22 @@ local function handle_chat_stream()
         send_json(400, { error = "Message cannot be empty" })
     end
 
-    -- Check rate limits
-    local message_count = check_rate_limit(red, username)
+    -- Check rate limits based on user type
+    local red, err = connect_redis()
     
-    -- Update last active
-    red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
+    if user_type == "guest" then
+        -- Guest users: use slot-based limits (no Redis needed)
+        check_rate_limit_guest(slot_num)
+    elseif user_type == "user" or user_type == "admin" then
+        -- Regular users: use Redis-based rate limiting
+        if not red then
+            send_json(500, { error = "Service temporarily unavailable" })
+        end
+        check_rate_limit_user(red, username)
+        
+        -- Update last active for regular users
+        red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
+    end
 
     -- Set response headers for streaming
     ngx.header.content_type = "text/plain"
@@ -224,8 +244,8 @@ local function handle_chat_stream()
 
     local messages = {}
     
-    -- Include history if requested
-    if include_history then
+    -- Include history if requested (only for regular users)
+    if include_history and (user_type == "user" or user_type == "admin") then
         local history = get_chat_history(red, username, 10)
         for _, msg in ipairs(history) do
             table.insert(messages, { role = msg.role, content = msg.content })
@@ -234,8 +254,10 @@ local function handle_chat_stream()
     
     table.insert(messages, { role = "user", content = message })
 
-    -- Save user message
-    save_message_to_history(red, username, "user", message)
+    -- Save user message (only for regular users)
+    if user_type == "user" or user_type == "admin" then
+        save_message_to_history(red, username, "user", message)
+    end
 
     local accumulated = ""
     local final_response, err = call_ollama_streaming(messages, options, function(chunk)
@@ -249,7 +271,10 @@ local function handle_chat_stream()
     if err then
         send_sse_chunk({ error = err })
     else
-        save_message_to_history(red, username, "assistant", accumulated)
+        -- Save AI response (only for regular users)
+        if user_type == "user" or user_type == "admin" then
+            save_message_to_history(red, username, "assistant", accumulated)
+        end
     end
 
     send_sse_chunk("[DONE]")
@@ -257,7 +282,24 @@ local function handle_chat_stream()
 end
 
 local function handle_chat_history()
-    local username, red = verify_user_token()
+    local user_type = ngx.var.auth_user_type
+    local username = ngx.var.auth_username
+    
+    -- Only regular users can access history
+    if user_type == "guest" then
+        send_json(200, {
+            success = true,
+            messages = {},
+            count = 0,
+            note = "Guest sessions do not save history"
+        })
+    end
+    
+    local red, err = connect_redis()
+    if not red then
+        send_json(500, { error = "Service temporarily unavailable" })
+    end
+    
     local limit = tonumber(ngx.var.arg_limit) or 20
     local history = get_chat_history(red, username, limit)
     
@@ -269,7 +311,22 @@ local function handle_chat_history()
 end
 
 local function handle_clear_chat()
-    local username, red = verify_user_token()
+    local user_type = ngx.var.auth_user_type
+    local username = ngx.var.auth_username
+    
+    -- Only regular users can clear history
+    if user_type == "guest" then
+        send_json(200, {
+            success = true,
+            message = "Guest sessions do not save history"
+        })
+    end
+    
+    local red, err = connect_redis()
+    if not red then
+        send_json(500, { error = "Service temporarily unavailable" })
+    end
+    
     local chat_key = "chat:" .. username
     red:del(chat_key)
     

@@ -1,28 +1,26 @@
-FROM ${OLLAMA_MODEL}
+SYSTEM """You are $MODEL_DISPLAY_NAME, an advanced AI assistant specialized in coding and technical problem-solving.
 
-SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant specialized in coding and technical problem-solving.
-
-${MODEL_DESCRIPTION}
+$MODEL_DESCRIPTION
 
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."""
 
-# Memory settings from .env (FIXED - removed unsupported use_mlock)
-PARAMETER use_mmap ${MODEL_USE_MMAP}
+# Memory settings
+PARAMETER use_mmap $MODEL_USE_MMAP
 
-# Core model parameters from .env
-PARAMETER temperature ${MODEL_TEMPERATURE}
-PARAMETER top_p ${MODEL_TOP_P}
-PARAMETER top_k ${MODEL_TOP_K}
-PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
+# Core model parameters
+PARAMETER temperature $MODEL_TEMPERATURE
+PARAMETER top_p $MODEL_TOP_P
+PARAMETER top_k $MODEL_TOP_K
+PARAMETER repeat_penalty $MODEL_REPEAT_PENALTY
 
-# Hybrid configuration from .env
-PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
-PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
-PARAMETER num_thread ${OLLAMA_NUM_THREAD}
-PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
+# Hybrid configuration
+PARAMETER num_ctx $OLLAMA_CONTEXT_SIZE
+PARAMETER num_gpu $OLLAMA_GPU_LAYERS
+PARAMETER num_thread $OLLAMA_NUM_THREAD
+PARAMETER num_batch $OLLAMA_BATCH_SIZE
 
-# Response settings from .env
-PARAMETER num_predict ${MODEL_MAX_TOKENS}
+# Response settings
+PARAMETER num_predict $MODEL_MAX_TOKENS
 PARAMETER repeat_last_n 64
 
 # Stop sequences
