@@ -176,6 +176,10 @@
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/common.js"></script>
     <script>
+        if (new URLSearchParams(window.location.search).has("clear_cache")) {
+            window.location.href = '/';
+            }
+
         // Animated background with improved performance
         const canvas = document.getElementById("bg");
         const ctx = canvas.getContext("2d");

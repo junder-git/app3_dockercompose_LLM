@@ -1,706 +1,214 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat - ai.junder.uk</title>
-    <link href="/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/css/common.css">
-    <style>
-        /* Streaming-specific styles */
-        .streaming-content {
-            position: relative;
-        }
-        
-        .cursor {
-            animation: blink 1s infinite;
-            color: var(--primary-color);
-            font-weight: bold;
-        }
-        
-        @keyframes blink {
-            0%, 50% { opacity: 1; }
-            51%, 100% { opacity: 0; }
-        }
-        
-        .stop-button {
-            background-color: var(--danger-color);
-            border-color: var(--danger-color);
-            color: white;
-        }
-        
-        .stop-button:hover {
-            background-color: #c82333;
-            border-color: #bd2130;
-        }
-        
-        .interrupted-text {
-            color: var(--text-muted);
-            font-style: italic;
-        }
-        
-        /* Enhanced chat input area */
-        .chat-input-container {
-            position: relative;
-        }
-        
-        .input-controls {
-            display: flex;
-            gap: 8px;
-            align-items: end;
-        }
-        
-        .input-controls .btn-icon {
-            min-width: 44px;
-            height: 44px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat - ai.junder.uk</title>
+  <link href="/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/common.css" />
+  <style>
+    /* Enhance chat input area */
+    .chat-input {
+      min-height: 100px;
+      max-height: 250px;
+    }
+    .input-controls .btn-icon {
+      min-width: 44px;
+      height: 44px;
+    }
+    .stop-button {
+      background-color: var(--danger-color);
+      color: white;
+    }
+    .stop-button:hover {
+      background-color: #c82333;
+    }
+  </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand logo-brand" href="/">
-                <i class="bi bi-lightning-charge-fill"></i> ai.junder.uk
+  <nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item"><a class="nav-link active" href="/chat.html"><i class="bi bi-chat-dots"></i> Chat</a></li>
+        </ul>
+        <ul class="navbar-nav">
+          <li class="nav-item dropdown" id="user-nav">
+            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle"></i> <span id="navbar-username">{{ username }}</span>
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="/chat.html">
-                            <i class="bi bi-chat-dots"></i> Chat
-                        </a>
-                    </li>
-                    <li class="nav-item" id="admin-nav" style="display: none;">
-                        <a class="nav-link" href="/admin.html">
-                            <i class="bi bi-gear"></i> Admin
-                        </a>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item dropdown" id="user-nav">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-person-circle"></i> <span id="navbar-username">{{ username }}</span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="/"><i class="bi bi-house"></i> Home</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="#" id="logout-button"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
-                        </ul>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
-
-    <main class="chat-container">
-        <div class="chat-header">
-            <div>
-                <h5 class="mb-1">
-                    <i class="bi bi-robot text-primary"></i> Devstral AI Chat
-                </h5>
-                <small class="text-muted">{{ model_info }} | User: {{ username }} | Messages today: {{ user_message_count }}</small>
-            </div>
-            <div class="chat-actions">
-                <button class="btn btn-outline-primary btn-icon" id="clear-chat" title="Clear Chat">
-                    <i class="bi bi-trash"></i>
-                </button>
-                <button class="btn btn-outline-secondary btn-icon" id="export-chat" title="Export Chat">
-                    <i class="bi bi-download"></i>
-                </button>
-                <button class="btn btn-outline-info btn-icon" id="chat-settings" title="Settings">
-                    <i class="bi bi-gear"></i>
-                </button>
-            </div>
-        </div>
-
-        <div class="chat-messages" id="chat-messages">
-            <div class="welcome-message" id="welcome-message">
-                <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
-                <p>I'm your advanced coding and reasoning assistant. Ask me anything about programming, problem-solving, or technical questions.</p>
-                
-                <div class="suggestions">
-                    <div class="suggestion-card" onclick="sendSuggestion('How do I implement a binary search algorithm in Python?')">
-                        <strong><i class="bi bi-code-slash"></i> Binary Search</strong>
-                        <p>Learn algorithm implementation</p>
-                    </div>
-                    <div class="suggestion-card" onclick="sendSuggestion('Explain the difference between async/await and Promises in JavaScript')">
-                        <strong><i class="bi bi-lightning"></i> Async Programming</strong>
-                        <p>JavaScript concurrency concepts</p>
-                    </div>
-                    <div class="suggestion-card" onclick="sendSuggestion('Help me debug this SQL query performance issue')">
-                        <strong><i class="bi bi-database"></i> SQL Optimization</strong>
-                        <p>Database performance tuning</p>
-                    </div>
-                    <div class="suggestion-card" onclick="sendSuggestion('What are the best practices for React component architecture?')">
-                        <strong><i class="bi bi-layers"></i> React Architecture</strong>
-                        <p>Frontend development patterns</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="chat-input-container">
-            <form class="chat-input-form" id="chat-form">
-                <div class="input-controls">
-                    <textarea 
-                        class="form-control chat-input" 
-                        id="chat-input" 
-                        placeholder="Ask me anything about coding, algorithms, or technical problems... (Enter to send, Shift+Enter for new line)" 
-                        rows="1" 
-                        required></textarea>
-                    
-                    <!-- Send Button -->
-                    <button type="submit" class="btn btn-primary btn-icon" id="send-button">
-                        <i class="bi bi-send"></i>
-                    </button>
-                    
-                    <!-- Stop Button (hidden by default) -->
-                    <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation">
-                        <i class="bi bi-stop-fill"></i>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </main>
-
-    <!-- Settings Modal -->
-    <div class="modal fade" id="settingsModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content bg-dark">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-primary">
-                        <i class="bi bi-gear"></i> Chat Settings
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Model Temperature</label>
-                        <input type="range" class="form-range" id="temperature-slider" min="0" max="1" step="0.1" value="0.7">
-                        <small class="text-muted">Controls creativity (0.1 = focused, 1.0 = creative)</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Max Response Length</label>
-                        <select class="form-select" id="max-tokens">
-                            <option value="1024">Short (1024 tokens)</option>
-                            <option value="2048" selected>Medium (2048 tokens)</option>
-                            <option value="3072">Long (3072 tokens)</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
-                            <label class="form-check-label">Auto-scroll to new messages</label>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="streaming-enabled" checked>
-                            <label class="form-check-label">Enable streaming responses</label>
-                        </div>
-                        <small class="text-muted">When enabled, responses appear as they're generated and can be interrupted</small>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Save Settings</button>
-                </div>
-            </div>
-        </div>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="/"><i class="bi bi-house"></i> Home</a></li>
+              <li><hr class="dropdown-divider" /></li>
+              <li><a class="dropdown-item" href="#" id="logout-button"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
     </div>
-
-    <script src="/js/lib/jquery.min.js"></script>
-    <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/common.js"></script>
-    <script>
-        class DevstralChat {
-            constructor() {
-                this.messages = [];
-                this.isTyping = false;
-                this.autoScroll = true;
-                this.streamingEnabled = true;
-                this.currentStream = null;
-                this.abortController = null;
-                this.currentResponseElement = null;
-                this.init();
-            }
-
-            init() {
-                this.setupEventListeners();
-                this.loadChatHistory();
-                this.setupTextareaAutoResize();
-                this.initializeNavigation();
-                this.loadSettings();
-            }
-
-            initializeNavigation() {
-                // Simplified - server handles admin validation
-                const username = '{{ username }}';
-                if (username && username !== '{{ username }}') {
-                    document.getElementById('navbar-username').textContent = username;
-                    const userNav = document.getElementById('user-nav');
-                    if (userNav) userNav.style.display = 'block';
-                    
-                    // Load user info to show admin nav if needed
-                    this.loadUserInfo();
-                }
-            }
-
-            async loadUserInfo() {
-                try {
-                    const response = await fetch('/api/auth/me', {
-                        credentials: 'include'
-                    });
-                    const data = await response.json();
-                    
-                    if (data.success && data.is_admin) {
-                        const adminNav = document.getElementById('admin-nav');
-                        if (adminNav) adminNav.style.display = 'block';
-                    }
-                } catch (error) {
-                    console.warn('Could not load user info:', error);
-                }
-            }
-
-            setupEventListeners() {
-                // Form submission
-                document.getElementById('chat-form').addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    this.sendMessage();
-                });
-
-                // Stop button
-                document.getElementById('stop-button').addEventListener('click', () => {
-                    this.stopGeneration();
-                });
-
-                // Clear chat
-                document.getElementById('clear-chat').addEventListener('click', () => {
-                    this.clearChat();
-                });
-
-                // Export chat
-                document.getElementById('export-chat').addEventListener('click', () => {
-                    this.exportChat();
-                });
-
-                // Settings
-                document.getElementById('chat-settings').addEventListener('click', () => {
-                    new bootstrap.Modal(document.getElementById('settingsModal')).show();
-                });
-
-                // Settings changes
-                document.getElementById('streaming-enabled').addEventListener('change', (e) => {
-                    this.streamingEnabled = e.target.checked;
-                    this.saveSettings();
-                });
-
-                // Logout - calls proper API
-                document.getElementById('logout-button').addEventListener('click', () => {
-                    this.logout();
-                });
-
-                // Enter key handling
-                document.getElementById('chat-input').addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        if (this.isTyping) {
-                            this.stopGeneration();
-                        } else {
-                            this.sendMessage();
-                        }
-                    }
-                });
-            }
-
-            setupTextareaAutoResize() {
-                const textarea = document.getElementById('chat-input');
-                textarea.addEventListener('input', () => {
-                    textarea.style.height = 'auto';
-                    textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
-                });
-            }
-
-            async sendMessage() {
-                const input = document.getElementById('chat-input');
-                const message = input.value.trim();
-                
-                if (!message || this.isTyping) return;
-
-                document.getElementById('welcome-message').style.display = 'none';
-
-                this.addMessage('user', message);
-                input.value = '';
-                input.style.height = 'auto';
-
-                if (this.streamingEnabled) {
-                    await this.streamResponse(message);
-                } else {
-                    await this.sendNonStreamingMessage(message);
-                }
-            }
-
-            async streamResponse(message) {
-                this.isTyping = true;
-                this.updateSendButton(true);
-                
-                this.abortController = new AbortController();
-                const aiMessageElement = this.createAIMessageElement();
-                this.currentResponseElement = aiMessageElement;
-
-                try {
-                    const response = await fetch('/api/chat/stream', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        signal: this.abortController.signal,
-                        body: JSON.stringify({ 
-                            message: message,
-                            include_history: true 
-                        })
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let accumulatedText = '';
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        
-                        if (done) break;
-
-                        const chunk = decoder.decode(value, { stream: true });
-                        const lines = chunk.split('\n');
-
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                const jsonStr = line.slice(6);
-                                if (jsonStr === '[DONE]') {
-                                    this.finishStreaming(accumulatedText);
-                                    return;
-                                }
-
-                                try {
-                                    const data = JSON.parse(jsonStr);
-                                    if (data.content) {
-                                        accumulatedText += data.content;
-                                        this.updateAIMessage(aiMessageElement, accumulatedText);
-                                    }
-                                    if (data.error) {
-                                        throw new Error(data.error);
-                                    }
-                                } catch (parseError) {
-                                    console.warn('Malformed JSON:', jsonStr);
-                                }
-                            }
-                        }
-                    }
-
-                    this.finishStreaming(accumulatedText);
-
-                } catch (error) {
-                    if (error.name === 'AbortError') {
-                        this.updateAIMessage(aiMessageElement, accumulatedText + '\n\n<span class="interrupted-text">[Response interrupted by user]</span>');
-                        this.finishStreaming(accumulatedText);
-                    } else {
-                        console.error('Streaming error:', error);
-                        this.updateAIMessage(aiMessageElement, 'Sorry, I encountered an error. Please try again.');
-                        this.finishStreaming('');
-                    }
-                }
-            }
-
-            async sendNonStreamingMessage(message) {
-                this.isTyping = true;
-                this.updateSendButton(true);
-
-                try {
-                    const response = await fetch('/api/chat/message', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ 
-                            message: message,
-                            include_history: true 
-                        })
-                    });
-
-                    const data = await response.json();
-
-                    if (data.success) {
-                        this.addMessage('ai', data.message);
-                    } else {
-                        this.addMessage('ai', 'Error: ' + (data.error || 'Failed to get response'));
-                    }
-                } catch (error) {
-                    console.error('Chat API error:', error);
-                    this.addMessage('ai', 'Sorry, I encountered a connection error. Please try again.');
-                } finally {
-                    this.isTyping = false;
-                    this.updateSendButton(false);
-                }
-            }
-
-            createAIMessageElement() {
-                const messagesContainer = document.getElementById('chat-messages');
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message message-ai';
-
-                const avatar = document.createElement('div');
-                avatar.className = 'message-avatar avatar-ai';
-                avatar.innerHTML = '<i class="bi bi-robot"></i>';
-
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContent.innerHTML = '<div class="streaming-content"></div>';
-
-                const messageTime = document.createElement('div');
-                messageTime.className = 'message-time';
-                messageTime.textContent = new Date().toLocaleTimeString();
-
-                messageDiv.appendChild(avatar);
-                messageDiv.appendChild(messageContent);
-                messageContent.appendChild(messageTime);
-
-                messagesContainer.appendChild(messageDiv);
-                this.scrollToBottom();
-
-                return messageDiv;
-            }
-
-            updateAIMessage(element, content) {
-                const streamingContent = element.querySelector('.streaming-content');
-                if (streamingContent) {
-                    streamingContent.innerHTML = this.formatMessage(content) + '<span class="cursor">▋</span>';
-                    this.scrollToBottom();
-                }
-            }
-
-            finishStreaming(finalContent) {
-                this.isTyping = false;
-                this.updateSendButton(false);
-                this.abortController = null;
-
-                if (this.currentResponseElement) {
-                    const streamingContent = this.currentResponseElement.querySelector('.streaming-content');
-                    if (streamingContent) {
-                        streamingContent.innerHTML = this.formatMessage(finalContent);
-                    }
-                    this.currentResponseElement = null;
-                }
-            }
-
-            stopGeneration() {
-                if (this.abortController) {
-                    this.abortController.abort();
-                }
-            }
-
-            updateSendButton(isGenerating) {
-                const sendButton = document.getElementById('send-button');
-                const stopButton = document.getElementById('stop-button');
-                
-                if (isGenerating) {
-                    sendButton.style.display = 'none';
-                    stopButton.style.display = 'flex';
-                } else {
-                    sendButton.style.display = 'flex';
-                    stopButton.style.display = 'none';
-                }
-            }
-
-            addMessage(sender, content) {
-                const messagesContainer = document.getElementById('chat-messages');
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message message-${sender}`;
-
-                const avatar = document.createElement('div');
-                avatar.className = `message-avatar avatar-${sender}`;
-                avatar.innerHTML = sender === 'user' ? '<i class="bi bi-person"></i>' : '<i class="bi bi-robot"></i>';
-
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContent.innerHTML = this.formatMessage(content);
-
-                const messageTime = document.createElement('div');
-                messageTime.className = 'message-time';
-                messageTime.textContent = new Date().toLocaleTimeString();
-
-                if (sender === 'user') {
-                    messageDiv.appendChild(messageContent);
-                    messageDiv.appendChild(avatar);
-                    messageContent.appendChild(messageTime);
-                } else {
-                    messageDiv.appendChild(avatar);
-                    messageDiv.appendChild(messageContent);
-                    messageContent.appendChild(messageTime);
-                }
-
-                messagesContainer.appendChild(messageDiv);
-                this.scrollToBottom();
-            }
-
-            formatMessage(content) {
-                return content
-                    .replace(/\n/g, '<br>')
-                    .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
-                    .replace(/`([^`]+)`/g, '<code>$1</code>')
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
-            }
-
-            // Fixed logout - calls server API
-            async logout() {
-                try {
-                    await fetch('/api/auth/logout', {
-                        method: 'POST',
-                        credentials: 'include'
-                    });
-                } catch (error) {
-                    console.warn('Logout API call failed:', error);
-                }
-
-                // Clear any client storage
-                try {
-                    localStorage.clear();
-                    sessionStorage.clear();
-                } catch (e) {
-                    console.warn('Could not clear storage');
-                }
-
-                // Redirect immediately
-                window.location.href = '/';
-            }
-
-            loadSettings() {
-                try {
-                    const settings = JSON.parse(localStorage.getItem('chat_settings') || '{}');
-                    this.streamingEnabled = settings.streamingEnabled !== false; // default true
-                    this.autoScroll = settings.autoScroll !== false; // default true
-                    
-                    document.getElementById('streaming-enabled').checked = this.streamingEnabled;
-                    document.getElementById('auto-scroll').checked = this.autoScroll;
-                } catch (e) {
-                    console.warn('Could not load settings');
-                }
-            }
-
-            saveSettings() {
-                try {
-                    const settings = {
-                        streamingEnabled: this.streamingEnabled,
-                        autoScroll: this.autoScroll
-                    };
-                    localStorage.setItem('chat_settings', JSON.stringify(settings));
-                } catch (e) {
-                    console.warn('Could not save settings');
-                }
-            }
-
-            async clearChat() {
-                if (confirm('Are you sure you want to clear the chat history?')) {
-                    try {
-                        const response = await fetch('/api/chat/clear', {
-                            method: 'POST',
-                            credentials: 'include'
-                        });
-
-                        const data = await response.json();
-
-                        if (data.success) {
-                            document.getElementById('chat-messages').innerHTML = `
-                                <div class="welcome-message" id="welcome-message" style="display: block;">
-                                    <h4><i class="bi bi-robot"></i> Welcome to Devstral AI!</h4>
-                                    <p>I'm your advanced coding and reasoning assistant.</p>
-                                </div>
-                            `;
-                            this.messages = [];
-                        } else {
-                            alert('Failed to clear chat: ' + data.error);
-                        }
-                    } catch (error) {
-                        console.error('Clear chat error:', error);
-                        alert('Failed to clear chat. Please try again.');
-                    }
-                }
-            }
-
-            exportChat() {
-                // Implementation same as before
-                console.log('Export functionality would be implemented here');
-            }
-
-            scrollToBottom() {
-                if (this.autoScroll) {
-                    const messagesContainer = document.getElementById('chat-messages');
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                }
-            }
-
-            async loadChatHistory() {
-                try {
-                    const response = await fetch('/api/chat/history?limit=20', {
-                        method: 'GET',
-                        credentials: 'include'
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.success && data.messages.length > 0) {
-                            document.getElementById('welcome-message').style.display = 'none';
-                            
-                            data.messages.forEach(msg => {
-                                this.addMessageToDOM(msg.role === 'user' ? 'user' : 'ai', msg.content);
-                            });
-                        }
-                    }
-                } catch (error) {
-                    console.warn('Could not load chat history:', error);
-                }
-            }
-
-            addMessageToDOM(sender, content) {
-                const messagesContainer = document.getElementById('chat-messages');
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message message-${sender}`;
-
-                const avatar = document.createElement('div');
-                avatar.className = `message-avatar avatar-${sender}`;
-                avatar.innerHTML = sender === 'user' ? '<i class="bi bi-person"></i>' : '<i class="bi bi-robot"></i>';
-
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContent.innerHTML = this.formatMessage(content);
-
-                if (sender === 'user') {
-                    messageDiv.appendChild(messageContent);
-                    messageDiv.appendChild(avatar);
-                } else {
-                    messageDiv.appendChild(avatar);
-                    messageDiv.appendChild(messageContent);
-                }
-
-                messagesContainer.appendChild(messageDiv);
-            }
-        }
-
-        // Global function for suggestion cards
-        function sendSuggestion(text) {
-            document.getElementById('chat-input').value = text;
-            chat.sendMessage();
-        }
-
-        // Initialize chat when page loads
-        let chat;
-        document.addEventListener('DOMContentLoaded', () => {
-            chat = new DevstralChat();
+  </nav>
+
+  <main class="chat-container">
+    <div class="chat-messages" id="chat-messages"></div>
+
+    <div class="chat-input-container">
+      <form id="chat-form" class="chat-input-form">
+        <div class="input-controls">
+          <textarea class="form-control chat-input" id="chat-input" placeholder="Ask me anything..." required></textarea>
+          <button type="submit" class="btn btn-primary btn-icon" id="send-button"><i class="bi bi-send"></i></button>
+          <button type="button" class="btn btn-danger btn-icon stop-button" id="stop-button" style="display: none;" title="Stop Generation">
+            <i class="bi bi-stop-fill"></i>
+          </button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="/js/lib/jquery.min.js"></script>
+  <script src="/js/lib/bootstrap.min.js"></script>
+  <script>
+    class DevstralChat {
+      constructor() {
+        this.isTyping = false;
+        this.abortController = null;
+        this.init();
+      }
+
+      init() {
+        document.getElementById('chat-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          this.sendMessage();
         });
-    </script>
+
+        document.getElementById('stop-button').addEventListener('click', () => {
+          this.stopGeneration();
+        });
+
+        document.getElementById('logout-button').addEventListener('click', () => {
+          this.logout();
+        });
+
+        const textarea = document.getElementById('chat-input');
+        textarea.addEventListener('input', () => {
+          textarea.style.height = 'auto';
+          textarea.style.height = Math.min(textarea.scrollHeight, 250) + 'px';
+        });
+      }
+
+      async sendMessage() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        if (!message || this.isTyping) return;
+
+        this.addMessage('user', message);
+        input.value = '';
+        input.style.height = 'auto';
+        this.isTyping = true;
+        this.updateButtons(true);
+
+        this.abortController = new AbortController();
+        const messagesContainer = document.getElementById('chat-messages');
+        const aiDiv = document.createElement('div');
+        aiDiv.className = 'message message-ai';
+        aiDiv.innerHTML = '<i class="bi bi-robot"></i> <span class="streaming-content"></span>';
+        messagesContainer.appendChild(aiDiv);
+
+        let accumulated = '';
+
+        try {
+          const response = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            signal: this.abortController.signal,
+            body: JSON.stringify({ message: message, include_history: true })
+          });
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6);
+                if (jsonStr === '[DONE]') {
+                  this.finishStreaming();
+                  return;
+                }
+
+                try {
+                  const data = JSON.parse(jsonStr);
+                  if (data.content) {
+                    accumulated += data.content;
+                    aiDiv.querySelector('.streaming-content').innerHTML = accumulated.replace(/\n/g, '<br>') + '<span class="cursor">▋</span>';
+                  }
+                  if (data.error) {
+                    throw new Error(data.error);
+                  }
+                } catch {}
+              }
+            }
+          }
+
+          this.finishStreaming();
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            aiDiv.querySelector('.streaming-content').innerHTML = accumulated + '<br><em>[Interrupted]</em>';
+            this.finishStreaming();
+          } else {
+            aiDiv.querySelector('.streaming-content').innerHTML = '<em>Error occurred</em>';
+            this.finishStreaming();
+          }
+        }
+      }
+
+      stopGeneration() {
+        if (this.abortController) {
+          this.abortController.abort();
+        }
+      }
+
+      finishStreaming() {
+        this.isTyping = false;
+        this.updateButtons(false);
+      }
+
+      updateButtons(isTyping) {
+        document.getElementById('send-button').style.display = isTyping ? 'none' : 'flex';
+        document.getElementById('stop-button').style.display = isTyping ? 'flex' : 'none';
+      }
+
+      addMessage(sender, content) {
+        const messagesContainer = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.className = `message message-${sender}`;
+        div.innerHTML = `<i class="bi bi-${sender === 'user' ? 'person' : 'robot'}"></i> ${content.replace(/\n/g, '<br>')}`;
+        messagesContainer.appendChild(div);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      async logout() {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.href = '/?clear_cache=1';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      window.chat = new DevstralChat();
+    });
+  </script>
 </body>
 </html>
