@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+{{ head }}
+<body>
+    {{ nav }}
+
+    <main class="auth-container">
+        <div class="auth-card">
+            
+            <!-- REGISTRATION STATE -->
+            <div id="register-state" style="display: {{ state == 'register' and 'block' or 'none' }};">
+                <div class="auth-header">
+                    <h2><i class="bi bi-person-plus text-primary"></i> Join Devstral AI</h2>
+                    <p>Create your account to start using advanced AI assistance</p>
+                </div>
+
+                <div id="alert-container"></div>
+
+                <form id="register-form">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">
+                            <i class="bi bi-person"></i> Username
+                        </label>
+                        <input 
+                            type="text" 
+                            class="form-control" 
+                            id="username" 
+                            name="username" 
+                            placeholder="Choose a username" 
+                            required 
+                            autocomplete="username"
+                            pattern="[a-zA-Z0-9_]{3,20}"
+                            title="Username must be 3-20 characters long and contain only letters, numbers, and underscores">
+                        <div class="form-text">3-20 characters, letters, numbers, and underscores only</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <i class="bi bi-lock"></i> Password
+                        </label>
+                        <div class="input-group">
+                            <input 
+                                type="password" 
+                                class="form-control" 
+                                id="password" 
+                                name="password" 
+                                placeholder="Create a strong password" 
+                                required 
+                                autocomplete="new-password"
+                                minlength="6">
+                            <button 
+                                class="btn btn-outline-secondary" 
+                                type="button" 
+                                id="toggle-password">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Minimum 6 characters</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="confirm-password" class="form-label">
+                            <i class="bi bi-lock-fill"></i> Confirm Password
+                        </label>
+                        <input 
+                            type="password" 
+                            class="form-control" 
+                            id="confirm-password" 
+                            name="confirm-password" 
+                            placeholder="Confirm your password" 
+                            required 
+                            autocomplete="new-password">
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="password-strength">
+                            <div class="password-strength-bar">
+                                <div class="password-strength-fill" id="password-strength-fill"></div>
+                            </div>
+                            <small class="text-muted" id="password-strength-text">Password strength</small>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="terms-agreement" required>
+                        <label class="form-check-label" for="terms-agreement">
+                            I agree to the <a href="#" class="text-primary">Terms of Service</a> and <a href="#" class="text-primary">Privacy Policy</a>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 mb-3" id="register-btn">
+                        <i class="bi bi-person-plus"></i> Create Account
+                    </button>
+                </form>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Account Approval:</strong> Your account will require admin approval before you can start chatting.
+                </div>
+
+                <div class="text-center">
+                    <p class="text-muted">Already have an account?</p>
+                    <a href="/login.html" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-in-right"></i> Sign In
+                    </a>
+                </div>
+            </div>
+
+            <!-- PENDING STATE -->
+            <div id="pending-state" style="display: {{ state == 'pending' and 'block' or 'none' }};">
+                <div class="text-center">
+                    <div class="pending-icon" style="font-size: 4rem; color: #ffc107; margin-bottom: 1.5rem; animation: pulse 2s ease-in-out infinite alternate;">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                    
+                    <h2 style="color: #ffc107; margin-bottom: 1rem;">Account Pending Approval</h2>
+                    
+                    <p style="color: var(--text-secondary); margin-bottom: 2rem; line-height: 1.6;">
+                        Hello <strong>{{ username }}</strong>! Your account has been created successfully 
+                        and is currently pending administrator approval.
+                    </p>
+
+                    <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; text-align: left;">
+                        <h6 style="color: #ffc107; margin-bottom: 1rem;"><i class="bi bi-info-circle"></i> What happens next?</h6>
+                        <ul style="margin-bottom: 0; padding-left: 1.5rem;">
+                            <li style="margin-bottom: 0.5rem;">An administrator will review your account</li>
+                            <li style="margin-bottom: 0.5rem;">You'll be notified once approved (usually within 24 hours)</li>
+                            <li style="margin-bottom: 0.5rem;">After approval, you'll have full access to all features</li>
+                            <li style="margin-bottom: 0.5rem;">You can bookmark this page and check back later</li>
+                        </ul>
+                    </div>
+
+                    <div style="background: rgba(255, 193, 7, 0.1); border: 1px solid rgba(255, 193, 7, 0.3); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; text-align: left;">
+                        <h6 style="color: #ffc107; margin-bottom: 1rem;"><i class="bi bi-star"></i> What you'll get after approval:</h6>
+                        <ul style="margin-bottom: 0; padding-left: 1.5rem;">
+                            <li style="margin-bottom: 0.5rem;">Unlimited chat messages with Devstral AI</li>
+                            <li style="margin-bottom: 0.5rem;">Full chat history saved in Redis</li>
+                            <li style="margin-bottom: 0.5rem;">Priority access to chat sessions</li>
+                            <li style="margin-bottom: 0.5rem;">Export and download your conversations</li>
+                            <li style="margin-bottom: 0.5rem;">Access to your personal dashboard</li>
+                        </ul>
+                    </div>
+
+                    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem;">
+                        <button class="btn btn-warning" onclick="checkApprovalStatus()">
+                            <i class="bi bi-arrow-clockwise"></i> Check Status
+                        </button>
+                        <a href="/" class="btn btn-outline-primary">
+                            <i class="bi bi-house"></i> Back to Home
+                        </a>
+                        <button class="btn btn-outline-secondary" onclick="DevstralCommon.logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+
+                    <div>
+                        <small class="text-muted">
+                            <i class="bi bi-shield-check"></i> 
+                            Account created on {{ created_at }} • Secure approval process
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="text-center">
+                <small class="text-muted">
+                    <i class="bi bi-shield-check"></i> 
+                    Secure registration powered by ai.junder.uk
+                </small>
+            </div>
+        </div>
+    </main>
+
+{{ scripts }}
+
+<script>
+    class RegisterPage {
+        constructor() {
+            this.state = '{{ state }}';
+            this.init();
+        }
+
+        init() {
+            if (this.state === 'register') {
+                this.setupRegisterListeners();
+            } else if (this.state === 'pending') {
+                this.setupPendingListeners();
+            }
+        }
+
+        setupRegisterListeners() {
+            document.getElementById('register-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleRegister();
+            });
+
+            document.getElementById('toggle-password').addEventListener('click', () => {
+                this.togglePassword();
+            });
+
+            document.getElementById('password').addEventListener('input', (e) => {
+                this.checkPasswordStrength(e.target.value);
+            });
+
+            document.getElementById('confirm-password').addEventListener('input', () => {
+                this.validatePasswordMatch();
+            });
+
+            document.getElementById('username').addEventListener('input', (e) => {
+                this.validateUsername(e.target.value);
+            });
+        }
+
+        setupPendingListeners() {
+            this.startAutoCheck();
+            
+            window.checkApprovalStatus = async () => {
+                const button = document.querySelector('.btn-warning');
+                const originalText = button.innerHTML;
+                
+                button.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+                button.disabled = true;
+
+                try {
+                    const response = await fetch('/api/auth/me', { credentials: 'include' });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        if (data.success && data.is_approved) {
+                            this.showApprovalSuccess();
+                            setTimeout(() => {
+                                window.location.href = '/chat.html';
+                            }, 2000);
+                            return;
+                        } else if (data.user_type === 'pending') {
+                            this.showStatusMessage('Still pending approval. Please check back later.', 'warning');
+                        } else {
+                            this.showStatusMessage('Account status changed. Please refresh the page.', 'info');
+                        }
+                    } else {
+                        throw new Error('Failed to check status');
+                    }
+                } catch (error) {
+                    console.error('Status check error:', error);
+                    this.showStatusMessage('Failed to check status. Please try again.', 'danger');
+                } finally {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }
+            };
+        }
+
+        showApprovalSuccess() {
+            document.getElementById('pending-state').innerHTML = `
+                <div class="text-center">
+                    <div class="text-success" style="font-size: 4rem; margin-bottom: 1.5rem;">
+                        <i class="bi bi-check-circle-fill"></i>
+                    </div>
+                    <h2 class="text-success mb-3">Account Approved!</h2>
+                    <p class="text-muted mb-3">
+                        Congratulations! Your account has been approved by an administrator.
+                        You now have full access to Devstral AI.
+                    </p>
+                    <div class="alert alert-success">
+                        <i class="bi bi-arrow-right"></i> Redirecting to chat interface...
+                    </div>
+                </div>
+            `;
+        }
+
+        showStatusMessage(message, type) {
+            const existingAlerts = document.querySelectorAll('.temp-alert');
+            existingAlerts.forEach(alert => alert.remove());
+
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type} mt-3 temp-alert`;
+            alert.innerHTML = `<i class="bi bi-info-circle"></i> ${message}`;
+            
+            document.querySelector('.btn-warning').parentElement.insertAdjacentElement('afterend', alert);
+
+            setTimeout(() => {
+                if (alert.parentNode) alert.remove();
+            }, 5000);
+        }
+
+        startAutoCheck() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/api/auth/me', { credentials: 'include' });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success && data.is_approved) {
+                            this.showApprovalSuccess();
+                            setTimeout(() => {
+                                window.location.href = '/chat.html';
+                            }, 2000);
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Auto-check failed:', error);
+                }
+            }, 30000);
+        }
+
+        togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const toggleButton = document.getElementById('toggle-password');
+            const icon = toggleButton.querySelector('i');
+
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.className = 'bi bi-eye-slash';
+            } else {
+                passwordInput.type = 'password';
+                icon.className = 'bi bi-eye';
+            }
+        }
+
+        showAlert(message, type = 'danger') {
+            const alertContainer = document.getElementById('alert-container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alertDiv);
+
+            if (type !== 'success') {
+                setTimeout(() => {
+                    if (alertDiv.parentNode) {
+                        alertDiv.remove();
+                    }
+                }, 5000);
+            }
+        }
+
+        checkPasswordStrength(password) {
+            const strengthBar = document.getElementById('password-strength-fill');
+            const strengthText = document.getElementById('password-strength-text');
+            
+            let strength = 0;
+            let strengthLabel = 'Very Weak';
+            let strengthColor = '#dc3545';
+
+            if (password.length >= 6) strength += 1;
+            if (password.length >= 10) strength += 1;
+            if (/[a-z]/.test(password)) strength += 1;
+            if (/[A-Z]/.test(password)) strength += 1;
+            if (/[0-9]/.test(password)) strength += 1;
+            if (/[^A-Za-z0-9]/.test(password)) strength += 1;
+
+            const strengthWidth = (strength / 6) * 100;
+
+            if (strength >= 5) {
+                strengthLabel = 'Very Strong';
+                strengthColor = '#28a745';
+            } else if (strength >= 4) {
+                strengthLabel = 'Strong';
+                strengthColor = '#20c997';
+            } else if (strength >= 3) {
+                strengthLabel = 'Moderate';
+                strengthColor = '#ffc107';
+            } else if (strength >= 2) {
+                strengthLabel = 'Weak';
+                strengthColor = '#fd7e14';
+            }
+
+            strengthBar.style.width = strengthWidth + '%';
+            strengthBar.style.backgroundColor = strengthColor;
+            strengthText.textContent = `Password strength: ${strengthLabel}`;
+            strengthText.style.color = strengthColor;
+        }
+
+        validatePasswordMatch() {
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const confirmInput = document.getElementById('confirm-password');
+
+            if (confirmPassword && password !== confirmPassword) {
+                confirmInput.setCustomValidity('Passwords do not match');
+                confirmInput.classList.add('is-invalid');
+            } else {
+                confirmInput.setCustomValidity('');
+                confirmInput.classList.remove('is-invalid');
+            }
+        }
+
+        validateUsername(username) {
+            const usernameInput = document.getElementById('username');
+            const pattern = /^[a-zA-Z0-9_]{3,20}$/;
+
+            if (username && !pattern.test(username)) {
+                usernameInput.setCustomValidity('Username must be 3-20 characters and contain only letters, numbers, and underscores');
+                usernameInput.classList.add('is-invalid');
+            } else {
+                usernameInput.setCustomValidity('');
+                usernameInput.classList.remove('is-invalid');
+            }
+        }
+
+        async handleRegister() {
+            const registerBtn = document.getElementById('register-btn');
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const termsAgreed = document.getElementById('terms-agreement').checked;
+
+            if (!username || !password || !confirmPassword) {
+                this.showAlert('<i class="bi bi-exclamation-triangle"></i> Please fill in all fields.');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                this.showAlert('<i class="bi bi-exclamation-triangle"></i> Passwords do not match.');
+                return;
+            }
+
+            if (!termsAgreed) {
+                this.showAlert('<i class="bi bi-exclamation-triangle"></i> Please agree to the Terms of Service and Privacy Policy.');
+                return;
+            }
+
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating account...';
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (data.message) {
+                    this.showAlert(
+                        '<i class="bi bi-check-circle"></i> ' + data.message + ' You can now login once approved.',
+                        'success'
+                    );
+                    
+                    document.getElementById('register-form').reset();
+                    
+                    setTimeout(() => {
+                        window.location.href = '/login.html';
+                    }, 3000);
+                } else {
+                    let errorMessage = '<i class="bi bi-x-circle"></i> ';
+                    
+                    switch (data.error) {
+                        case 'User already exists':
+                            errorMessage += 'Username already taken. Please choose a different username.';
+                            break;
+                        case 'Username and password required':
+                            errorMessage += 'Please provide both username and password.';
+                            break;
+                        default:
+                            errorMessage += data.error || 'Registration failed. Please try again.';
+                    }
+                    
+                    this.showAlert(errorMessage);
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                this.showAlert('<i class="bi bi-wifi-off"></i> Connection error. Please check your internet connection and try again.');
+            } finally {
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = '<i class="bi bi-person-plus"></i> Create Account';
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        new RegisterPage();
+    });
+</script>
+
+<style>
+    .password-strength {
+        margin-top: 0.5rem;
+    }
+
+    .password-strength-bar {
+        height: 4px;
+        background-color: var(--border-color);
+        border-radius: 2px;
+        overflow: hidden;
+        margin-bottom: 0.25rem;
+    }
+
+    .password-strength-fill {
+        height: 100%;
+        width: 0%;
+        transition: width 0.3s ease, background-color 0.3s ease;
+        border-radius: 2px;
+    }
+
+    .is-invalid {
+        border-color: var(--danger-color) !important;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+    }
+</style>
+</body>
+</html>

@@ -1,4 +1,4 @@
--- nginx/lua/is_who.lua - Central user identification for all routes
+-- nginx/lua/is_who.lua - User identification using is_approved check for pending users
 local jwt = require "resty.jwt"
 local server = require "server"
 
@@ -27,7 +27,8 @@ function M.check()
                 elseif user_data.is_approved == "true" then
                     return "approved", username, user_data
                 else
-                    return "pending", username, user_data
+                    -- Authenticated but not approved = pending
+                    return "authenticated", username, user_data
                 end
             end
         end
@@ -75,7 +76,7 @@ function M.require_admin()
     if user_type ~= "admin" then
         ngx.status = 403
         ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Admin access required"}')
+        ngx.say('{"error": "Admin access required", "user_type": "' .. (user_type or "none") .. '"}')
         ngx.exit(403)
     end
     
@@ -88,9 +89,24 @@ function M.require_approved()
     local user_type, username, user_data = M.check()
     
     if user_type ~= "admin" and user_type ~= "approved" then
+        local error_msg = "Approved user access required"
+        local redirect_url = "/"
+        
+        -- Enhanced error responses with redirect hints
+        if user_type == "authenticated" then
+            error_msg = "Account pending approval - access denied"
+            redirect_url = "/pending_dash.html"
+        elseif user_type == "guest" then
+            error_msg = "Guest users cannot access this feature"
+            redirect_url = "/register.html"
+        elseif user_type == "none" then
+            error_msg = "Authentication required"
+            redirect_url = "/login.html"
+        end
+        
         ngx.status = 403
         ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Approved user access required"}')
+        ngx.say('{"error": "' .. error_msg .. '", "user_type": "' .. (user_type or "none") .. '", "redirect": "' .. redirect_url .. '"}')
         ngx.exit(403)
     end
     
@@ -109,7 +125,8 @@ function M.get_user_info()
             username = username,
             is_admin = true,
             is_approved = true,
-            is_guest = false
+            is_guest = false,
+            dashboard_url = "/admin_dash.html"
         }
     elseif user_type == "approved" then
         return {
@@ -118,7 +135,8 @@ function M.get_user_info()
             username = username,
             is_admin = false,
             is_approved = true,
-            is_guest = false
+            is_guest = false,
+            dashboard_url = "/user_dash.html"
         }
     elseif user_type == "guest" then
         local limits = server.get_guest_limits(username)
@@ -129,21 +147,60 @@ function M.get_user_info()
             is_admin = false,
             is_approved = false,
             is_guest = true,
-            limits = limits
+            limits = limits,
+            dashboard_url = "/chat.html"
         }
-    elseif user_type == "pending" then
+    elseif user_type == "authenticated" then
         return {
             success = false,
             user_type = "pending",
             username = username,
-            error = "Account pending approval"
+            is_admin = false,
+            is_approved = false,
+            is_guest = false,
+            error = "Account pending approval",
+            dashboard_url = "/pending_dash.html"
         }
     else
         return {
             success = false,
             user_type = "none",
-            error = "Not authenticated"
+            is_admin = false,
+            is_approved = false,
+            is_guest = false,
+            error = "Not authenticated",
+            dashboard_url = "/login.html"
         }
+    end
+end
+
+-- Get appropriate dashboard URL for user
+function M.get_dashboard_url()
+    local user_type, username, user_data = M.check()
+    
+    if user_type == "admin" then
+        return "/admin_dash.html"
+    elseif user_type == "approved" then
+        return "/user_dash.html"
+    elseif user_type == "authenticated" then
+        -- Authenticated but not approved = pending
+        return "/pending_dash.html"
+    elseif user_type == "guest" then
+        return "/chat.html"
+    else
+        return "/"
+    end
+end
+
+-- Check if user can access chat (approved users or guests only)
+function M.can_access_chat()
+    local user_type, username, user_data = M.check()
+    if user_type == "none" then
+        return false, "Authentication required"
+    elseif user_type == "authenticated" then
+        return false, "Account pending approval"
+    else
+        return true, "Access granted"
     end
 end
 
