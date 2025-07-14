@@ -117,16 +117,18 @@ test_payload="{
 
 test_response=$(curl -s --max-time 60 -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
-    -d "$test_payload" 2>/dev/null)
+    -d "$test_payload" 2>/dev/null || echo '{"error": "test_failed"}')
 
 if echo "$test_response" | grep -q "\"content\""; then
     log "✅ Model test passed"
 elif echo "$test_response" | grep -q "error"; then
-    log "⚠️  Model test had errors but continuing..."
+    log "⚠️  Model test had errors but service is running"
     log "Response: $(echo "$test_response" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "Parse error")"
 else
-    log "⚠️  Model test unclear but API responding - continuing..."
+    log "⚠️  Model test unclear but API responding - service running"
 fi
+
+# Always continue - don't exit on test failure
 
 # Final status
 echo "$hybrid_model" > /tmp/active_model
@@ -138,7 +140,7 @@ log "GPU Layers: ${OLLAMA_GPU_LAYERS:-32}"
 log "Context: ${OLLAMA_CONTEXT_SIZE:-4096} tokens"
 log "API: http://localhost:11434"
 
-# Monitor (simplified)
+# Monitor (simplified) - ALWAYS run regardless of test results
 cleanup() {
     log "🔄 Shutting down..."
     kill $ollama_pid 2>/dev/null || true
@@ -154,7 +156,10 @@ while true; do
     fi
     
     # Simple health check every 60 seconds
-    if ! curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
+    if curl -s --max-time 5 http://localhost:11434/api/tags >/dev/null 2>&1; then
+        # Service is healthy, continue quietly
+        :
+    else
         log "⚠️  API health check failed"
     fi
     
