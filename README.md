@@ -1,3 +1,24 @@
+Now both /chat and /dash routes are properly configured in the nginx.conf and both call is_who.route_to_handler() with the appropriate route type. The system is complete with:
+Routes:
+
+/login - Static HTML
+/register - Static HTML
+/ - Index with dynamic nav
+/chat - SPA routed via is_who.route_to_handler("chat")
+/dash - SPA routed via is_who.route_to_handler("dash")
+
+Routing Flow:
+
+nginx.conf catches /chat and /dash
+Calls is_who.route_to_handler("chat") or is_who.route_to_handler("dash")
+is_who determines user type and routes to appropriate handler:
+
+isadmin → is_admin.handle_chat_page() or is_admin.handle_dash_page()
+isapproved → is_approved.handle_chat_page() or is_approved.handle_dash_page()
+isguest/isnone → is_guest.handle_chat_page() or redirect to login for dash
+
+======
+
 Route Structure:
 
 Static Routes: /login, /register (no auth needed)

@@ -1,4 +1,7 @@
--- nginx/lua/is_who.lua - Server-side JWT validation and user identification
+-- =============================================================================
+-- nginx/lua/is_who.lua - CORE AUTHENTICATION AND ROUTING CONTROLLER
+-- =============================================================================
+
 local jwt = require "resty.jwt"
 local server = require "server"
 
@@ -43,7 +46,7 @@ function M.check()
     
     -- Check for guest token
     local guest_token = ngx.var.cookie_guest_token
-    if guest_token and string.match(guest_token, "^guest_") then
+    if guest_token and string.match(guest_token, "^guest_token_") then
         local guest_username = string.gsub(guest_token, "guest_token_", "guest_")
         
         -- Validate guest session in shared memory
@@ -60,10 +63,10 @@ end
 function M.set_vars()
     local user_type, username, user_data = M.check()
     
-    ngx.var.user_type = user_type
+    -- Set core variables
     ngx.var.username = username or "anonymous"
     
-    -- Server-side permission flags - NEVER trust client
+    -- Set permission flags based on Redis data (ONLY source of truth)
     if user_data then
         ngx.var.is_admin = (user_type == "admin") and "true" or "false"
         ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
@@ -72,6 +75,19 @@ function M.set_vars()
         ngx.var.is_admin = "false"
         ngx.var.is_approved = "false"
         ngx.var.is_guest = "false"
+    end
+    
+    -- Derive user_type from permission flags
+    if ngx.var.is_admin == "true" then
+        ngx.var.user_type = "isadmin"
+    elseif ngx.var.is_approved == "true" then
+        ngx.var.user_type = "isapproved"
+    elseif ngx.var.is_guest == "true" then
+        ngx.var.user_type = "isguest"
+    elseif user_type == "authenticated" then
+        ngx.var.user_type = "ispending"
+    else
+        ngx.var.user_type = "isnone"
     end
     
     return user_type, username, user_data
@@ -86,7 +102,7 @@ function M.require_admin()
         ngx.log(ngx.WARN, "Admin access denied for user_type: " .. (user_type or "none") .. ", user: " .. (username or "unknown"))
         ngx.status = 403
         ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Admin access required", "user_type": "' .. (user_type or "none") .. '"}')
+        ngx.say('{"error": "Admin access required", "user_type": "' .. (user_type or "none") .. '", "redirect": "/login"}')
         ngx.exit(403)
     end
     
@@ -109,7 +125,7 @@ function M.require_approved()
     -- CRITICAL: Must be admin or approved from server validation
     if user_type ~= "admin" and user_type ~= "approved" then
         local error_msg = "Approved user access required"
-        local redirect_url = "/"
+        local redirect_url = "/login"
         
         if user_type == "authenticated" then
             error_msg = "Account pending approval - access denied"
@@ -141,86 +157,126 @@ function M.require_approved()
     return username, user_data
 end
 
--- CLIENT API: Only returns what server permits
-function M.get_user_info()
-    local user_type, username, user_data = M.check()
+-- ROUTING CONTROLLER: Determines which handler should process the request
+function M.route_to_handler(route_type)
+    local user_type, username, user_data = M.set_vars()
     
-    -- SERVER DETERMINES WHAT CLIENT SEES
-    if user_type == "admin" then
-        return {
-            success = true,
-            user_type = "admin",
-            username = username,
-            is_admin = true,
-            is_approved = true,
-            is_guest = false,
-            dashboard_url = "/admin",
-            permissions = {"admin", "approved", "chat", "export", "manage_users"}
-        }
-    elseif user_type == "approved" then
-        return {
-            success = true,
-            user_type = "approved", 
-            username = username,
-            is_admin = false,
-            is_approved = true,
-            is_guest = false,
-            dashboard_url = "/dashboard",
-            permissions = {"approved", "chat", "export"}
-        }
-    elseif user_type == "guest" then
-        local limits = server.get_guest_limits(username)
-        return {
-            success = true,
-            user_type = "guest",
-            username = username,
-            is_admin = false,
-            is_approved = false,
-            is_guest = true,
-            limits = limits,
-            dashboard_url = "/chat",
-            permissions = {"guest_chat"}
-        }
-    elseif user_type == "authenticated" then
-        return {
-            success = false,
-            user_type = "pending",
-            username = username,
-            is_admin = false,
-            is_approved = false,
-            is_guest = false,
-            error = "Account pending approval",
-            dashboard_url = "/pending",
-            permissions = {}
-        }
+    ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", user: " .. (username or "unknown"))
+    
+    -- SYSTEMATIC ROUTING based on permission flags
+    if ngx.var.is_admin == "true" then
+        -- ADMIN: Route to is_admin handler
+        local is_admin = require "is_admin"
+        if route_type == "chat" then
+            is_admin.handle_chat_page()
+        elseif route_type == "dash" then
+            is_admin.handle_dash_page()
+        else
+            ngx.status = 404
+            ngx.say("Unknown admin route: " .. route_type)
+            ngx.exit(404)
+        end
+        
+    elseif ngx.var.is_approved == "true" then
+        -- APPROVED: Route to is_approved handler
+        local is_approved = require "is_approved"
+        if route_type == "chat" then
+            is_approved.handle_chat_page()
+        elseif route_type == "dash" then
+            is_approved.handle_dash_page()
+        else
+            ngx.status = 404
+            ngx.say("Unknown approved route: " .. route_type)
+            ngx.exit(404)
+        end
+        
+    elseif ngx.var.user_type == "ispending" then
+        -- PENDING: Redirect to pending page
+        ngx.log(ngx.INFO, "Redirecting pending user " .. username .. " to /pending")
+        return ngx.redirect("/pending")
+        
+    elseif ngx.var.is_guest == "true" or ngx.var.user_type == "isnone" then
+        -- GUEST/PUBLIC: Route to is_guest handler
+        local is_guest = require "is_guest"
+        if route_type == "chat" then
+            is_guest.handle_chat_page()
+        elseif route_type == "dash" then
+            -- Guests can't access dashboard
+            ngx.log(ngx.INFO, "Guest user attempting to access dashboard, redirecting to /login")
+            return ngx.redirect("/login")
+        else
+            ngx.status = 404
+            ngx.say("Unknown guest route: " .. route_type)
+            ngx.exit(404)
+        end
+        
     else
-        return {
-            success = false,
-            user_type = "none",
-            is_admin = false,
-            is_approved = false,
-            is_guest = false,
-            error = "Not authenticated",
-            dashboard_url = "/login",
-            permissions = {}
-        }
+        -- FALLBACK: Something went wrong
+        ngx.log(ngx.ERR, "Unknown user state for routing: " .. ngx.var.user_type)
+        return ngx.redirect("/login")
     end
 end
 
--- Helper: Get dashboard URL based on SERVER validation
-function M.get_dashboard_url()
-    local user_type, username, user_data = M.check()
+-- NAVIGATION GENERATOR: Creates nav HTML based on user permissions
+function M.generate_nav()
+    local user_type, username, user_data = M.set_vars()
     
-    if user_type == "admin" then
-        return "/admin"
-    elseif user_type == "approved" then
-        return "/dashboard"
-    elseif user_type == "authenticated" then
-        return "/pending"
+    if ngx.var.is_admin == "true" then
+        return [[
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+                    <div class="navbar-nav ms-auto">
+                        <a class="nav-link" href="/chat">Chat</a>
+                        <a class="nav-link" href="/dash">Admin Dashboard</a>
+                        <span class="navbar-text">]] .. username .. [[ (Admin)</span>
+                        <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>
+                    </div>
+                </div>
+            </nav>
+        ]]
+        
+    elseif ngx.var.is_approved == "true" then
+        return [[
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+                    <div class="navbar-nav ms-auto">
+                        <a class="nav-link" href="/chat">Chat</a>
+                        <a class="nav-link" href="/dash">Dashboard</a>
+                        <span class="navbar-text">]] .. username .. [[</span>
+                        <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>
+                    </div>
+                </div>
+            </nav>
+        ]]
+        
     elseif user_type == "guest" then
-        return "/chat"
+        return [[
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+                    <div class="navbar-nav ms-auto">
+                        <a class="nav-link" href="/chat">Guest Chat</a>
+                        <a class="nav-link" href="/register">Register</a>
+                        <span class="navbar-text">]] .. username .. [[</span>
+                    </div>
+                </div>
+            </nav>
+        ]]
+        
     else
-        return "/"
+        return [[
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+                    <div class="navbar-nav ms-auto">
+                        <a class="nav-link" href="/login">Login</a>
+                        <a class="nav-link" href="/register">Register</a>
+                    </div>
+                </div>
+            </nav>
+        ]]
     end
 end
 
