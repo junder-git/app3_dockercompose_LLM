@@ -1,6 +1,9 @@
 # Multi-stage build with maximum caching
 FROM ubuntu:22.04 AS base
 
+# Define build argument for Ollama version (gets value from docker-compose)
+ARG OLLAMA_VERSION
+
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,17 +25,9 @@ RUN useradd -m -s /bin/bash ollama && \
     mkdir -p /home/ollama/.ollama && \
     chown -R ollama:ollama /home/ollama
 
-# Install Ollama - choose one approach:
-
-# OPTION 1: Direct binary download (MOST RELIABLE CACHING)
-RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
+# Install Ollama - Direct binary download (MOST RELIABLE CACHING)
+RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${VERSION_TAG}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
     chmod +x /usr/local/bin/ollama
-
-# OPTION 2: Use local install script (GOOD CACHING)
-# COPY scripts/install.sh /tmp/install.sh
-# RUN chmod +x /tmp/install.sh && \
-#     OLLAMA_VERSION=0.1.26 /tmp/install.sh && \
-#     rm /tmp/install.sh
 
 # Copy application files (cached unless these specific files change)
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
