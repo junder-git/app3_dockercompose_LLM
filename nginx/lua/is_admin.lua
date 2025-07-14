@@ -1,4 +1,4 @@
--- nginx/lua/is_admin.lua - Clean URLs navigation
+-- nginx/lua/is_admin.lua - SECURE admin interface using nav.html template
 local cjson = require "cjson"
 local template = require "template"
 local server = require "server"
@@ -11,35 +11,40 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
--- Admin Dashboard HTML
+-- SECURE: Admin page only served to verified admins
 local function handle_admin_page()
+    -- CRITICAL: Server-side admin verification
     local username = is_who.require_admin()
     
-    local nav_html = string.format([[
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-        <div class="navbar-nav ms-auto">
-            <a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>
-            <span class="navbar-text me-3">%s (Admin)</span>
-            <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
-        </div>
-    </div>
-</nav>
+    ngx.log(ngx.INFO, "Admin dashboard access granted to: " .. username)
+    
+    -- Build admin navigation using nav.html template
+    local nav_links = [[
+<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>
+<a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Chat</a>
+<a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
+]]
+
+    local nav_user = string.format([[
+<span class="navbar-text me-3">%s (Admin)</span>
+<button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
 ]], username)
 
-    template.render_template("/usr/local/openresty/nginx/html/admin_dash.html", {
-        nav = nav_html,
-        username = username
+    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", {
+        nav_links = nav_links,
+        nav_user = nav_user
     })
 end
 
--- Get all users
+-- SECURE: Admin data only for verified admins
 local function handle_get_users()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
+    
+    -- Only admins can see user list
     local users = server.get_all_users()
     
-    -- Format for frontend
+    -- Format for frontend (admin gets full data)
     local formatted_users = {}
     for _, user in ipairs(users) do
         table.insert(formatted_users, {
@@ -49,21 +54,30 @@ local function handle_get_users()
             createdAt = user.created_at or "Unknown",
             lastActive = user.last_active,
             approvedBy = user.approved_by,
-            approvedAt = user.approved_at
+            approvedAt = user.approved_at,
+            -- Admin-only fields
+            last_ip = user.last_ip,
+            login_count = user.login_count or "0"
         })
     end
+    
+    ngx.log(ngx.INFO, "Admin " .. admin_username .. " accessed user list (" .. #formatted_users .. " users)")
     
     send_json(200, {
         success = true,
         users = formatted_users,
         count = #formatted_users,
-        admin_user = admin_username
+        admin_user = admin_username,
+        server_time = os.date("!%Y-%m-%dT%TZ"),
+        permissions = {"admin", "manage_users", "view_all_data"}
     })
 end
 
--- Get admin statistics
+-- SECURE: Admin stats only for verified admins
 local function handle_get_stats()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
+    
     local users = server.get_all_users()
     local sse_stats = server.get_sse_stats()
     
@@ -71,8 +85,12 @@ local function handle_get_stats()
         totalUsers = 0,
         pendingUsers = 0,
         approvedUsers = 0,
-        adminUsers = 0
+        adminUsers = 0,
+        todayLogins = 0,
+        activeToday = 0
     }
+    
+    local today = os.date("!%Y-%m-%d")
     
     for _, user in ipairs(users) do
         stats.totalUsers = stats.totalUsers + 1
@@ -84,18 +102,32 @@ local function handle_get_stats()
         else
             stats.pendingUsers = stats.pendingUsers + 1
         end
+        
+        -- Check if user was active today
+        if user.last_active and string.find(user.last_active, today) then
+            stats.activeToday = stats.activeToday + 1
+        end
     end
+    
+    ngx.log(ngx.INFO, "Admin " .. admin_username .. " accessed system stats")
     
     send_json(200, {
         success = true,
         stats = stats,
         sse_stats = sse_stats,
-        admin_user = admin_username
+        admin_user = admin_username,
+        server_info = {
+            uptime = ngx.time(),
+            memory_usage = collectgarbage("count"),
+            nginx_version = ngx.var.nginx_version
+        },
+        permissions = {"admin", "view_stats", "system_info"}
     })
 end
 
--- Approve user
+-- SECURE: Only admins can approve users
 local function handle_approve_user()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
     
     ngx.req.read_body()
@@ -123,12 +155,14 @@ local function handle_approve_user()
         success = true, 
         message = "User approved successfully",
         username = username,
-        approved_by = admin_username
+        approved_by = admin_username,
+        approved_at = os.date("!%Y-%m-%dT%TZ")
     })
 end
 
--- Toggle admin status
+-- SECURE: Only admins can toggle admin status
 local function handle_toggle_admin()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
     
     ngx.req.read_body()
@@ -161,12 +195,15 @@ local function handle_toggle_admin()
         success = true, 
         message = "Admin status " .. action .. " successfully",
         username = username,
-        is_admin = is_admin
+        is_admin = is_admin,
+        modified_by = admin_username,
+        modified_at = os.date("!%Y-%m-%dT%TZ")
     })
 end
 
--- Delete user
+-- SECURE: Only admins can delete users
 local function handle_delete_user()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
     
     ngx.req.read_body()
@@ -197,26 +234,35 @@ local function handle_delete_user()
     send_json(200, { 
         success = true, 
         message = "User deleted successfully",
-        username = username
+        username = username,
+        deleted_by = admin_username,
+        deleted_at = os.date("!%Y-%m-%dT%TZ")
     })
 end
 
--- Get SSE sessions
+-- SECURE: Admin SSE session management
 local function handle_get_sse_sessions()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
+    
     local sessions, count, max_sessions = server.get_all_sse_sessions()
+    
+    ngx.log(ngx.INFO, "Admin " .. admin_username .. " accessed SSE sessions (" .. count .. " active)")
     
     send_json(200, {
         success = true,
         sessions = sessions,
         count = count,
         max_sessions = max_sessions,
-        admin_user = admin_username
+        admin_user = admin_username,
+        server_time = os.date("!%Y-%m-%dT%TZ"),
+        permissions = {"admin", "manage_sessions"}
     })
 end
 
--- Kick SSE session
+-- SECURE: Admin can kick SSE sessions
 local function handle_kick_sse_session()
+    -- CRITICAL: Server-side admin verification
     local admin_username = is_who.require_admin()
     
     ngx.req.read_body()
@@ -238,14 +284,18 @@ local function handle_kick_sse_session()
         send_json(404, { error = message })
     end
 
+    ngx.log(ngx.INFO, "Admin " .. admin_username .. " kicked SSE session " .. session_id)
+
     send_json(200, { 
         success = true, 
         message = message,
-        session_id = session_id
+        session_id = session_id,
+        kicked_by = admin_username,
+        kicked_at = os.date("!%Y-%m-%dT%TZ")
     })
 end
 
--- Route handler
+-- SECURE API ROUTING - only admin endpoints
 local function handle_admin_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method

@@ -1,4 +1,4 @@
--- nginx/lua/is_guest.lua - Guest user interface and API
+-- nginx/lua/is_guest.lua - Guest interface using nav.html template
 local cjson = require "cjson"
 local template = require "template"
 local server = require "server"
@@ -37,66 +37,49 @@ local function handle_create_guest_session()
             remaining_messages = session_data.max_messages
         },
         message = "Guest session created - chat history stored in browser localStorage only",
-        storage_type = "localStorage"
+        storage_type = "localStorage",
+        permissions = {"guest_chat"}
     })
 end
 
--- Guest chat page
+-- UNIVERSAL GUEST CHAT PAGE - same template but guest navigation
 local function handle_guest_chat_page()
     local user_type, username, user_data = is_who.set_vars()
     
     if user_type == "guest" then
-        -- Active guest session
-        local limits = server.get_guest_limits(username)
+        -- Active guest session - show guest nav
+        local nav_links = '<a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Guest Chat</a>'
         
-        local nav_html = string.format([[
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-        <div class="navbar-nav ms-auto">
-            <span class="navbar-text me-3">%s (Guest)</span>
-            <a class="nav-link" href="/register.html"><i class="bi bi-person-plus"></i> Register</a>
-        </div>
-    </div>
-</nav>
+        local nav_user = string.format([[
+<span class="navbar-text me-3">%s (Guest)</span>
+<a class="nav-link" href="/register"><i class="bi bi-person-plus"></i> Register</a>
 ]], username)
 
         template.render_template("/usr/local/openresty/nginx/html/chat.html", {
-            navigation = nav_html,
-            username = username,
-            user_type = "guest",
+            nav_links = nav_links,
+            nav_user = nav_user,
             storage_type = "localStorage",
-            guest_limits = cjson.encode(limits or {})
+            user_type = "guest"
         })
     else
-        -- No guest session - show option to create one
-        local sse_stats = server.get_sse_stats()
-        local can_create = sse_stats.available_slots > 0
+        -- No guest session - show public nav
+        local nav_links = ''
         
-        local nav_html = [[
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-        <div class="navbar-nav ms-auto">
-            <a class="nav-link" href="/login.html"><i class="bi bi-box-arrow-in-right"></i> Login</a>
-            <a class="nav-link" href="/register.html"><i class="bi bi-person-plus"></i> Register</a>
-        </div>
-    </div>
-</nav>
+        local nav_user = [[
+<a class="nav-link" href="/login"><i class="bi bi-box-arrow-in-right"></i> Login</a>
+<a class="nav-link" href="/register"><i class="bi bi-person-plus"></i> Register</a>
 ]]
 
         template.render_template("/usr/local/openresty/nginx/html/chat.html", {
-            navigation = nav_html,
-            username = "Guest",
-            user_type = "none",
+            nav_links = nav_links,
+            nav_user = nav_user,
             storage_type = "localStorage",
-            can_create_guest = can_create and "true" or "false",
-            sse_utilization = sse_stats.total_sessions .. "/" .. sse_stats.max_sessions
+            user_type = "none"
         })
     end
 end
 
--- Guest chat streaming (uses localStorage for history)
+-- GUEST CHAT STREAMING - limited features
 local function handle_guest_chat_stream()
     local user_type, username = is_who.set_vars()
     
@@ -141,7 +124,8 @@ local function handle_guest_chat_stream()
         else
             send_json(429, { 
                 error = "Guest message limit exceeded",
-                limits = limits
+                limits = limits,
+                message = "Register for unlimited access"
             })
         end
     end
@@ -161,19 +145,26 @@ local function handle_guest_chat_stream()
 
     local accumulated = ""
     local chunk_count = 0
-    local final_response, err = server.call_ollama_streaming(messages, options, function(chunk)
+    -- Guest gets reduced token limit
+    local guest_options = {
+        temperature = options.temperature or 0.8,
+        max_tokens = 512  -- Limited for guests
+    }
+    
+    local final_response, err = server.call_ollama_streaming(messages, guest_options, function(chunk)
         accumulated = chunk.accumulated
         chunk_count = chunk_count + 1
         
         -- Update session activity
         server.update_sse_activity(session_id)
         
-        -- Send chunk
+        -- Send chunk with guest indicators
         send_sse_chunk({ 
             content = chunk.content, 
             done = chunk.done,
             chunk_id = chunk_count,
-            storage_type = "localStorage"
+            storage_type = "localStorage",
+            user_type = "guest"
         })
     end)
 
@@ -188,14 +179,15 @@ local function handle_guest_chat_stream()
     send_sse_chunk({
         type = "storage_instruction",
         message = "Chat history stored in browser localStorage only",
-        storage_type = "localStorage"
+        storage_type = "localStorage",
+        upgrade_message = "Register for unlimited messages and cloud storage"
     })
 
     send_sse_chunk("[DONE]")
     ngx.exit(200)
 end
 
--- Guest status/limits
+-- Guest status/limits - only shows guest data
 local function handle_guest_status()
     local user_type, username = is_who.set_vars()
     
@@ -204,7 +196,8 @@ local function handle_guest_status()
         if not limits then
             send_json(401, {
                 success = false,
-                error = "Guest session expired"
+                error = "Guest session expired",
+                message = "Please refresh to start a new guest session"
             })
         end
         
@@ -213,17 +206,20 @@ local function handle_guest_status()
             user_type = "guest",
             username = username,
             limits = limits,
-            storage_type = "localStorage"
+            storage_type = "localStorage",
+            permissions = {"guest_chat"},
+            upgrade_available = true
         })
     else
         send_json(401, {
             success = false,
-            error = "No guest session found"
+            error = "No guest session found",
+            message = "Please start a guest session or login"
         })
     end
 end
 
--- Guest chat capacity info
+-- Guest chat capacity info - public data
 local function handle_guest_capacity()
     local sse_stats = server.get_sse_stats()
     
@@ -238,12 +234,19 @@ local function handle_guest_capacity()
         guest_info = {
             session_duration_minutes = 30,
             message_limit = 10,
-            storage_type = "localStorage"
+            storage_type = "localStorage",
+            upgrade_benefits = {
+                "Unlimited messages",
+                "Cloud storage (Redis)", 
+                "Chat history saved",
+                "Priority access",
+                "Export conversations"
+            }
         }
     })
 end
 
--- Route handler for guest API
+-- SECURE GUEST API ROUTING
 local function handle_guest_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method

@@ -1,4 +1,4 @@
--- nginx/lua/is_who.lua - Clean URLs without .html
+-- nginx/lua/is_who.lua - Server-side JWT validation and user identification
 local jwt = require "resty.jwt"
 local server = require "server"
 
@@ -6,7 +6,7 @@ local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local M = {}
 
--- Check who the user is and return their type
+-- Server-side JWT verification - ONLY source of truth
 function M.check()
     -- First, try JWT token (logged-in users)
     local token = ngx.var.cookie_access_token
@@ -15,13 +15,14 @@ function M.check()
         if jwt_obj.verified then
             local username = jwt_obj.payload.username
             
-            -- Get user info from Redis via server module
+            -- CRITICAL: Always re-validate against Redis, never trust JWT claims alone
             local user_data = server.get_user(username)
             
             if user_data then
                 -- Update last active
                 server.update_user_activity(username)
                 
+                -- Server determines permissions from Redis, not JWT
                 if user_data.is_admin == "true" then
                     return "admin", username, user_data
                 elseif user_data.is_approved == "true" then
@@ -30,7 +31,13 @@ function M.check()
                     -- Authenticated but not approved = pending
                     return "authenticated", username, user_data
                 end
+            else
+                -- JWT valid but user doesn't exist in Redis = invalid
+                ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username)
+                return "none", nil, nil
             end
+        else
+            ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
         end
     end
     
@@ -39,7 +46,7 @@ function M.check()
     if guest_token and string.match(guest_token, "^guest_") then
         local guest_username = string.gsub(guest_token, "guest_token_", "guest_")
         
-        -- Check if guest session is still valid via server module
+        -- Validate guest session in shared memory
         local guest_data = server.get_guest_session(guest_username)
         if guest_data then
             return "guest", guest_username, guest_data
@@ -49,13 +56,14 @@ function M.check()
     return "none", nil, nil
 end
 
--- Set nginx variables for use in other modules
+-- Set nginx variables - SERVER CONTROLS EVERYTHING
 function M.set_vars()
     local user_type, username, user_data = M.check()
     
     ngx.var.user_type = user_type
     ngx.var.username = username or "anonymous"
     
+    -- Server-side permission flags - NEVER trust client
     if user_data then
         ngx.var.is_admin = (user_type == "admin") and "true" or "false"
         ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
@@ -69,24 +77,36 @@ function M.set_vars()
     return user_type, username, user_data
 end
 
--- Check if user can access admin functions
+-- SECURITY: Admin access requires server-side verification
 function M.require_admin()
     local user_type, username, user_data = M.check()
     
+    -- CRITICAL: Must be admin type from server validation
     if user_type ~= "admin" then
+        ngx.log(ngx.WARN, "Admin access denied for user_type: " .. (user_type or "none") .. ", user: " .. (username or "unknown"))
         ngx.status = 403
         ngx.header.content_type = 'application/json'
         ngx.say('{"error": "Admin access required", "user_type": "' .. (user_type or "none") .. '"}')
         ngx.exit(403)
     end
     
+    -- Double-check Redis permissions
+    if not user_data or user_data.is_admin ~= "true" then
+        ngx.log(ngx.ERR, "SECURITY VIOLATION: Admin claim without Redis permission for user: " .. (username or "unknown"))
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"error": "Insufficient permissions"}')
+        ngx.exit(403)
+    end
+    
     return username, user_data
 end
 
--- Check if user can access approved user functions
+-- SECURITY: Approved access requires server-side verification
 function M.require_approved()
     local user_type, username, user_data = M.check()
     
+    -- CRITICAL: Must be admin or approved from server validation
     if user_type ~= "admin" and user_type ~= "approved" then
         local error_msg = "Approved user access required"
         local redirect_url = "/"
@@ -102,19 +122,30 @@ function M.require_approved()
             redirect_url = "/login"
         end
         
+        ngx.log(ngx.WARN, "Approved access denied for user_type: " .. (user_type or "none") .. ", user: " .. (username or "unknown"))
         ngx.status = 403
         ngx.header.content_type = 'application/json'
         ngx.say('{"error": "' .. error_msg .. '", "user_type": "' .. (user_type or "none") .. '", "redirect": "' .. redirect_url .. '"}')
         ngx.exit(403)
     end
     
+    -- Double-check Redis permissions for non-admin users
+    if user_type == "approved" and (not user_data or user_data.is_approved ~= "true") then
+        ngx.log(ngx.ERR, "SECURITY VIOLATION: Approved claim without Redis permission for user: " .. (username or "unknown"))
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"error": "Insufficient permissions"}')
+        ngx.exit(403)
+    end
+    
     return username, user_data
 end
 
--- Get user info for API responses
+-- CLIENT API: Only returns what server permits
 function M.get_user_info()
     local user_type, username, user_data = M.check()
     
+    -- SERVER DETERMINES WHAT CLIENT SEES
     if user_type == "admin" then
         return {
             success = true,
@@ -123,17 +154,19 @@ function M.get_user_info()
             is_admin = true,
             is_approved = true,
             is_guest = false,
-            dashboard_url = "/admin"
+            dashboard_url = "/admin",
+            permissions = {"admin", "approved", "chat", "export", "manage_users"}
         }
     elseif user_type == "approved" then
         return {
             success = true,
-            user_type = "approved",
+            user_type = "approved", 
             username = username,
             is_admin = false,
             is_approved = true,
             is_guest = false,
-            dashboard_url = "/dashboard"
+            dashboard_url = "/dashboard",
+            permissions = {"approved", "chat", "export"}
         }
     elseif user_type == "guest" then
         local limits = server.get_guest_limits(username)
@@ -145,7 +178,8 @@ function M.get_user_info()
             is_approved = false,
             is_guest = true,
             limits = limits,
-            dashboard_url = "/chat"
+            dashboard_url = "/chat",
+            permissions = {"guest_chat"}
         }
     elseif user_type == "authenticated" then
         return {
@@ -156,7 +190,8 @@ function M.get_user_info()
             is_approved = false,
             is_guest = false,
             error = "Account pending approval",
-            dashboard_url = "/pending"
+            dashboard_url = "/pending",
+            permissions = {}
         }
     else
         return {
@@ -166,12 +201,13 @@ function M.get_user_info()
             is_approved = false,
             is_guest = false,
             error = "Not authenticated",
-            dashboard_url = "/login"
+            dashboard_url = "/login",
+            permissions = {}
         }
     end
 end
 
--- Get appropriate dashboard URL for user
+-- Helper: Get dashboard URL based on SERVER validation
 function M.get_dashboard_url()
     local user_type, username, user_data = M.check()
     

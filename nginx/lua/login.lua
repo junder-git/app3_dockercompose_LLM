@@ -1,4 +1,4 @@
--- nginx/lua/login.lua - Authentication handler
+-- nginx/lua/login.lua - SECURE authentication handler - ONLY source of JWT tokens
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local server = require "server"
@@ -12,6 +12,7 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
+-- SECURE password hashing - server-side only
 local function hash_password(password)
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
@@ -21,6 +22,7 @@ local function hash_password(password)
     return hash
 end
 
+-- CRITICAL: ONLY way to get a valid JWT token
 local function handle_login()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -36,64 +38,129 @@ local function handle_login()
         send_json(400, { error = "Username and password required" })
     end
 
-    -- Get user from Redis
+    -- SECURITY: Rate limit login attempts
+    local login_key = "login_attempts:" .. (ngx.var.remote_addr or "unknown")
+    local attempts = ngx.shared.guest_sessions:get(login_key) or 0
+    
+    if attempts >= 5 then
+        ngx.log(ngx.WARN, "Too many login attempts from " .. (ngx.var.remote_addr or "unknown"))
+        send_json(429, { error = "Too many login attempts, please try again later" })
+    end
+
+    -- Get user from Redis - ONLY source of truth
     local user_data = server.get_user(username)
     if not user_data then
+        -- Increment failed attempts
+        ngx.shared.guest_sessions:set(login_key, attempts + 1, 300) -- 5 minute lockout
+        ngx.log(ngx.WARN, "Login attempt for non-existent user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
 
-    -- Verify password
+    -- SECURITY: Verify password hash
     local password_hash = hash_password(password)
     if user_data.password_hash ~= password_hash then
+        -- Increment failed attempts
+        ngx.shared.guest_sessions:set(login_key, attempts + 1, 300)
+        ngx.log(ngx.WARN, "Invalid password for user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
 
-    -- Check if user is approved (admins always approved)
+    -- SECURITY: Check if user is approved (admins are auto-approved)
     if user_data.is_approved ~= "true" and user_data.is_admin ~= "true" then
-        send_json(403, { error = "User not approved" })
+        ngx.log(ngx.INFO, "Login attempt by unapproved user: " .. username)
+        send_json(403, { 
+            error = "User not approved", 
+            message = "Your account is pending administrator approval",
+            status = "pending"
+        })
     end
 
-    -- Create JWT token
+    -- SECURITY: Clear failed attempts on successful login
+    ngx.shared.guest_sessions:delete(login_key)
+
+    -- CRITICAL: Create JWT token - ONLY place where JWT is created
+    local jwt_payload = {
+        username = username,
+        is_admin = user_data.is_admin == "true",
+        is_approved = user_data.is_approved == "true",
+        issued_at = ngx.time(),
+        exp = ngx.time() + 86400, -- 24 hours
+        issuer = "ai.junder.uk"
+    }
+    
     local jwt_token = jwt:sign(JWT_SECRET, {
         header = { typ = "JWT", alg = "HS256" },
-        payload = {
-            username = username,
-            is_admin = user_data.is_admin == "true",
-            is_approved = user_data.is_approved == "true",
-            exp = ngx.time() + 86400 -- 24 hours
-        }
+        payload = jwt_payload
     })
 
-    -- Set cookie
+    if not jwt_token then
+        ngx.log(ngx.ERR, "Failed to create JWT token for user: " .. username)
+        send_json(500, { error = "Authentication system error" })
+    end
+
+    -- SECURITY: Set secure cookie - HttpOnly, SameSite
     ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. 
         "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
 
-    -- Update last login
+    -- Update last login in Redis
     server.update_user_activity(username)
+    server.increment_login_count(username)
 
+    ngx.log(ngx.INFO, "Successful login for " .. (user_data.is_admin == "true" and "admin" or "user") .. ": " .. username)
+
+    -- RESPONSE: Server confirms what permissions user has
     send_json(200, {
+        success = true,
         token = jwt_token,
-        username = username,
-        is_admin = user_data.is_admin == "true",
-        is_approved = user_data.is_approved == "true"
+        user = {
+            username = username,
+            is_admin = user_data.is_admin == "true",
+            is_approved = user_data.is_approved == "true",
+            user_type = user_data.is_admin == "true" and "admin" or "approved",
+            dashboard_url = user_data.is_admin == "true" and "/admin" or "/dashboard",
+            permissions = user_data.is_admin == "true" and 
+                {"admin", "approved", "chat", "export", "manage_users"} or 
+                {"approved", "chat", "export"}
+        },
+        login_time = os.date("!%Y-%m-%dT%TZ")
     })
 end
 
+-- SECURE: Logout clears JWT
 local function handle_logout()
-    -- Clear cookies
+    -- Clear all authentication cookies
     ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
     ngx.header["Set-Cookie"] = "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
 
-    send_json(200, { message = "Logged out successfully" })
+    -- Log logout
+    local is_who = require "is_who"
+    local user_type, username = is_who.check()
+    if username then
+        ngx.log(ngx.INFO, "User logged out: " .. username)
+    end
+
+    send_json(200, { 
+        success = true,
+        message = "Logged out successfully",
+        redirect = "/"
+    })
 end
 
+-- SECURE: User info based on JWT validation
 local function handle_me()
     local is_who = require "is_who"
     local user_info = is_who.get_user_info()
+    
+    -- Add extra info for authenticated users
+    if user_info.success then
+        user_info.server_time = os.date("!%Y-%m-%dT%TZ")
+        user_info.session_valid = true
+    end
+    
     send_json(200, user_info)
 end
 
--- Route handler
+-- SECURE API routing
 local function handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method

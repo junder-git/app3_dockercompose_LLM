@@ -1,4 +1,4 @@
--- nginx/lua/is_approved.lua - Clean URLs navigation
+-- nginx/lua/is_approved.lua - Universal templates with server-controlled data
 local cjson = require "cjson"
 local template = require "template"
 local server = require "server"
@@ -20,58 +20,59 @@ local function send_sse_chunk(data)
     ngx.flush(true)
 end
 
--- Chat page for approved users
+-- UNIVERSAL CHAT PAGE - same template for all approved users
 local function handle_chat_page()
     local username, user_data = is_who.require_approved()
     
     local is_admin = user_data.is_admin == "true"
-    local admin_link = is_admin and '<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>' or ""
     
-    local nav_html = string.format([[
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-        <div class="navbar-nav ms-auto">
-            %s
-            <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
-            <span class="navbar-text me-3">%s</span>
-            <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
-        </div>
-    </div>
-</nav>
-]], admin_link, username)
+    -- Build nav links based on permissions
+    local nav_links = '<a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Chat</a>'
+    nav_links = nav_links .. '<a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>'
+    if is_admin then
+        nav_links = '<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>' .. nav_links
+    end
+    
+    local nav_user = string.format([[
+<span class="navbar-text me-3">%s%s</span>
+<button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
+]], username, is_admin and " (Admin)" or "")
 
-    template.render_template("/usr/local/openresty/nginx/html/approved_chat.html", {
-        nav = nav_html,
-        username = username,
-        model_name = "Devstral AI"
+    -- UNIVERSAL TEMPLATE - JavaScript will populate features based on API response
+    template.render_template("/usr/local/openresty/nginx/html/chat.html", {
+        nav_links = nav_links,
+        nav_user = nav_user,
+        storage_type = "redis",
+        user_type = is_admin and "admin" or "approved"
     })
 end
 
--- Dashboard page for approved users
+-- UNIVERSAL DASHBOARD PAGE - same template for all approved users  
 local function handle_dashboard_page()
-    local username = is_who.require_approved()
+    local username, user_data = is_who.require_approved()
     
-    local nav_html = string.format([[
-<nav class="navbar navbar-expand-lg navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-        <div class="navbar-nav ms-auto">
-            <a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Chat</a>
-            <span class="navbar-text me-3">%s</span>
-            <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
-        </div>
-    </div>
-</nav>
-]], username)
+    local is_admin = user_data.is_admin == "true"
+    
+    -- Build nav links based on permissions
+    local nav_links = '<a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Chat</a>'
+    nav_links = nav_links .. '<a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>'
+    if is_admin then
+        nav_links = '<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>' .. nav_links
+    end
+    
+    local nav_user = string.format([[
+<span class="navbar-text me-3">%s%s</span>
+<button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
+]], username, is_admin and " (Admin)" or "")
 
-    template.render_template("/usr/local/openresty/nginx/html/approved_dash.html", {
-        nav = nav_html,
-        username = username
+    -- UNIVERSAL TEMPLATE - JavaScript will populate features based on API response
+    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", {
+        nav_links = nav_links,
+        nav_user = nav_user
     })
 end
 
--- Chat streaming with SSE session management
+-- SECURE CHAT STREAMING - permission-based features
 local function handle_chat_stream()
     local user_type, username = is_who.set_vars()
     
@@ -105,8 +106,8 @@ local function handle_chat_stream()
         send_json(400, { error = "Message cannot be empty" })
     end
 
-    -- Check rate limits
-    local rate_ok, rate_message = server.check_rate_limit(username)
+    -- Check rate limits (admins get higher limits)
+    local rate_ok, rate_message = server.check_rate_limit(username, user_type == "admin")
     if not rate_ok then
         send_json(429, { error = rate_message })
     end
@@ -117,12 +118,13 @@ local function handle_chat_stream()
     ngx.header.connection = "keep-alive"
     ngx.header["X-Chat-Storage"] = "redis"
     ngx.header["X-SSE-Session-ID"] = session_id
+    ngx.header["X-User-Type"] = user_type
 
     local messages = {}
     
-    -- Include chat history if requested
+    -- Include chat history if requested (and user has permission)
     if include_history then
-        local history = server.get_chat_history(username, 10)
+        local history = server.get_chat_history(username, user_type == "admin" and 20 or 10)
         for _, msg in ipairs(history) do
             table.insert(messages, { role = msg.role, content = msg.content })
         end
@@ -133,7 +135,7 @@ local function handle_chat_stream()
     -- Save user message to Redis
     server.save_message(username, "user", message)
 
-    ngx.log(ngx.INFO, "Starting chat stream for " .. username .. " (session: " .. session_id .. ")")
+    ngx.log(ngx.INFO, "Starting chat stream for " .. user_type .. " " .. username .. " (session: " .. session_id .. ")")
 
     local accumulated = ""
     local chunk_count = 0
@@ -144,12 +146,13 @@ local function handle_chat_stream()
         -- Update session activity
         server.update_sse_activity(session_id)
         
-        -- Send chunk
+        -- Send chunk with user type info
         send_sse_chunk({ 
             content = chunk.content, 
             done = chunk.done,
             chunk_id = chunk_count,
-            storage_type = "redis"
+            storage_type = "redis",
+            user_type = user_type
         })
     end)
 
@@ -163,27 +166,28 @@ local function handle_chat_stream()
     end
 
     send_sse_chunk("[DONE]")
-    
-    -- Cleanup handled by log_by_lua_block in nginx.conf
     ngx.exit(200)
 end
 
--- Get chat history
+-- SECURE CHAT HISTORY - permission-based limits
 local function handle_chat_history()
-    local username = is_who.require_approved()
+    local username, user_data = is_who.require_approved()
     
-    local limit = tonumber(ngx.var.arg_limit) or 20
+    local is_admin = user_data.is_admin == "true"
+    local limit = tonumber(ngx.var.arg_limit) or (is_admin and 50 or 20)
     local history = server.get_chat_history(username, limit)
     
     send_json(200, {
         success = true,
         messages = history,
         count = #history,
-        storage_type = "redis"
+        storage_type = "redis",
+        user_type = is_admin and "admin" or "approved",
+        max_limit = is_admin and 100 or 50
     })
 end
 
--- Clear chat history
+-- SECURE CHAT CLEAR - all approved users can clear
 local function handle_clear_chat()
     local username = is_who.require_approved()
     
@@ -196,7 +200,7 @@ local function handle_clear_chat()
     })
 end
 
--- Route handler
+-- SECURE API ROUTING - server-side permission checks
 local function handle_chat_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
