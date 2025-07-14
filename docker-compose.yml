@@ -4,7 +4,7 @@ services:
       context: ./ollama
       dockerfile: Dockerfile
       args:
-        - OLLAMA_VERSION=${OLLAMA_VERSION}
+        OLLAMA_VERSION: ${OLLAMA_VERSION}
     container_name: devstral-ollama
     privileged: true
     restart: unless-stopped
@@ -97,7 +97,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-
 
   nginx:
     build: ./nginx
