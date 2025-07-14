@@ -4,6 +4,9 @@ FROM ubuntu:22.04 AS base
 # Define build argument for Ollama version (gets value from docker-compose)
 ARG OLLAMA_VERSION
 
+# Debug: Show what version we received
+RUN echo "Building with OLLAMA_VERSION: ${OLLAMA_VERSION}"
+
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -25,9 +28,15 @@ RUN useradd -m -s /bin/bash ollama && \
     mkdir -p /home/ollama/.ollama && \
     chown -R ollama:ollama /home/ollama
 
-# Install Ollama - Direct binary download (MOST RELIABLE CACHING)
-RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
-    chmod +x /usr/local/bin/ollama
+# Install Ollama using local install script with version control
+COPY scripts/install.sh /tmp/install.sh
+RUN chmod +x /tmp/install.sh && \
+    if [ -n "${OLLAMA_VERSION}" ]; then \
+        export OLLAMA_VERSION="${OLLAMA_VERSION}"; \
+    fi && \
+    echo "Installing Ollama version: ${OLLAMA_VERSION}" && \
+    /tmp/install.sh && \
+    rm /tmp/install.sh
 
 # Copy application files (cached unless these specific files change)
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
