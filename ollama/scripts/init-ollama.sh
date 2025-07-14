@@ -15,16 +15,6 @@ error() { echo "❌ $1" >&2; exit 1; }
 
 log "🚀 Starting hybrid GPU+CPU mode for $MODEL_DISPLAY_NAME"
 
-# Install dependencies
-log "📦 Installing dependencies..."
-apt-get update -qq && apt-get install -y bc jq curl >/dev/null 2>&1
-
-# Install Ollama if needed
-if ! command -v ollama >/dev/null; then
-    log "📥 Installing Ollama..."
-    curl -fsSL https://ollama.com/install.sh | sh
-fi
-
 # GPU detection
 if command -v nvidia-smi >/dev/null 2>&1; then
     gpu_info=$(nvidia-smi --query-gpu=memory.total,memory.free --format=csv,noheader,nounits 2>/dev/null | head -1)

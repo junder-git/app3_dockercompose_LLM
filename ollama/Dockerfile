@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
+# Install dependencies (including runtime dependencies)
 RUN apt-get update && \
     apt-get install -y \
     curl \
@@ -13,6 +13,8 @@ RUN apt-get update && \
     gnupg \
     lsb-release \
     gettext-base \
+    bc \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Create ollama user and directories
@@ -39,7 +41,6 @@ ENV OLLAMA_MODELS=/home/ollama/.ollama/models
 EXPOSE 11434
 
 # Switch to ollama user for running the service
-#USER ollama
 USER root
 WORKDIR /home/ollama
 
