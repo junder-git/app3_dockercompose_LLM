@@ -1,8 +1,8 @@
--- nginx/lua/chat_api_enhanced.lua - Enhanced with guest token support
+-- nginx/lua/chat_api_unified.lua - Chat API with unified session management
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local http = require "resty.http"
-local unified_auth = require "unified_auth"
+local session_manager = require "unified_session_manager"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
@@ -29,6 +29,12 @@ local function send_sse_chunk(data)
         ngx.say("data: " .. cjson.encode(data) .. "\n")
     end
     ngx.flush(true)
+    
+    -- Update session activity during streaming
+    local session_id = ngx.var.sse_session_id
+    if session_id then
+        session_manager.update_session_activity(session_id)
+    end
 end
 
 local function connect_redis()
@@ -81,11 +87,10 @@ local function check_rate_limit_user(red, username)
     return current_count + 1
 end
 
-local function check_rate_limit_guest(slot_num)
-    -- For guests, we use the built-in message limit system
-    local success = unified_auth.use_guest_message(slot_num)
+local function check_rate_limit_guest(username)
+    local success, message = session_manager.use_guest_message(username)
     if not success then
-        local limits = unified_auth.get_guest_limits(slot_num)
+        local limits = session_manager.get_guest_limits(username)
         if not limits then
             send_json(401, { error = "Guest session expired" })
         else
@@ -100,10 +105,10 @@ local function check_rate_limit_guest(slot_num)
     return true
 end
 
-local function save_message_to_history(red, username, role, content)
+local function save_message_to_redis(red, username, role, content)
     if not red then
         ngx.log(ngx.WARN, "Cannot save message - Redis unavailable")
-        return
+        return false
     end
     
     local chat_key = "chat:" .. username
@@ -116,9 +121,10 @@ local function save_message_to_history(red, username, role, content)
     red:lpush(chat_key, cjson.encode(message))
     red:ltrim(chat_key, 0, 49) -- Keep last 50 messages
     red:expire(chat_key, 604800) -- 1 week
+    return true
 end
 
-local function get_chat_history(red, username, limit)
+local function get_chat_history_from_redis(red, username, limit)
     if not red then
         return {} -- Return empty history if Redis unavailable
     end
@@ -207,7 +213,20 @@ end
 local function handle_chat_stream()
     local user_type = ngx.var.auth_user_type
     local username = ngx.var.auth_username
-    local slot_num = tonumber(ngx.var.auth_slot_num)
+    local is_admin = ngx.var.auth_is_admin == "true"
+    local session_id = ngx.var.sse_session_id
+    
+    -- Validate SSE session if present
+    if session_id then
+        local is_valid, session_info = session_manager.is_session_valid(session_id)
+        if not is_valid then
+            send_json(410, { 
+                error = "SSE session invalid", 
+                message = session_info,
+                code = "SSE_SESSION_EXPIRED"
+            })
+        end
+    end
     
     ngx.req.read_body()
     local data = cjson.decode(ngx.req.get_body_data() or "{}")
@@ -223,8 +242,8 @@ local function handle_chat_stream()
     local red, err = connect_redis()
     
     if user_type == "guest" then
-        -- Guest users: use slot-based limits (no Redis needed)
-        check_rate_limit_guest(slot_num)
+        -- Guest users: use session-based limits (no Redis needed)
+        check_rate_limit_guest(username)
     elseif user_type == "user" or user_type == "admin" then
         -- Regular users: use Redis-based rate limiting
         if not red then
@@ -241,12 +260,25 @@ local function handle_chat_stream()
     ngx.header.cache_control = "no-cache"
     ngx.header.connection = "keep-alive"
     ngx.header.access_control_allow_origin = "*"
+    
+    -- Add headers for frontend to know storage strategy
+    if user_type == "guest" then
+        ngx.header["X-Chat-Storage"] = "localStorage"
+        ngx.header["X-Session-Type"] = "guest"
+    else
+        ngx.header["X-Chat-Storage"] = "redis"
+        ngx.header["X-Session-Type"] = user_type
+    end
+    
+    if session_id then
+        ngx.header["X-SSE-Session-ID"] = session_id
+    end
 
     local messages = {}
     
-    -- Include history if requested (only for regular users)
-    if include_history and (user_type == "user" or user_type == "admin") then
-        local history = get_chat_history(red, username, 10)
+    -- Include history if requested (only for regular users with Redis)
+    if include_history and (user_type == "user" or user_type == "admin") and red then
+        local history = get_chat_history_from_redis(red, username, 10)
         for _, msg in ipairs(history) do
             table.insert(messages, { role = msg.role, content = msg.content })
         end
@@ -254,27 +286,55 @@ local function handle_chat_stream()
     
     table.insert(messages, { role = "user", content = message })
 
-    -- Save user message (only for regular users)
-    if user_type == "user" or user_type == "admin" then
-        save_message_to_history(red, username, "user", message)
+    -- Save user message (only for regular users with Redis)
+    if (user_type == "user" or user_type == "admin") and red then
+        save_message_to_redis(red, username, "user", message)
     end
 
+    -- Track streaming start
+    ngx.log(ngx.INFO, "Starting SSE stream for user: " .. username .. 
+            " (type: " .. user_type .. ", session: " .. (session_id or "none") .. ")")
+
     local accumulated = ""
+    local chunk_count = 0
     local final_response, err = call_ollama_streaming(messages, options, function(chunk)
         accumulated = chunk.accumulated
+        chunk_count = chunk_count + 1
+        
+        -- Send chunk and update session activity
         send_sse_chunk({ 
             content = chunk.content, 
-            done = chunk.done
+            done = chunk.done,
+            chunk_id = chunk_count,
+            storage_type = user_type == "guest" and "localStorage" or "redis"
         })
+        
+        -- Log progress every 10 chunks for debugging
+        if chunk_count % 10 == 0 then
+            ngx.log(ngx.INFO, "SSE chunk " .. chunk_count .. " sent for session: " .. (session_id or "none"))
+        end
     end)
 
     if err then
+        ngx.log(ngx.ERR, "SSE streaming error for session " .. (session_id or "none") .. ": " .. err)
         send_sse_chunk({ error = err })
     else
-        -- Save AI response (only for regular users)
-        if user_type == "user" or user_type == "admin" then
-            save_message_to_history(red, username, "assistant", accumulated)
+        -- Save AI response (only for regular users with Redis)
+        if (user_type == "user" or user_type == "admin") and red then
+            save_message_to_redis(red, username, "assistant", accumulated)
         end
+        
+        ngx.log(ngx.INFO, "SSE stream completed for session: " .. (session_id or "none") .. 
+                " (chunks: " .. chunk_count .. ", length: " .. #accumulated .. ")")
+    end
+
+    -- Send final chunk with storage instructions for guests
+    if user_type == "guest" then
+        send_sse_chunk({
+            type = "storage_instruction",
+            message = "Chat history stored in browser localStorage only",
+            storage_type = "localStorage"
+        })
     end
 
     send_sse_chunk("[DONE]")
@@ -285,13 +345,14 @@ local function handle_chat_history()
     local user_type = ngx.var.auth_user_type
     local username = ngx.var.auth_username
     
-    -- Only regular users can access history
+    -- Only regular users can access Redis history
     if user_type == "guest" then
         send_json(200, {
             success = true,
             messages = {},
             count = 0,
-            note = "Guest sessions do not save history"
+            storage_type = "localStorage",
+            note = "Guest sessions use browser localStorage - history not available on server"
         })
     end
     
@@ -301,12 +362,14 @@ local function handle_chat_history()
     end
     
     local limit = tonumber(ngx.var.arg_limit) or 20
-    local history = get_chat_history(red, username, limit)
+    local history = get_chat_history_from_redis(red, username, limit)
     
     send_json(200, {
         success = true,
         messages = history,
-        count = #history
+        count = #history,
+        storage_type = "redis",
+        user_type = user_type
     })
 end
 
@@ -314,11 +377,12 @@ local function handle_clear_chat()
     local user_type = ngx.var.auth_user_type
     local username = ngx.var.auth_username
     
-    -- Only regular users can clear history
+    -- Only regular users can clear Redis history
     if user_type == "guest" then
         send_json(200, {
             success = true,
-            message = "Guest sessions do not save history"
+            message = "Guest sessions use browser localStorage - clear history in your browser",
+            storage_type = "localStorage"
         })
     end
     
@@ -332,7 +396,106 @@ local function handle_clear_chat()
     
     send_json(200, {
         success = true,
-        message = "Chat history cleared"
+        message = "Redis chat history cleared",
+        storage_type = "redis"
+    })
+end
+
+-- Get current SSE session info
+local function handle_session_info()
+    local session_id = ngx.var.sse_session_id
+    local user_type = ngx.var.auth_user_type
+    local username = ngx.var.auth_username
+    local is_admin = ngx.var.auth_is_admin == "true"
+    
+    local session_data = {
+        success = true,
+        user_type = user_type,
+        username = username,
+        is_admin = is_admin,
+        storage_type = user_type == "guest" and "localStorage" or "redis",
+        max_sse_sessions = session_manager.MAX_SSE_SESSIONS
+    }
+    
+    if not session_id then
+        session_data.has_sse_session = false
+        session_data.message = "No active SSE session"
+    else
+        local is_valid, session_info = session_manager.is_session_valid(session_id)
+        
+        if not is_valid then
+            session_data.has_sse_session = false
+            session_data.message = "SSE session expired"
+            session_data.session_error = session_info
+        else
+            session_data.has_sse_session = true
+            session_data.session_info = session_info
+        end
+    end
+    
+    -- Add guest-specific info
+    if user_type == "guest" then
+        local limits = session_manager.get_guest_limits(username)
+        if limits then
+            session_data.guest_limits = limits
+        end
+    end
+    
+    send_json(200, session_data)
+end
+
+-- Create guest session endpoint
+local function handle_create_guest_session()
+    -- Check capacity first
+    local stats = session_manager.get_session_stats()
+    if stats.total_sessions >= session_manager.MAX_SSE_SESSIONS and stats.by_priority.guest_sessions == 0 then
+        send_json(503, {
+            error = "Server at capacity",
+            message = "All " .. session_manager.MAX_SSE_SESSIONS .. " sessions are occupied by higher priority users",
+            capacity = stats
+        })
+    end
+    
+    local session_data, error_msg = session_manager.create_guest_session()
+    
+    if not session_data then
+        send_json(500, {
+            error = "Failed to create guest session",
+            message = error_msg
+        })
+    end
+    
+    send_json(200, {
+        success = true,
+        session = session_data,
+        message = "Guest session created - chat history will be stored in browser localStorage only",
+        storage_type = "localStorage",
+        limits = {
+            max_messages = session_manager.GUEST_MESSAGE_LIMIT,
+            session_duration = session_manager.GUEST_SESSION_DURATION
+        }
+    })
+end
+
+-- Get SSE capacity info
+local function handle_sse_capacity()
+    local stats = session_manager.get_session_stats()
+    
+    send_json(200, {
+        success = true,
+        capacity = {
+            current_sessions = stats.total_sessions,
+            max_sessions = session_manager.MAX_SSE_SESSIONS,
+            available_slots = stats.available_slots,
+            utilization_percent = stats.utilization_percent,
+            is_full = stats.available_slots == 0
+        },
+        breakdown = stats.by_priority,
+        priority_info = {
+            {priority = 1, name = "admin", description = "Administrators (cannot be kicked)"},
+            {priority = 2, name = "user", description = "Approved users (can kick guests)"},
+            {priority = 3, name = "guest", description = "Guest users (can be kicked)"}
+        }
     })
 end
 
@@ -346,6 +509,12 @@ local function handle_chat_api()
         handle_chat_history()
     elseif uri == "/api/chat/clear" and method == "POST" then
         handle_clear_chat()
+    elseif uri == "/api/chat/session-info" and method == "GET" then
+        handle_session_info()
+    elseif uri == "/api/chat/create-guest" and method == "POST" then
+        handle_create_guest_session()
+    elseif uri == "/api/chat/sse-capacity" and method == "GET" then
+        handle_sse_capacity()
     else
         send_json(404, { error = "Chat API endpoint not found" })
     end
@@ -355,5 +524,8 @@ return {
     handle_chat_api = handle_chat_api,
     handle_chat_stream = handle_chat_stream,
     handle_chat_history = handle_chat_history,
-    handle_clear_chat = handle_clear_chat
+    handle_clear_chat = handle_clear_chat,
+    handle_session_info = handle_session_info,
+    handle_create_guest_session = handle_create_guest_session,
+    handle_sse_capacity = handle_sse_capacity
 }

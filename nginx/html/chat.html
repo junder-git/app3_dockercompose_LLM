@@ -173,11 +173,8 @@
         </div>
         <div id="guest-start-message" class="mt-3" style="display: none;">
           <div class="alert alert-primary">
-            <h6><i class="bi bi-chat-dots"></i> Start Guest Chat Session</h6>
+            <h6><i class="bi bi-chat-dots"></i> Starting Guest Chat Session</h6>
             <p>Try our AI assistant with a free guest session. No registration required!</p>
-            <button class="btn btn-primary" id="start-guest-session">
-              <i class="bi bi-play-circle"></i> Start Guest Chat
-            </button>
             <a href="/register.html" class="btn btn-outline-primary btn-sm ms-2">
               <i class="bi bi-person-plus"></i> Register for Full Access
             </a>
@@ -286,24 +283,14 @@
         const sessionInfo = document.getElementById('session-info');
         const chatFullMessage = document.getElementById('chat-full-message');
         const guestStartMessage = document.getElementById('guest-start-message');
-
         if (this.chatFull) {
+          this.disableChatInput();
           // Show chat full message
           welcomeContent.innerHTML = '<p>Chat is currently at capacity. Please try again later or register for unlimited access.</p>';
           chatFullMessage.style.display = 'block';
-          this.disableChatInput();
         } else if (this.isPlaceholder) {
-          // Show placeholder message with guest session option
-          welcomeContent.innerHTML = '<p>Hello! Welcome to ai.junder.uk. Start a free guest session to try our AI assistant.</p>';
-          guestStartMessage.style.display = 'block';
-          this.disableChatInput();
-          
-          // Set up guest session creation button
-          const startButton = document.getElementById('start-guest-session');
-          if (startButton) {
-            startButton.addEventListener('click', () => this.createGuestSession());
-          }
-        } else if (this.isGuest) {
+          // Show guest session
+          this.createGuestSession()
           // Show guest session info
           welcomeContent.innerHTML = '<p>Hello <strong>' + this.username + '</strong>! You have a limited demo session.</p>';
           suggestionChips.style.display = 'flex';
@@ -316,13 +303,7 @@
       }
 
       async createGuestSession() {
-        const startButton = document.getElementById('start-guest-session');
-        const originalText = startButton.innerHTML;
-        
         try {
-          startButton.disabled = true;
-          startButton.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
-          
           const response = await fetch('/api/guest/create-session', {
             method: 'POST',
             credentials: 'include'
@@ -349,9 +330,6 @@
         } catch (error) {
           console.error('Create guest session error:', error);
           this.showToast('Failed to create guest session: ' + error.message, 'error');
-          
-          startButton.disabled = false;
-          startButton.innerHTML = originalText;
         }
       }
 

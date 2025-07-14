@@ -1,3 +1,217 @@
+// Guest Chat Storage Manager - localStorage for guest sessions
+// Add this to chat.html or common.js for guest users
+
+const GuestChatStorage = {
+    STORAGE_KEY: 'guest_chat_history',
+    MAX_MESSAGES: 50,
+
+    // Save message to localStorage
+    saveMessage(role, content) {
+        try {
+            const messages = this.getMessages();
+            const message = {
+                role: role,
+                content: content,
+                timestamp: new Date().toISOString(),
+                id: Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+            };
+
+            messages.push(message);
+
+            // Keep only last MAX_MESSAGES
+            if (messages.length > this.MAX_MESSAGES) {
+                messages.splice(0, messages.length - this.MAX_MESSAGES);
+            }
+
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(messages));
+            return true;
+        } catch (error) {
+            console.warn('Failed to save guest message to localStorage:', error);
+            return false;
+        }
+    },
+
+    // Get all messages from localStorage
+    getMessages() {
+        try {
+            const stored = localStorage.getItem(this.STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        } catch (error) {
+            console.warn('Failed to load guest messages from localStorage:', error);
+            return [];
+        }
+    },
+
+    // Get recent messages for context
+    getRecentMessages(limit = 10) {
+        const messages = this.getMessages();
+        return messages.slice(-limit);
+    },
+
+    // Clear all messages
+    clearMessages() {
+        try {
+            localStorage.removeItem(this.STORAGE_KEY);
+            return true;
+        } catch (error) {
+            console.warn('Failed to clear guest messages from localStorage:', error);
+            return false;
+        }
+    },
+
+    // Get storage info
+    getStorageInfo() {
+        const messages = this.getMessages();
+        return {
+            messageCount: messages.length,
+            maxMessages: this.MAX_MESSAGES,
+            storageType: 'localStorage',
+            canLoadHistory: messages.length > 0,
+            lastMessage: messages.length > 0 ? messages[messages.length - 1].timestamp : null
+        };
+    },
+
+    // Import messages (for debugging or data migration)
+    importMessages(messages) {
+        try {
+            const validMessages = messages.filter(msg => 
+                msg.role && msg.content && typeof msg.content === 'string'
+            );
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(validMessages));
+            return true;
+        } catch (error) {
+            console.warn('Failed to import guest messages:', error);
+            return false;
+        }
+    },
+
+    // Export messages (for user download)
+    exportMessages() {
+        const messages = this.getMessages();
+        const exportData = {
+            exportType: 'guest_chat_history',
+            exportedAt: new Date().toISOString(),
+            messageCount: messages.length,
+            messages: messages,
+            note: 'Guest session chat history - stored in browser localStorage only'
+        };
+
+        return JSON.stringify(exportData, null, 2);
+    }
+};
+
+// Integration with existing chat system
+window.GuestChatStorage = GuestChatStorage;
+
+// Auto-detect guest users and initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if user is a guest (you can detect this from server headers or user type)
+    const chatStorageType = document.querySelector('meta[name="chat-storage"]')?.content;
+    const userType = document.querySelector('meta[name="user-type"]')?.content;
+    
+    if (chatStorageType === 'localStorage' || userType === 'guest') {
+        console.log('🔄 Guest user detected - using localStorage for chat history');
+        
+        // Override chat history functions if they exist
+        if (window.chat && typeof window.chat === 'object') {
+            // Save original functions
+            window.chat._originalLoadHistory = window.chat.loadChatHistory;
+            window.chat._originalClearHistory = window.chat.clearChat;
+            
+            // Replace with localStorage versions
+            window.chat.loadChatHistory = function() {
+                const messages = GuestChatStorage.getMessages();
+                if (messages.length > 0) {
+                    // Hide welcome prompt
+                    const welcomePrompt = document.getElementById('welcome-prompt');
+                    if (welcomePrompt) {
+                        welcomePrompt.style.display = 'none';
+                    }
+                    
+                    // Load messages into chat
+                    messages.forEach(msg => {
+                        this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false);
+                    });
+                    
+                    console.log('📱 Loaded', messages.length, 'messages from localStorage');
+                }
+            };
+            
+            window.chat.clearChat = function() {
+                if (confirm('Clear chat history? This will only clear your local browser storage.')) {
+                    GuestChatStorage.clearMessages();
+                    document.getElementById('chat-messages').innerHTML = '';
+                    document.getElementById('welcome-prompt').style.display = 'block';
+                    console.log('🗑️ Guest chat history cleared from localStorage');
+                }
+            };
+            
+            // Hook into message sending
+            const originalAddMessage = window.chat.addMessage;
+            window.chat.addMessage = function(sender, content, isStreaming = false) {
+                // Call original function
+                const result = originalAddMessage.call(this, sender, content, isStreaming);
+                
+                // Save to localStorage if not streaming (final message)
+                if (!isStreaming && content.trim()) {
+                    GuestChatStorage.saveMessage(sender === 'user' ? 'user' : 'assistant', content);
+                }
+                
+                return result;
+            };
+        }
+        
+        // Add storage info to page
+        const storageInfo = GuestChatStorage.getStorageInfo();
+        console.log('💾 Guest storage info:', storageInfo);
+        
+        // Add notice about guest storage
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+            const notice = document.createElement('div');
+            notice.className = 'alert alert-info alert-dismissible fade show';
+            notice.style.cssText = 'position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; max-width: 500px;';
+            notice.innerHTML = `
+                <i class="bi bi-info-circle"></i>
+                <strong>Guest Session:</strong> Your chat history is stored locally in your browser only.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            chatContainer.style.position = 'relative';
+            chatContainer.appendChild(notice);
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                if (notice.parentNode) {
+                    notice.remove();
+                }
+            }, 5000);
+        }
+    }
+});
+
+// Add export function to download guest chat history
+window.downloadGuestHistory = function() {
+    if (typeof GuestChatStorage === 'undefined') {
+        alert('Guest storage not available');
+        return;
+    }
+    
+    const exportData = GuestChatStorage.exportMessages();
+    const blob = new Blob([exportData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'guest-chat-history-' + new Date().toISOString().split('T')[0] + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log('📥 Guest chat history downloaded');
+};
+
 const DevstralCommon = {
     async logout() {
         try {
