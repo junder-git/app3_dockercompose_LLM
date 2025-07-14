@@ -1,22 +1,10 @@
-# Multi-stage build for better caching
-FROM ubuntu:22.04 AS downloader
-
-# Install minimal dependencies for downloading
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Download Ollama (this layer will be cached unless the install script changes)
-RUN curl -fsSL https://ollama.com/install.sh -o /tmp/install.sh && \
-    chmod +x /tmp/install.sh
-
-# Main stage
-FROM ubuntu:22.04
+# Multi-stage build with maximum caching
+FROM ubuntu:22.04 AS base
 
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies (this layer will be cached)
+# Install dependencies (cached unless dependencies change)
 RUN apt-get update && \
     apt-get install -y \
     curl \
@@ -29,16 +17,25 @@ RUN apt-get update && \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Create ollama user and directories (this layer will be cached)
+# Create ollama user and directories (cached unless user setup changes)
 RUN useradd -m -s /bin/bash ollama && \
     mkdir -p /home/ollama/.ollama && \
     chown -R ollama:ollama /home/ollama
 
-# Copy and run the install script (more predictable than direct curl)
-COPY --from=downloader /tmp/install.sh /tmp/install.sh
-RUN /tmp/install.sh && rm /tmp/install.sh
+# Install Ollama - choose one approach:
 
-# Copy scripts and configs with proper permissions (cached unless files change)
+# OPTION 1: Direct binary download (MOST RELIABLE CACHING)
+ARG OLLAMA_VERSION=0.1.26
+RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
+    chmod +x /usr/local/bin/ollama
+
+# OPTION 2: Use local install script (GOOD CACHING)
+# COPY scripts/install.sh /tmp/install.sh
+# RUN chmod +x /tmp/install.sh && \
+#     OLLAMA_VERSION=0.1.26 /tmp/install.sh && \
+#     rm /tmp/install.sh
+
+# Copy application files (cached unless these specific files change)
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY Modelfile /home/ollama/Modelfile
 
@@ -47,13 +44,13 @@ RUN chmod +x /scripts/init-ollama.sh && \
     chown ollama:ollama /home/ollama/Modelfile && \
     chmod 644 /home/ollama/Modelfile
 
-# Set Ollama data directory
+# Set environment variables
 ENV OLLAMA_MODELS=/home/ollama/.ollama/models
 
 # Expose port
 EXPOSE 11434
 
-# Switch to ollama user for running the service
+# Runtime configuration
 USER root
 WORKDIR /home/ollama
 
