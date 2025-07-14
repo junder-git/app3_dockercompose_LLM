@@ -59,7 +59,7 @@ fi
 log "🔧 Starting Ollama service..."
 env OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}" \
     OLLAMA_MODELS="${OLLAMA_MODELS:-/home/ollama/.ollama/models}" \
-    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-5m}" \
+    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-300m}" \
     CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
     ollama serve &
 
