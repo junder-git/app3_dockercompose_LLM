@@ -1,150 +1,144 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat - ai.junder.uk</title>
-  <meta name="chat-storage" content="{{storage_type}}">
-  <meta name="user-type" content="{{user_type}}">
-  <link href="/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="/css/common.css">
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <style>
-    .user-badge { 
-      background: linear-gradient(135deg, #0d6efd, #6610f2); 
-      color: white; 
-      padding: 0.25rem 0.5rem; 
-      border-radius: 12px; 
-      font-size: 0.75rem; 
-      margin-left: 0.5rem; 
-    }
-    .model-selector { 
-      position: absolute; 
-      top: 10px; 
-      right: 10px; 
-      background: rgba(13, 110, 253, 0.1); 
-      border: 1px solid rgba(13, 110, 253, 0.3); 
-      border-radius: 8px; 
-      padding: 0.5rem; 
-      font-size: 0.8rem; 
-      color: #0d6efd; 
-    }
-    .user-features {
-      background: rgba(13, 110, 253, 0.1);
-      border: 1px solid rgba(13, 110, 253, 0.3);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-    }
-    .suggestion-chips {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 10px;
-      margin-top: 1rem;
-    }
-    .suggestion-chip {
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 12px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      text-align: center;
-      font-size: 0.9rem;
-    }
-    .suggestion-chip:hover {
-      background: var(--bg-quaternary);
-      border-color: var(--primary-color);
-      transform: translateY(-1px);
-    }
-    .cursor {
-      animation: blink 1s infinite;
-    }
-    @keyframes blink {
-      0%, 50% { opacity: 1; }
-      51%, 100% { opacity: 0; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - ai.junder.uk</title>
+    <link href="/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/common.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-  {{ nav }}
-
-  <main class="chat-container">
-    <div class="model-selector">
-      <i class="bi bi-cpu"></i> <strong>Devstral AI</strong>
-    </div>
-
-    <!-- Dynamic user features - populated by common.js -->
-    <div class="user-features">
-      <div class="d-flex justify-content-center align-items-center">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">Loading user features...</span>
+    <!-- HIERARCHICAL NAVIGATION -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <!-- Admin nav (only if admin) -->
+                    {{ nav_admin }}
+                    
+                    <!-- Approved nav (if approved or admin) -->
+                    {{ nav_approved }}
+                    
+                    <!-- Guest nav (always available) -->
+                    {{ nav_guest }}
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <span class="navbar-text me-3">{{ username }} {{ user_badge }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-outline-light btn-sm" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </li>
+                </ul>
+            </div>
         </div>
-        <span class="ms-2">Loading user features...</span>
-      </div>
-    </div>
+    </nav>
 
-    <div class="chat-messages" id="chat-messages">
-      <div class="welcome-prompt" id="welcome-prompt">
-        <h4><i class="bi bi-robot text-primary"></i> Welcome to Devstral AI</h4>
-        <p>Your intelligent coding assistant powered by advanced AI.</p>
-        <p><strong>Getting started:</strong> Choose a suggestion below or ask any coding question!</p>
-        
-        <div class="suggestion-chips">
-          <div class="suggestion-chip" data-prompt="Help me debug this Python code:">
-            <i class="bi bi-bug"></i> Debug Python Code
-          </div>
-          <div class="suggestion-chip" data-prompt="Create a React component for">
-            <i class="bi bi-code-square"></i> Build React Component
-          </div>
-          <div class="suggestion-chip" data-prompt="Explain this algorithm:">
-            <i class="bi bi-lightbulb"></i> Explain Algorithm
-          </div>
-          <div class="suggestion-chip" data-prompt="Optimize this SQL query:">
-            <i class="bi bi-database"></i> Optimize SQL
-          </div>
-          <div class="suggestion-chip" data-prompt="Review my code for best practices:">
-            <i class="bi bi-eye"></i> Code Review
-          </div>
-          <div class="suggestion-chip" data-prompt="Help me design a database schema for">
-            <i class="bi bi-diagram-3"></i> Database Design
-          </div>
+    <main class="chat-container">
+        <!-- HIERARCHICAL USER FEATURES -->
+        <div class="user-features">
+            <!-- Admin features (only if admin) -->
+            {{ admin_features }}
+            
+            <!-- Approved features (if approved or admin) -->
+            {{ approved_features }}
+            
+            <!-- Guest features (always available as base) -->
+            {{ guest_features }}
         </div>
-      </div>
-    </div>
 
-    <div class="chat-input-container">
-      <form id="chat-form" class="chat-input-form">
-        <textarea 
-          class="form-control chat-input" 
-          id="chat-input" 
-          placeholder="Ask me anything about coding, algorithms, or development..." 
-          required
-          maxlength="6000"
-          rows="1"></textarea>
-        <div class="chat-tools">
-          <button type="submit" class="btn btn-primary btn-icon" id="send-button">
-            <i class="bi bi-send"></i>
-          </button>
-          <button type="button" class="btn btn-danger btn-icon" id="stop-button" style="display: none;">
-            <i class="bi bi-stop-fill"></i>
-          </button>
-          <button type="button" class="btn btn-outline-secondary btn-icon" id="clear-chat">
-            <i class="bi bi-trash"></i>
-          </button>
+        <!-- CHAT INTERFACE (universal) -->
+        <div class="chat-messages" id="chat-messages">
+            <div class="welcome-prompt" id="welcome-prompt">
+                <h4><i class="bi bi-robot text-primary"></i> Welcome to Devstral AI</h4>
+                <p>{{ welcome_message }}</p>
+                
+                <div class="suggestion-chips">
+                    <div class="suggestion-chip" data-prompt="Help me debug this code:">
+                        <i class="bi bi-bug"></i> Debug Code
+                    </div>
+                    <div class="suggestion-chip" data-prompt="Create a React component for">
+                        <i class="bi bi-code-square"></i> Build Component
+                    </div>
+                    <div class="suggestion-chip" data-prompt="Explain this algorithm:">
+                        <i class="bi bi-lightbulb"></i> Explain Algorithm
+                    </div>
+                    <div class="suggestion-chip" data-prompt="Optimize this SQL query:">
+                        <i class="bi bi-database"></i> Optimize SQL
+                    </div>
+                    {{ admin_suggestions }}
+                </div>
+            </div>
         </div>
-      </form>
-      <div class="form-text text-center mt-2">
-        <small class="text-muted">
-          <span id="char-count">0</span>/6000 characters • <span id="storage-type">Loading...</span>
-        </small>
-      </div>
-    </div>
-  </main>
 
-  <script src="/js/lib/jquery.min.js"></script>
-  <script src="/js/lib/bootstrap.min.js"></script>
-  <script src="/js/common.js"></script>
+        <!-- CHAT INPUT (universal) -->
+        <div class="chat-input-container">
+            <form id="chat-form" class="chat-input-form">
+                <textarea 
+                    class="form-control chat-input" 
+                    id="chat-input" 
+                    placeholder="{{ input_placeholder }}" 
+                    required
+                    maxlength="6000"
+                    rows="1"></textarea>
+                <div class="chat-tools">
+                    <button type="submit" class="btn btn-primary btn-icon" id="send-button">
+                        <i class="bi bi-send"></i>
+                    </button>
+                    <button type="button" class="btn btn-danger btn-icon" id="stop-button" style="display: none;">
+                        <i class="bi bi-stop-fill"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-icon" id="clear-chat">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </form>
+            <div class="form-text text-center mt-2">
+                <small class="text-muted">
+                    <span id="char-count">0</span>/6000 characters • {{ status_message }}
+                </small>
+            </div>
+        </div>
+    </main>
+
+    <!-- HIERARCHICAL JAVASCRIPT LOADING -->
+    <script src="/js/lib/jquery.min.js"></script>
+    <script src="/js/lib/bootstrap.min.js"></script>
+    
+    <!-- Base guest functionality (always loaded) -->
+    {{ is_guest_js }}
+    
+    <!-- Approved functionality (if approved or admin) -->
+    {{ is_approved_js }}
+    
+    <!-- Admin functionality (only if admin) -->
+    {{ is_admin_js }}
+    
+    <!-- Initialize based on user type -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize chat with hierarchical user type
+            if (typeof AdminChat !== 'undefined') {
+                window.chatSystem = new AdminChat();
+                console.log('👑 Admin chat system active');
+            } else if (typeof ApprovedChat !== 'undefined') {
+                window.chatSystem = new ApprovedChat();
+                console.log('✅ Approved chat system active');
+            } else if (typeof GuestChat !== 'undefined') {
+                window.chatSystem = new GuestChat();
+                console.log('👤 Guest chat system active');
+            } else {
+                console.warn('⚠️ No chat system available');
+            }
+        });
+    </script>
 </body>
 </html>
