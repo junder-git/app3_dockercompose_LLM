@@ -25,7 +25,6 @@ RUN useradd -m -s /bin/bash ollama && \
 # Install Ollama - choose one approach:
 
 # OPTION 1: Direct binary download (MOST RELIABLE CACHING)
-ARG OLLAMA_VERSION=0.1.26
 RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
     chmod +x /usr/local/bin/ollama
 

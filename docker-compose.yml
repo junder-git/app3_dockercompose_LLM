@@ -9,6 +9,7 @@ services:
     ports:
       - "11434:11434"
     environment:
+      - OLLAMA_VERSION=${OLLAMA_VERSION}
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_MODELS=/home/ollama/.ollama/models
       - OLLAMA_MLOCK=${OLLAMA_MLOCK}
