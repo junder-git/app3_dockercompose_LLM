@@ -1,9 +1,7 @@
+-- nginx/lua/register.lua - User registration handler
 local cjson = require "cjson"
-local redis = require "resty.redis"
-local template = require "template"
+local server = require "server"
 
-local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
-local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local function send_json(status, tbl)
@@ -13,21 +11,20 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
-local function connect_redis()
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
-    if not ok then
-        send_json(500, { error = "Failed to connect to Redis" })
-    end
-    return red
+local function hash_password(password)
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
+                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
+    local handle = io.popen(hash_cmd)
+    local hash = handle:read("*a"):gsub("\n", "")
+    handle:close()
+    return hash
 end
 
-function handle_register()
+local function handle_register()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
-        send_json(400, { error = "Missing body" })
+        send_json(400, { error = "Missing request body" })
     end
 
     local data = cjson.decode(body)
@@ -38,34 +35,35 @@ function handle_register()
         send_json(400, { error = "Username and password required" })
     end
 
-    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
-                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
-    local handle = io.popen(hash_cmd)
-    local hash = handle:read("*a"):gsub("\n", "")
-    handle:close()
-
-    local red = connect_redis()
-    local user_key = "user:" .. username
-
-    local exists = red:exists(user_key)
-    if exists == 1 then
-        send_json(409, { error = "User already exists" })
+    -- Validate username format
+    if not string.match(username, "^[a-zA-Z0-9_]{3,20}$") then
+        send_json(400, { error = "Username must be 3-20 characters, letters/numbers/underscore only" })
     end
 
-    local user_data = {
-        id = "user:" .. username,
+    -- Validate password length
+    if string.len(password) < 6 then
+        send_json(400, { error = "Password must be at least 6 characters" })
+    end
+
+    -- Hash password
+    local password_hash = hash_password(password)
+
+    -- Create user (is_approved = false, pending admin approval)
+    local success, message = server.create_user(username, password_hash)
+    
+    if not success then
+        if message == "User already exists" then
+            send_json(409, { error = "Username already taken" })
+        else
+            send_json(500, { error = message })
+        end
+    end
+
+    send_json(200, { 
+        message = "User registered successfully. Your account is pending admin approval.",
         username = username,
-        password_hash = hash,
-        is_admin = "false",
-        is_approved = "false",
-        created_at = os.date("!%Y-%m-%dT%TZ")
-    }
-
-    for k, v in pairs(user_data) do
-        red:hset(user_key, k, v)
-    end
-
-    send_json(200, { message = "User registered. Wait for admin approval." })
+        status = "pending_approval"
+    })
 end
 
 return {
