@@ -68,13 +68,21 @@ for i in {1..30}; do
 done
 
 # Ensure model exists
-log "📦 Checking model: $OLLAMA_MODEL"
-if ! ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
-    log "📥 Pulling $OLLAMA_MODEL..."
+log "📦 Checking for model: $OLLAMA_MODEL"
+if ollama list 2>/dev/null | grep -q "$OLLAMA_MODEL"; then
+    log "✅ Model already exists: $OLLAMA_MODEL"
+else
+    log "📥 Model not found, pulling $OLLAMA_MODEL..."
     if ! timeout 1200 ollama pull "$OLLAMA_MODEL"; then
-        log "🔄 Fallback to mistral..."
-        ollama pull "mistral" || error "Failed to pull any model"
-        export OLLAMA_MODEL="mistral"
+        log "🔄 Model $OLLAMA_MODEL not found, trying mistral..."
+        if ollama pull "mistral"; then
+            export OLLAMA_MODEL="mistral"
+            log "✅ Using mistral as fallback"
+        else
+            error "Failed to pull any model"
+        fi
+    else
+        log "✅ Successfully pulled $OLLAMA_MODEL"
     fi
 fi
 
