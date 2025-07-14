@@ -64,28 +64,6 @@
             padding: 1.5rem;
             margin-bottom: 1.5rem;
         }
-        .activity-item {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem;
-            border-radius: 8px;
-            margin-bottom: 0.5rem;
-            transition: background-color 0.3s ease;
-        }
-        .activity-item:hover { background: var(--bg-quaternary); }
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 1rem;
-            font-size: 1.2rem;
-        }
-        .activity-icon.chat { background: rgba(13, 110, 253, 0.2); color: var(--primary-color); }
-        .activity-icon.login { background: rgba(40, 167, 69, 0.2); color: var(--success-color); }
-        .activity-icon.update { background: rgba(255, 193, 7, 0.2); color: var(--warning-color); }
         .quick-actions {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -114,34 +92,6 @@
             margin-bottom: 0.5rem;
             color: var(--primary-color);
         }
-        .settings-section {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        .settings-section h5 {
-            color: var(--primary-color);
-            margin-bottom: 1rem;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 0.5rem;
-        }
-        .notification-card {
-            background: rgba(13, 110, 253, 0.1);
-            border: 1px solid rgba(13, 110, 253, 0.3);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .notification-card.warning {
-            background: rgba(255, 193, 7, 0.1);
-            border-color: rgba(255, 193, 7, 0.3);
-        }
-        .notification-card.success {
-            background: rgba(40, 167, 69, 0.1);
-            border-color: rgba(40, 167, 69, 0.3);
-        }
         .user-badge {
             background: linear-gradient(135deg, #0d6efd, #6610f2);
             color: white;
@@ -162,8 +112,8 @@
             <div class="welcome-card">
                 <div class="position-relative">
                     <h1 class="mb-2">
-                        <i class="bi bi-speedometer2"></i> Welcome back, <strong>{{ username }}</strong>!
-                        <span class="user-badge">APPROVED USER</span>
+                        <i class="bi bi-speedometer2"></i> Welcome back, <strong id="dashboard-username">Loading...</strong>!
+                        <span class="user-badge" id="user-role-badge">USER</span>
                     </h1>
                     <p class="mb-0 opacity-75">Here's what's happening with your AI assistant today.</p>
                 </div>
@@ -175,7 +125,7 @@
                     <div class="d-flex align-items-center">
                         <i class="bi bi-check-circle-fill text-success me-2"></i>
                         <div>
-                            <strong>Account Approved!</strong> You have full access to all features.
+                            <strong>Welcome!</strong> Your dashboard is ready to use.
                         </div>
                     </div>
                 </div>
@@ -211,7 +161,7 @@
                     <div class="activity-card">
                         <h5><i class="bi bi-lightning-charge-fill text-primary"></i> Quick Actions</h5>
                         <div class="quick-actions">
-                            <a href="/chat.html" class="action-card">
+                            <a href="/chat" class="action-card">
                                 <div class="action-icon"><i class="bi bi-chat-dots"></i></div>
                                 <h6>Start Chatting</h6>
                                 <small class="text-muted">Begin a new conversation</small>
@@ -221,7 +171,7 @@
                                 <h6>Clear History</h6>
                                 <small class="text-muted">Reset chat history</small>
                             </a>
-                            <a href="#" class="action-card" onclick="exportChatHistory()">
+                            <a href="#" class="action-card" onclick="exportUserChats()">
                                 <div class="action-icon"><i class="bi bi-download"></i></div>
                                 <h6>Export Chats</h6>
                                 <small class="text-muted">Download your conversations</small>
@@ -231,6 +181,7 @@
                                 <h6>Settings</h6>
                                 <small class="text-muted">Customize preferences</small>
                             </a>
+                            <!-- Admin-only action - dynamically added by common.js -->
                         </div>
                     </div>
 
@@ -238,31 +189,9 @@
                     <div class="activity-card">
                         <h5><i class="bi bi-activity text-primary"></i> Recent Activity</h5>
                         <div id="recent-activity">
-                            <div class="activity-item">
-                                <div class="activity-icon chat">
-                                    <i class="bi bi-chat-dots"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">Started a new chat session</div>
-                                    <small class="text-muted">2 hours ago</small>
-                                </div>
-                            </div>
-                            <div class="activity-item">
-                                <div class="activity-icon login">
-                                    <i class="bi bi-box-arrow-in-right"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">Logged in to dashboard</div>
-                                    <small class="text-muted">3 hours ago</small>
-                                </div>
-                            </div>
-                            <div class="activity-item">
-                                <div class="activity-icon update">
-                                    <i class="bi bi-shield-check"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">Account approved by admin</div>
-                                    <small class="text-muted">1 day ago</small>
+                            <div class="d-flex justify-content-center p-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading activity...</span>
                                 </div>
                             </div>
                         </div>
@@ -272,16 +201,18 @@
                 <!-- Settings & Info -->
                 <div class="col-md-4">
                     <!-- Account Info -->
-                    <div class="settings-section">
+                    <div class="activity-card">
                         <h5><i class="bi bi-person-badge"></i> Account Info</h5>
                         <div class="mb-3">
                             <label class="form-label">Username</label>
-                            <div class="form-control-plaintext">{{ username }}</div>
+                            <div class="form-control-plaintext" id="account-username">Loading...</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Account Status</label>
                             <div class="d-flex align-items-center">
-                                <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i> Approved</span>
+                                <span class="badge bg-success me-2" id="account-status">
+                                    <i class="bi bi-check-circle"></i> Loading...
+                                </span>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -290,12 +221,12 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Last Active</label>
-                            <div class="form-control-plaintext" id="last-active">Loading...</div>
+                            <div class="form-control-plaintext" id="last-active">Now</div>
                         </div>
                     </div>
 
                     <!-- Preferences -->
-                    <div class="settings-section">
+                    <div class="activity-card">
                         <h5><i class="bi bi-sliders"></i> Preferences</h5>
                         <div class="mb-3">
                             <label class="form-label">Theme</label>
@@ -323,7 +254,7 @@
                     </div>
 
                     <!-- Usage Stats -->
-                    <div class="settings-section">
+                    <div class="activity-card">
                         <h5><i class="bi bi-bar-chart"></i> Usage This Month</h5>
                         <div class="mb-2">
                             <div class="d-flex justify-content-between">
@@ -346,9 +277,9 @@
                         <div class="mb-2">
                             <div class="d-flex justify-content-between">
                                 <span>Storage Used</span>
-                                <span class="fw-semibold text-success">Redis</span>
+                                <span class="fw-semibold text-success" id="storage-info">Loading...</span>
                             </div>
-                            <small class="text-muted">Full chat history preserved</small>
+                            <small class="text-muted" id="storage-description">Checking storage type...</small>
                         </div>
                     </div>
                 </div>
@@ -360,202 +291,14 @@
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/common.js"></script>
     <script>
-        class UserDashboard {
-            constructor() {
-                this.username = '{{ username }}';
-                this.sessionStartTime = Date.now();
-                this.init();
-            }
-
-            init() {
-                this.loadUserStats();
-                this.loadUserInfo();
-                this.startSessionTimer();
-                this.setupAutoRefresh();
-                
-                console.log('📊 Dashboard initialized for user: ' + this.username);
-                DevstralCommon.trackEvent('dashboard_view', this.username);
-            }
-
-            async loadUserStats() {
-                try {
-                    // Mock data - replace with actual API calls
-                    const stats = {
-                        totalMessages: Math.floor(Math.random() * 500) + 50,
-                        messagesToday: Math.floor(Math.random() * 20) + 1,
-                        monthlyMessages: Math.floor(Math.random() * 300) + 100,
-                        activeDays: Math.floor(Math.random() * 30) + 5
-                    };
-
-                    document.getElementById('total-messages').textContent = stats.totalMessages;
-                    document.getElementById('messages-today').textContent = stats.messagesToday;
-                    document.getElementById('monthly-messages').textContent = stats.monthlyMessages;
-                    document.getElementById('active-days').textContent = stats.activeDays;
-
-                    // Update progress bars
-                    const messagesPercent = Math.min((stats.monthlyMessages / 1000) * 100, 100);
-                    const daysPercent = Math.min((stats.activeDays / 30) * 100, 100);
-                    
-                    document.getElementById('messages-progress').style.width = messagesPercent + '%';
-                    document.getElementById('days-progress').style.width = daysPercent + '%';
-
-                } catch (error) {
-                    console.error('Failed to load user stats:', error);
-                }
-            }
-
-            async loadUserInfo() {
-                try {
-                    const response = await fetch('/api/auth/me', { credentials: 'include' });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Mock user creation date
-                        const mockCreatedDate = new Date(Date.now() - (Math.random() * 30 * 24 * 60 * 60 * 1000));
-                        const mockLastActive = new Date(Date.now() - (Math.random() * 2 * 60 * 60 * 1000));
-                        
-                        document.getElementById('member-since').textContent = this.formatDaysAgo(mockCreatedDate);
-                        document.getElementById('member-since-date').textContent = DevstralCommon.formatDate(mockCreatedDate);
-                        document.getElementById('last-active').textContent = this.formatTimeAgo(mockLastActive);
-                    }
-                } catch (error) {
-                    console.error('Failed to load user info:', error);
-                }
-            }
-
-            startSessionTimer() {
-                setInterval(() => {
-                    const sessionDuration = Math.floor((Date.now() - this.sessionStartTime) / 1000);
-                    const hours = Math.floor(sessionDuration / 3600);
-                    const minutes = Math.floor((sessionDuration % 3600) / 60);
-                    const seconds = sessionDuration % 60;
-                    
-                    let timeString = '';
-                    if (hours > 0) timeString += hours + 'h ';
-                    if (minutes > 0) timeString += minutes + 'm ';
-                    timeString += seconds + 's';
-                    
-                    document.getElementById('session-time').textContent = timeString;
-                }, 1000);
-            }
-
-            setupAutoRefresh() {
-                // Refresh stats every 5 minutes
-                setInterval(() => {
-                    this.loadUserStats();
-                }, 5 * 60 * 1000);
-            }
-
-            formatTimeAgo(date) {
-                const now = new Date();
-                const diffMs = now - date;
-                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                const diffMinutes = Math.floor(diffMs / (1000 * 60));
-                
-                if (diffHours >= 24) {
-                    const diffDays = Math.floor(diffHours / 24);
-                    return diffDays + (diffDays === 1 ? ' day ago' : ' days ago');
-                } else if (diffHours >= 1) {
-                    return diffHours + (diffHours === 1 ? ' hour ago' : ' hours ago');
-                } else if (diffMinutes >= 1) {
-                    return diffMinutes + (diffMinutes === 1 ? ' minute ago' : ' minutes ago');
-                } else {
-                    return 'Just now';
-                }
-            }
-
-            formatDaysAgo(date) {
-                const now = new Date();
-                const diffMs = now - date;
-                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                
-                if (diffDays === 0) return 'Today';
-                if (diffDays === 1) return '1 day ago';
-                return diffDays + ' days ago';
-            }
-        }
-
-        // Global functions for action cards
-        window.clearChatHistory = async function() {
-            if (!confirm('Are you sure you want to clear your entire chat history? This cannot be undone.')) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/chat/clear', {
-                    method: 'POST',
-                    credentials: 'include'
-                });
-
-                const data = await response.json();
-                if (data.success) {
-                    DevstralCommon.showNotification('Chat history cleared successfully!', 'success');
-                    window.dashboard.loadUserStats(); // Refresh stats
-                    DevstralCommon.trackEvent('chat_cleared', 'dashboard');
-                } else {
-                    throw new Error(data.error || 'Failed to clear chat history');
-                }
-            } catch (error) {
-                console.error('Clear chat error:', error);
-                DevstralCommon.showNotification('Failed to clear chat history: ' + error.message, 'error');
-            }
-        };
-
-        window.exportChatHistory = async function() {
-            try {
-                const response = await fetch('/api/chat/history?limit=1000', {
-                    credentials: 'include'
-                });
-
-                const data = await response.json();
-                if (data.success) {
-                    const exportData = {
-                        username: window.dashboard.username,
-                        exportedAt: new Date().toISOString(),
-                        messageCount: data.messages.length,
-                        messages: data.messages,
-                        storage: 'Redis - Full History'
-                    };
-
-                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-                        type: 'application/json' 
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'chat-history-' + window.dashboard.username + '-' + 
-                                 new Date().toISOString().split('T')[0] + '.json';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-
-                    DevstralCommon.showNotification('Chat history exported successfully!', 'success');
-                    DevstralCommon.trackEvent('chat_exported', data.messages.length.toString());
-                } else {
-                    throw new Error(data.error || 'Failed to export chat history');
-                }
-            } catch (error) {
-                console.error('Export chat error:', error);
-                DevstralCommon.showNotification('Failed to export chat history: ' + error.message, 'error');
-            }
-        };
-
+        // Simple global functions - most logic is in common.js
         window.showSettings = function() {
-            // Scroll to settings section
-            document.querySelector('.settings-section').scrollIntoView({ 
+            document.querySelector('.activity-card:has(#theme-select)').scrollIntoView({ 
                 behavior: 'smooth' 
             });
-            
-            // Highlight settings briefly
-            const settingsSection = document.querySelector('.settings-section');
-            settingsSection.style.border = '2px solid var(--primary-color)';
-            setTimeout(() => {
-                settingsSection.style.border = '1px solid var(--border-color)';
-            }, 2000);
         };
 
-        window.savePreferences = async function() {
+        window.savePreferences = function() {
             try {
                 const preferences = {
                     theme: document.getElementById('theme-select').value,
@@ -563,29 +306,18 @@
                     autoSave: document.getElementById('auto-save').checked
                 };
 
-                // Save to localStorage since we don't have a preferences API yet
                 localStorage.setItem('userPreferences', JSON.stringify(preferences));
                 
-                // Apply theme immediately
                 if (preferences.theme === 'light') {
                     document.documentElement.setAttribute('data-bs-theme', 'light');
                 } else if (preferences.theme === 'dark') {
                     document.documentElement.setAttribute('data-bs-theme', 'dark');
-                } else {
-                    // Auto mode - use system preference
-                    if (DevstralCommon.prefersDarkMode()) {
-                        document.documentElement.setAttribute('data-bs-theme', 'dark');
-                    } else {
-                        document.documentElement.setAttribute('data-bs-theme', 'light');
-                    }
                 }
 
                 DevstralCommon.showNotification('Preferences saved successfully!', 'success');
-                DevstralCommon.trackEvent('preferences_saved', JSON.stringify(preferences));
-
             } catch (error) {
                 console.error('Save preferences error:', error);
-                DevstralCommon.showNotification('Failed to save preferences: ' + error.message, 'error');
+                DevstralCommon.showNotification('Failed to save preferences', 'error');
             }
         };
 
@@ -606,7 +338,6 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            window.dashboard = new UserDashboard();
             loadPreferences();
         });
     </script>

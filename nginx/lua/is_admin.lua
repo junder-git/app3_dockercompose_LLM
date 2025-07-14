@@ -1,4 +1,4 @@
--- nginx/lua/is_admin.lua - Admin interface and API
+-- nginx/lua/is_admin.lua - Clean URLs navigation
 local cjson = require "cjson"
 local template = require "template"
 local server = require "server"
@@ -20,7 +20,7 @@ local function handle_admin_page()
     <div class="container-fluid">
         <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
         <div class="navbar-nav ms-auto">
-            <a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a>
+            <a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>
             <span class="navbar-text me-3">%s (Admin)</span>
             <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
         </div>
@@ -28,8 +28,8 @@ local function handle_admin_page()
 </nav>
 ]], username)
 
-    template.render_template("/usr/local/openresty/nginx/html/admin.html", {
-        navigation = nav_html,
+    template.render_template("/usr/local/openresty/nginx/html/admin_dash.html", {
+        nav = nav_html,
         username = username
     })
 end

@@ -1,4 +1,4 @@
--- nginx/lua/is_approved.lua - Approved user interface and chat API
+-- nginx/lua/is_approved.lua - Clean URLs navigation
 local cjson = require "cjson"
 local template = require "template"
 local server = require "server"
@@ -25,7 +25,7 @@ local function handle_chat_page()
     local username, user_data = is_who.require_approved()
     
     local is_admin = user_data.is_admin == "true"
-    local admin_link = is_admin and '<a class="nav-link" href="/admin.html"><i class="bi bi-gear"></i> Admin</a>' or ""
+    local admin_link = is_admin and '<a class="nav-link" href="/admin"><i class="bi bi-gear"></i> Admin</a>' or ""
     
     local nav_html = string.format([[
 <nav class="navbar navbar-expand-lg navbar-dark">
@@ -33,7 +33,7 @@ local function handle_chat_page()
         <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
         <div class="navbar-nav ms-auto">
             %s
-            <a class="nav-link" href="/dashboard.html"><i class="bi bi-speedometer2"></i> Dashboard</a>
+            <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
             <span class="navbar-text me-3">%s</span>
             <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
         </div>
@@ -41,11 +41,10 @@ local function handle_chat_page()
 </nav>
 ]], admin_link, username)
 
-    template.render_template("/usr/local/openresty/nginx/html/chat.html", {
-        navigation = nav_html,
+    template.render_template("/usr/local/openresty/nginx/html/approved_chat.html", {
+        nav = nav_html,
         username = username,
-        user_type = is_admin and "admin" or "approved",
-        storage_type = "redis"
+        model_name = "Devstral AI"
     })
 end
 
@@ -58,7 +57,7 @@ local function handle_dashboard_page()
     <div class="container-fluid">
         <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
         <div class="navbar-nav ms-auto">
-            <a class="nav-link" href="/chat.html"><i class="bi bi-chat-dots"></i> Chat</a>
+            <a class="nav-link" href="/chat"><i class="bi bi-chat-dots"></i> Chat</a>
             <span class="navbar-text me-3">%s</span>
             <button class="btn btn-outline-light btn-sm" onclick="DevstralCommon.logout()"><i class="bi bi-box-arrow-right"></i> Logout</button>
         </div>
@@ -66,8 +65,8 @@ local function handle_dashboard_page()
 </nav>
 ]], username)
 
-    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", {
-        navigation = nav_html,
+    template.render_template("/usr/local/openresty/nginx/html/approved_dash.html", {
+        nav = nav_html,
         username = username
     })
 end

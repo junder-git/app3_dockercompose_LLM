@@ -9,7 +9,15 @@
     <link rel="stylesheet" href="/css/common.css">
 </head>
 <body>
-    {{ nav }}
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="bi bi-house"></i> Home</a>
+                <a class="nav-link" href="/register"><i class="bi bi-person-plus"></i> Register</a>
+            </div>
+        </div>
+    </nav>
 
     <main class="auth-container">
         <div class="auth-card">
@@ -71,7 +79,7 @@
 
             <div class="text-center">
                 <p class="text-muted">Don't have an account?</p>
-                <a href="/register.html" class="btn btn-outline-primary">
+                <a href="/register" class="btn btn-outline-primary">
                     <i class="bi bi-person-plus"></i> Create Account
                 </a>
             </div>
@@ -178,7 +186,7 @@
                         this.showAlert('<i class="bi bi-check-circle"></i> Login successful! Redirecting...', 'success');
                         
                         const urlParams = new URLSearchParams(window.location.search);
-                        const redirect = urlParams.get('redirect') || '/chat.html';
+                        const redirect = urlParams.get('redirect') || '/chat';
                         
                         setTimeout(() => {
                             window.location.href = redirect;

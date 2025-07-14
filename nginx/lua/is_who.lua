@@ -1,4 +1,4 @@
--- nginx/lua/is_who.lua - User identification using is_approved check for pending users
+-- nginx/lua/is_who.lua - Clean URLs without .html
 local jwt = require "resty.jwt"
 local server = require "server"
 
@@ -80,7 +80,6 @@ function M.require_admin()
         ngx.exit(403)
     end
     
-    ngx.var.auth_username = username
     return username, user_data
 end
 
@@ -92,16 +91,15 @@ function M.require_approved()
         local error_msg = "Approved user access required"
         local redirect_url = "/"
         
-        -- Enhanced error responses with redirect hints
         if user_type == "authenticated" then
             error_msg = "Account pending approval - access denied"
-            redirect_url = "/pending_dash.html"
+            redirect_url = "/pending"
         elseif user_type == "guest" then
             error_msg = "Guest users cannot access this feature"
-            redirect_url = "/register.html"
+            redirect_url = "/register"
         elseif user_type == "none" then
             error_msg = "Authentication required"
-            redirect_url = "/login.html"
+            redirect_url = "/login"
         end
         
         ngx.status = 403
@@ -110,7 +108,6 @@ function M.require_approved()
         ngx.exit(403)
     end
     
-    ngx.var.auth_username = username
     return username, user_data
 end
 
@@ -126,7 +123,7 @@ function M.get_user_info()
             is_admin = true,
             is_approved = true,
             is_guest = false,
-            dashboard_url = "/admin_dash.html"
+            dashboard_url = "/admin"
         }
     elseif user_type == "approved" then
         return {
@@ -136,7 +133,7 @@ function M.get_user_info()
             is_admin = false,
             is_approved = true,
             is_guest = false,
-            dashboard_url = "/user_dash.html"
+            dashboard_url = "/dashboard"
         }
     elseif user_type == "guest" then
         local limits = server.get_guest_limits(username)
@@ -148,7 +145,7 @@ function M.get_user_info()
             is_approved = false,
             is_guest = true,
             limits = limits,
-            dashboard_url = "/chat.html"
+            dashboard_url = "/chat"
         }
     elseif user_type == "authenticated" then
         return {
@@ -159,7 +156,7 @@ function M.get_user_info()
             is_approved = false,
             is_guest = false,
             error = "Account pending approval",
-            dashboard_url = "/pending_dash.html"
+            dashboard_url = "/pending"
         }
     else
         return {
@@ -169,7 +166,7 @@ function M.get_user_info()
             is_approved = false,
             is_guest = false,
             error = "Not authenticated",
-            dashboard_url = "/login.html"
+            dashboard_url = "/login"
         }
     end
 end
@@ -179,28 +176,15 @@ function M.get_dashboard_url()
     local user_type, username, user_data = M.check()
     
     if user_type == "admin" then
-        return "/admin_dash.html"
+        return "/admin"
     elseif user_type == "approved" then
-        return "/user_dash.html"
+        return "/dashboard"
     elseif user_type == "authenticated" then
-        -- Authenticated but not approved = pending
-        return "/pending_dash.html"
+        return "/pending"
     elseif user_type == "guest" then
-        return "/chat.html"
+        return "/chat"
     else
         return "/"
-    end
-end
-
--- Check if user can access chat (approved users or guests only)
-function M.can_access_chat()
-    local user_type, username, user_data = M.check()
-    if user_type == "none" then
-        return false, "Authentication required"
-    elseif user_type == "authenticated" then
-        return false, "Account pending approval"
-    else
-        return true, "Access granted"
     end
 end
 
