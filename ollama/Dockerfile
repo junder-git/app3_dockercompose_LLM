@@ -26,7 +26,7 @@ RUN useradd -m -s /bin/bash ollama && \
     chown -R ollama:ollama /home/ollama
 
 # Install Ollama - Direct binary download (MOST RELIABLE CACHING)
-RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${VERSION_TAG}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
+RUN curl -fsSL "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/ollama-linux-amd64" -o /usr/local/bin/ollama && \
     chmod +x /usr/local/bin/ollama
 
 # Copy application files (cached unless these specific files change)
