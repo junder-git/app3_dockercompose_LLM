@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - CORE AUTHENTICATION AND ROUTING CONTROLLER
+-- nginx/lua/is_who.lua - UPDATED AUTHENTICATION WITH JWT LOCK SUPPORT
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -9,7 +9,7 @@ local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local M = {}
 
--- Server-side JWT verification - ONLY source of truth
+-- Server-side JWT verification with enhanced guest validation
 function M.check()
     -- First, try JWT token (logged-in users)
     local token = ngx.var.cookie_access_token
@@ -44,15 +44,18 @@ function M.check()
         end
     end
     
-    -- Check for guest token
+    -- Check for guest token (ENHANCED with JWT lock validation)
     local guest_token = ngx.var.cookie_guest_token
-    if guest_token and string.match(guest_token, "^guest_token_") then
-        local guest_username = string.gsub(guest_token, "guest_token_", "guest_")
-        
-        -- Validate guest session in shared memory
-        local guest_data = server.get_guest_session(guest_username)
-        if guest_data then
-            return "guest", guest_username, guest_data
+    if guest_token then
+        -- SECURITY: Validate guest session with anti-hijacking
+        local guest_session, error_msg = server.validate_guest_session(guest_token)
+        if guest_session then
+            -- SECURITY: Use dynamic username from session, not JWT
+            return "guest", guest_session.username, guest_session
+        else
+            ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
+            -- Clear invalid guest token
+            ngx.header["Set-Cookie"] = "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
         end
     end
     
@@ -71,10 +74,18 @@ function M.set_vars()
         ngx.var.is_admin = (user_type == "admin") and "true" or "false"
         ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
         ngx.var.is_guest = (user_type == "guest") and "true" or "false"
+        
+        -- SECURITY: For guests, store slot_id for JWT management
+        if user_type == "guest" then
+            ngx.var.guest_slot_id = user_data.slot_id or ""
+        else
+            ngx.var.guest_slot_id = ""
+        end
     else
         ngx.var.is_admin = "false"
         ngx.var.is_approved = "false"
         ngx.var.is_guest = "false"
+        ngx.var.guest_slot_id = ""
     end
     
     -- Derive user_type from permission flags
@@ -157,6 +168,95 @@ function M.require_approved()
     return username, user_data
 end
 
+-- ENHANCED: Guest validation with JWT lock checking
+function M.require_guest()
+    local user_type, username, user_data = M.check()
+    
+    if user_type ~= "guest" then
+        ngx.log(ngx.WARN, "Guest access denied for user_type: " .. (user_type or "none"))
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"error": "Guest access required", "user_type": "' .. (user_type or "none") .. '", "redirect": "/"}')
+        ngx.exit(403)
+    end
+    
+    -- Additional guest validation
+    if not user_data or not user_data.slot_id then
+        ngx.log(ngx.ERR, "Invalid guest session data")
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"error": "Invalid guest session"}')
+        ngx.exit(403)
+    end
+    
+    return username, user_data
+end
+
+-- ENHANCED: Get user info with guest session details
+function M.get_user_info()
+    local user_type, username, user_data = M.check()
+    
+    if user_type == "none" then
+        return {
+            success = false,
+            user_type = "none",
+            authenticated = false,
+            message = "Not authenticated"
+        }
+    end
+    
+    local response = {
+        success = true,
+        username = username,
+        user_type = user_type,
+        authenticated = true,
+        is_admin = (user_type == "admin"),
+        is_approved = (user_type == "approved" or user_type == "admin"),
+        is_guest = (user_type == "guest")
+    }
+    
+    -- Add type-specific information
+    if user_type == "admin" then
+        response.permissions = {"chat", "dashboard", "admin", "unlimited_messages"}
+        response.storage_type = "redis"
+        response.message_limit = "unlimited"
+        
+    elseif user_type == "approved" then
+        response.permissions = {"chat", "dashboard", "unlimited_messages"}
+        response.storage_type = "redis"
+        response.message_limit = "unlimited"
+        
+    elseif user_type == "guest" then
+        response.permissions = {"chat"}
+        response.storage_type = "none"
+        
+        -- Add guest-specific session info
+        if user_data then
+            local limits, err = server.get_guest_limits(user_data.slot_id)
+            if limits then
+                response.message_limit = limits.max_messages
+                response.messages_used = limits.used_messages
+                response.messages_remaining = limits.remaining_messages
+                response.session_remaining = limits.session_remaining
+                response.slot_number = limits.slot_number
+                response.priority = limits.priority
+            else
+                response.message_limit = 10
+                response.session_error = err
+            end
+        end
+        
+    elseif user_type == "authenticated" then
+        response.permissions = {}
+        response.storage_type = "none"
+        response.message_limit = 0
+        response.status = "pending_approval"
+        response.message = "Account pending administrator approval"
+    end
+    
+    return response
+end
+
 -- ROUTING CONTROLLER: Determines which handler should process the request
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
@@ -217,7 +317,7 @@ function M.route_to_handler(route_type)
     end
 end
 
--- NAVIGATION GENERATOR: Creates nav HTML based on user permissions
+-- ENHANCED: Navigation generator with guest session info
 function M.generate_nav()
     local user_type, username, user_data = M.set_vars()
     
@@ -252,6 +352,11 @@ function M.generate_nav()
         ]]
         
     elseif user_type == "guest" then
+        local slot_info = ""
+        if user_data and user_data.slot_number then
+            slot_info = " [Slot " .. user_data.slot_number .. "]"
+        end
+        
         return [[
             <nav class="navbar navbar-expand-lg navbar-dark">
                 <div class="container-fluid">
@@ -259,7 +364,7 @@ function M.generate_nav()
                     <div class="navbar-nav ms-auto">
                         <a class="nav-link" href="/chat">Guest Chat</a>
                         <a class="nav-link" href="/register">Register</a>
-                        <span class="navbar-text">]] .. username .. [[</span>
+                        <span class="navbar-text">]] .. username .. slot_info .. [[</span>
                     </div>
                 </div>
             </nav>

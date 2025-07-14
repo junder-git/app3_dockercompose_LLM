@@ -43,6 +43,7 @@ services:
       - STREAMING_TIMEOUT=${STREAMING_TIMEOUT}
     volumes:
       - ./volumes/ollama:/home/ollama/.ollama
+      - ./volumes/ollama-cache:/ollama-cache  # Add binary cache volume
     deploy:
       resources:
         limits:

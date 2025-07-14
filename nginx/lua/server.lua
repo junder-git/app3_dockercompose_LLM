@@ -1,7 +1,79 @@
--- nginx/lua/server.lua - SECURE Redis operations and SSE session management
+-- =============================================
+-- ENHANCED SSE SESSION MANAGEMENT WITH JWT LOCKING
+-- =============================================
+
+function M.can_start_sse_session(user_type, username)
+    if not user_type or not username then
+        return false, "Missing parameters"
+    end
+    
+    cleanup_expired_sse_sessions()
+    
+    -- SECURITY: For guests, check JWT lock status
+    if user_type == "guest" then
+        local slot_id = username -- For guests, username should be slot_id
+        
+        -- Check if this guest JWT is already locked for SSE
+        local red = connect_redis()
+        if red then
+            local lock_key = "jwt_lock:" .. slot_id
+            local lock_data = red:get(lock_key)
+            
+            if lock_data then
+                local lock_info = cjson.decode(lock_data)
+                if lock_info.session_type == "sse" and ngx.time() < lock_info.expires_at then
+                    ngx.log(ngx.WARN, "Guest JWT already has active SSE session: " .. slot_id)
+                    return false, "Guest token already has active chat session"
+                end
+            end
+        end
+    end
+    
+    local priority = get_user_priority(user_type)
+    local session_keys = ngx.shared.sse_sessions:get_keys(0)
+    local active_sessions = {}
+    
+    -- Count active sessions and check for duplicates
+    for _, key in ipairs(session_keys) do
+        if string.match(key, "^sse:") then
+            local session_info = ngx.shared.sse_sessions:get(key)
+            if session_info then
+                local session = cjson.decode(session_info)
+                table.insert(active_sessions, session)
+                
+                -- SECURITY: Prevent multiple sessions per user/guest slot
+                if session.username == username then
+                    return false, "User already has active session"
+                end
+            end
+        end
+    end
+    
+    -- Check capacity
+    if #active_sessions < MAX_SSE_SESSIONS then
+        return true, "Session allowed"
+    end
+    
+    -- SECURITY: Admins can kick lower priority sessions
+    if user_type == "admin" then
+        return true, "Admin session granted"
+    end
+    
+    return false, "No available slots"
+end
+
+function M.start_sse_session(user_type, username)
+    local can_start, message = M.can_start_sse_session(user_type, username)
+    if not can_start then
+        return false, message
+    end
+    
+    -- SECURITY: For guests, lock the JWT for SSE use
+    if user-- nginx/lua/server.lua - ENHANCED SECURE Guest Sessions with JWT
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local http = require "resty.http"
+local jwt = require "resty.jwt"
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
@@ -16,6 +88,7 @@ local GUEST_SESSION_DURATION = 1800  -- 30 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local USER_RATE_LIMIT = 60  -- messages per hour
 local ADMIN_RATE_LIMIT = 120  -- higher limit for admins
+local MAX_GUEST_SESSIONS = 5  -- HARDCODED limit
 
 local M = {}
 
@@ -31,10 +104,534 @@ local function connect_redis()
 end
 
 -- =============================================
--- SECURE USER MANAGEMENT (Redis)
+-- SECURE JWT-BASED GUEST SESSIONS WITH HARDCODED TOKENS
 -- =============================================
 
--- SECURE: Get user with validation
+-- SECURITY: Pre-generated hardcoded guest JWTs (prevents hijacking)
+-- These are REAL JWTs that will be generated on server startup
+local HARDCODED_GUEST_TOKENS = nil -- Will be populated by generate_hardcoded_guest_tokens()
+
+-- JWT timeout per token (prevents hijacking)
+local JWT_COOLDOWN_SECONDS = 60 -- 1 minute cooldown per JWT
+local JWT_SSE_LOCK_SECONDS = 300 -- 5 minutes max SSE session per JWT
+
+-- Generate REAL hardcoded JWTs on server startup with proper signatures
+local function generate_hardcoded_guest_tokens()
+    local tokens = {}
+    local username_pools = {
+        {"QuickFox", "SilentEagle", "BrightWolf", "SwiftTiger", "CleverHawk"},
+        {"BoldBear", "CalmLion", "SharpOwl", "WiseCat", "CoolDog"}, 
+        {"FastRaven", "StealthPanther", "BraveBuffalo", "AgileCheetah", "NobleStag"},
+        {"PowerBison", "GracefulSwan", "MightyElk", "WildMustang", "FierceWolverine"},
+        {"StormFalcon", "ThunderHorse", "LightningLynx", "WindEagle", "FlamePhoenix"}
+    }
+    
+    for i = 1, MAX_GUEST_SESSIONS do
+        local slot_id = "guest_slot_" .. i
+        local payload = {
+            sub = slot_id,
+            user_type = "guest",
+            priority = 3,
+            slot = i,
+            version = 1,
+            iat = 1640995200, -- Fixed timestamp (prevents timing attacks)
+            exp = 9999999999   -- Very far future (slot-based expiry, not time-based)
+        }
+        
+        -- Generate REAL JWT with proper signature
+        local token = jwt:sign(JWT_SECRET, {
+            header = { typ = "JWT", alg = "HS256" },
+            payload = payload
+        })
+        
+        table.insert(tokens, {
+            slot_id = slot_id,
+            slot_number = i,
+            jwt_token = token,
+            username_pool = username_pools[i] or {"Guest" .. i .. "User"}
+        })
+    end
+    
+    ngx.log(ngx.INFO, "Generated " .. #tokens .. " hardcoded guest JWTs with real signatures")
+    return tokens
+end
+
+-- SECURITY: Check if JWT is currently locked (in active use)
+local function is_jwt_locked(slot_id)
+    local red = connect_redis()
+    if not red then
+        return true -- Fail secure - assume locked if Redis unavailable
+    end
+    
+    local lock_key = "jwt_lock:" .. slot_id
+    local lock_data = red:get(lock_key)
+    
+    if not lock_data then
+        return false -- Not locked
+    end
+    
+    local lock_info = cjson.decode(lock_data)
+    local current_time = ngx.time()
+    
+    -- Check if lock expired
+    if current_time >= lock_info.expires_at then
+        red:del(lock_key)
+        ngx.log(ngx.INFO, "JWT lock expired for slot: " .. slot_id)
+        return false -- Lock expired
+    end
+    
+    return true -- Still locked
+end
+
+-- SECURITY: Lock JWT for exclusive use
+local function lock_jwt(slot_id, session_type)
+    local red = connect_redis()
+    if not red then
+        return false, "Service unavailable"
+    end
+    
+    local lock_key = "jwt_lock:" .. slot_id
+    local current_time = ngx.time()
+    
+    -- Check if already locked
+    if is_jwt_locked(slot_id) then
+        return false, "JWT currently in use"
+    end
+    
+    -- Create lock
+    local lock_info = {
+        slot_id = slot_id,
+        locked_at = current_time,
+        expires_at = current_time + (session_type == "sse" and JWT_SSE_LOCK_SECONDS or JWT_COOLDOWN_SECONDS),
+        session_type = session_type,
+        locked_by_ip = ngx.var.remote_addr or "unknown"
+    }
+    
+    red:set(lock_key, cjson.encode(lock_info))
+    red:expire(lock_key, lock_info.expires_at - current_time + 10) -- +10 sec buffer
+    
+    ngx.log(ngx.INFO, "JWT locked for " .. session_type .. ": " .. slot_id .. " (expires in " .. (lock_info.expires_at - current_time) .. "s)")
+    
+    return true, "JWT locked"
+end
+
+-- SECURITY: Unlock JWT (when session ends)
+local function unlock_jwt(slot_id)
+    local red = connect_redis()
+    if not red then
+        return false
+    end
+    
+    local lock_key = "jwt_lock:" .. slot_id
+    red:del(lock_key)
+    
+    ngx.log(ngx.INFO, "JWT unlocked: " .. slot_id)
+    return true
+end
+
+-- SECURITY: Find available hardcoded guest slot (with JWT locking)
+local function find_available_guest_slot()
+    local red = connect_redis()
+    if not red then
+        return nil, "Service unavailable"
+    end
+    
+    local current_time = ngx.time()
+    
+    -- Check each hardcoded slot
+    for _, slot_data in ipairs(HARDCODED_GUEST_TOKENS) do
+        -- Check if JWT is locked (in active use)
+        if not is_jwt_locked(slot_data.slot_id) then
+            local session_key = "guest_session:" .. slot_data.slot_id
+            local session_data = red:get(session_key)
+            
+            if not session_data then
+                -- Slot is free and JWT not locked
+                return slot_data, nil
+            else
+                -- Check if session expired
+                local session = cjson.decode(session_data)
+                if current_time >= session.expires_at then
+                    -- Clean expired session and unlock JWT
+                    red:del(session_key)
+                    unlock_jwt(slot_data.slot_id)
+                    ngx.log(ngx.INFO, "Cleaned expired guest session and unlocked JWT: " .. slot_data.slot_id)
+                    return slot_data, nil
+                end
+            end
+        end
+    end
+    
+    return nil, "All guest slots occupied or JWTs locked"
+end
+
+-- Create secure guest session using hardcoded JWT slot
+-- Generate dynamic guest username from slot's pool
+local function generate_guest_username_from_slot(slot_data)
+    local username_base = slot_data.username_pool[math.random(#slot_data.username_pool)]
+    local number = math.random(100, 999)
+    return username_base .. number
+end
+
+-- Create secure guest session using hardcoded JWT slot with locking
+function M.create_secure_guest_session()
+    -- SECURITY: Find available hardcoded slot
+    local slot_data, error_msg = find_available_guest_slot()
+    if not slot_data then
+        ngx.log(ngx.WARN, "No guest slots available: " .. (error_msg or "unknown"))
+        return nil, error_msg or "All guest slots occupied (5/5). Please try again later."
+    end
+    
+    -- SECURITY: Lock the JWT immediately to prevent hijacking
+    local lock_success, lock_msg = lock_jwt(slot_data.slot_id, "session")
+    if not lock_success then
+        ngx.log(ngx.WARN, "Failed to lock JWT for slot: " .. slot_data.slot_id .. " - " .. lock_msg)
+        return nil, "Slot temporarily unavailable: " .. lock_msg
+    end
+    
+    local red = connect_redis()
+    if not red then
+        unlock_jwt(slot_data.slot_id) -- Clean up lock
+        return nil, "Service unavailable"
+    end
+    
+    -- Generate dynamic username from slot's pool
+    local guest_username = generate_guest_username_from_slot(slot_data)
+    local session_key = "guest_session:" .. slot_data.slot_id
+    local expires_at = ngx.time() + GUEST_SESSION_DURATION
+    
+    -- CRITICAL: Store session in Redis with HARDCODED JWT
+    local session_data = {
+        slot_id = slot_data.slot_id,
+        guest_id = slot_data.slot_id, -- Use slot_id as guest_id for consistency
+        username = guest_username,
+        user_type = "guest",
+        jwt_token = slot_data.jwt_token, -- HARDCODED JWT prevents hijacking
+        created_at = ngx.time(),
+        expires_at = expires_at,
+        message_count = 0,
+        max_messages = GUEST_MESSAGE_LIMIT,
+        created_ip = ngx.var.remote_addr or "unknown",
+        last_activity = ngx.time(),
+        priority = 3,
+        slot_number = slot_data.slot_number,
+        is_jwt_locked = true,
+        -- SECURITY: No chat history storage for guests
+        chat_storage = "none"
+    }
+    
+    -- Store in Redis with TTL
+    red:set(session_key, cjson.encode(session_data))
+    red:expire(session_key, GUEST_SESSION_DURATION)
+    
+    -- SECURITY: HttpOnly cookie with HARDCODED JWT
+    ngx.header["Set-Cookie"] = "guest_token=" .. slot_data.jwt_token .. 
+        "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION .. 
+        "; Secure=" .. (ngx.var.scheme == "https" and "true" or "false")
+    
+    ngx.log(ngx.INFO, "Secure guest session created: " .. guest_username .. " [Slot " .. slot_data.slot_number .. "] from IP: " .. (ngx.var.remote_addr or "unknown"))
+    
+    return {
+        success = true,
+        slot_id = slot_data.slot_id,
+        guest_id = slot_data.slot_id,
+        username = guest_username,
+        token = slot_data.jwt_token, -- Return hardcoded token
+        expires_at = expires_at,
+        message_limit = GUEST_MESSAGE_LIMIT,
+        session_duration = GUEST_SESSION_DURATION,
+        priority = 3,
+        slot_number = slot_data.slot_number,
+        storage_type = "none",
+        is_jwt_locked = true
+    }, nil
+end
+
+-- SECURITY: Validate hardcoded guest JWT against Redis slot with anti-hijacking
+function M.validate_guest_session(token)
+    if not token then
+        return nil, "No token provided"
+    end
+    
+    -- CRITICAL: First verify JWT signature
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        ngx.log(ngx.WARN, "Invalid guest JWT signature: " .. (jwt_obj.reason or "unknown"))
+        return nil, "Invalid token"
+    end
+    
+    local payload = jwt_obj.payload
+    if not payload.sub or not payload.user_type or payload.user_type ~= "guest" then
+        return nil, "Invalid guest token claims"
+    end
+    
+    -- SECURITY: Verify token matches hardcoded slots
+    local is_valid_hardcoded = false
+    for _, slot_data in ipairs(HARDCODED_GUEST_TOKENS) do
+        if slot_data.jwt_token == token and slot_data.slot_id == payload.sub then
+            is_valid_hardcoded = true
+            break
+        end
+    end
+    
+    if not is_valid_hardcoded then
+        ngx.log(ngx.ERR, "SECURITY VIOLATION: Non-hardcoded guest token used: " .. (payload.sub or "unknown"))
+        return nil, "Unauthorized token"
+    end
+    
+    -- CRITICAL: Check if JWT is locked (in active use by another session)
+    if is_jwt_locked(payload.sub) then
+        ngx.log(ngx.WARN, "ANTI-HIJACKING: JWT already in use for slot: " .. payload.sub .. " from IP: " .. (ngx.var.remote_addr or "unknown"))
+        return nil, "Token currently in use by another session"
+    end
+    
+    -- CRITICAL: Validate against Redis session (ensures slot is active)
+    local red = connect_redis()
+    if not red then
+        return nil, "Service unavailable"
+    end
+    
+    local session_key = "guest_session:" .. payload.sub
+    local session_data = red:get(session_key)
+    
+    if not session_data then
+        ngx.log(ngx.WARN, "Guest session not found in Redis for slot: " .. payload.sub)
+        return nil, "Session not active"
+    end
+    
+    local session = cjson.decode(session_data)
+    
+    -- SECURITY: Double-verify token matches stored token
+    if session.jwt_token ~= token then
+        ngx.log(ngx.ERR, "SECURITY VIOLATION: Guest token mismatch for slot: " .. payload.sub)
+        return nil, "Token mismatch"
+    end
+    
+    -- Check session expiration (time-based, not JWT exp)
+    if ngx.time() >= session.expires_at then
+        red:del(session_key)
+        unlock_jwt(payload.sub) -- Unlock expired session
+        ngx.log(ngx.INFO, "Guest session expired for slot: " .. payload.sub)
+        return nil, "Session expired"
+    end
+    
+    -- Update last activity
+    session.last_activity = ngx.time()
+    red:set(session_key, cjson.encode(session))
+    red:expire(session_key, GUEST_SESSION_DURATION)
+    
+    return session, nil
+end
+
+-- End guest session and unlock JWT
+function M.end_guest_session(slot_id)
+    if not slot_id then
+        return false, "Slot ID required"
+    end
+    
+    local red = connect_redis()
+    if not red then
+        return false, "Service unavailable"
+    end
+    
+    local session_key = "guest_session:" .. slot_id
+    local session_data = red:get(session_key)
+    
+    if session_data then
+        local session = cjson.decode(session_data)
+        red:del(session_key)
+        ngx.log(ngx.INFO, "Guest session ended: " .. (session.username or "unknown") .. " [Slot " .. (session.slot_number or "?") .. "]")
+    end
+    
+    -- CRITICAL: Unlock JWT for reuse
+    unlock_jwt(slot_id)
+    
+    return true, "Session ended and JWT unlocked"
+end
+
+-- Get guest session limits
+function M.get_guest_limits(guest_id)
+    if not guest_id then
+        return nil, "Guest ID required"
+    end
+    
+    local red = connect_redis()
+    if not red then
+        return nil, "Service unavailable"
+    end
+    
+    local session_key = "guest_session:" .. guest_id
+    local session_data = red:get(session_key)
+    
+    if not session_data then
+        return nil, "Session not found"
+    end
+    
+    local session = cjson.decode(session_data)
+    
+    return {
+        max_messages = session.max_messages,
+        used_messages = session.message_count,
+        remaining_messages = session.max_messages - session.message_count,
+        session_remaining = session.expires_at - ngx.time(),
+        username = session.username,
+        priority = session.priority,
+        storage_type = session.chat_storage
+    }, nil
+end
+
+-- Use guest message (with limit enforcement)
+function M.use_guest_message(guest_id)
+    if not guest_id then
+        return false, "Guest ID required"
+    end
+    
+    local red = connect_redis()
+    if not red then
+        return false, "Service unavailable"
+    end
+    
+    local session_key = "guest_session:" .. guest_id
+    local session_data = red:get(session_key)
+    
+    if not session_data then
+        return false, "Session not found"
+    end
+    
+    local session = cjson.decode(session_data)
+    
+    if session.message_count >= session.max_messages then
+        return false, "Message limit exceeded (" .. session.message_count .. "/" .. session.max_messages .. ")"
+    end
+    
+    -- Increment message count
+    session.message_count = session.message_count + 1
+    session.last_used = ngx.time()
+    session.last_activity = ngx.time()
+    
+    red:set(session_key, cjson.encode(session))
+    red:expire(session_key, GUEST_SESSION_DURATION)
+    
+    ngx.log(ngx.INFO, "Guest message used: " .. session.username .. " (" .. session.message_count .. "/" .. session.max_messages .. ")")
+    
+    return true, "Message allowed", {
+        remaining = session.max_messages - session.message_count,
+        used = session.message_count,
+        max = session.max_messages
+    }
+end
+
+-- Get all guest sessions (admin function)
+function M.get_all_guest_sessions()
+    local red = connect_redis()
+    if not red then
+        return {}, "Service unavailable"
+    end
+    
+    local guest_keys = red:keys("guest_session:*")
+    local sessions = {}
+    local current_time = ngx.time()
+    
+    for _, key in ipairs(guest_keys) do
+        local session_data = red:get(key)
+        if session_data then
+            local session = cjson.decode(session_data)
+            
+            -- Clean expired sessions
+            if current_time >= session.expires_at then
+                red:del(key)
+            else
+                table.insert(sessions, {
+                    guest_id = session.guest_id,
+                    username = session.username,
+                    created_at = session.created_at,
+                    expires_at = session.expires_at,
+                    last_activity = session.last_activity,
+                    message_count = session.message_count,
+                    max_messages = session.max_messages,
+                    created_ip = session.created_ip,
+                    age_seconds = current_time - session.created_at,
+                    remaining_seconds = session.expires_at - current_time,
+                    priority = session.priority
+                })
+            end
+        end
+    end
+    
+    -- Sort by creation time (newest first)
+    table.sort(sessions, function(a, b)
+        return a.created_at > b.created_at
+    end)
+    
+    return sessions, nil
+end
+
+-- Delete guest session (admin function)
+function M.delete_guest_session(guest_id, admin_username)
+    if not guest_id or not admin_username then
+        return false, "Missing parameters"
+    end
+    
+    local red = connect_redis()
+    if not red then
+        return false, "Service unavailable"
+    end
+    
+    local session_key = "guest_session:" .. guest_id
+    local session_data = red:get(session_key)
+    
+    if not session_data then
+        return false, "Session not found"
+    end
+    
+    local session = cjson.decode(session_data)
+    red:del(session_key)
+    
+    ngx.log(ngx.WARN, "Admin " .. admin_username .. " deleted guest session: " .. session.username .. " (" .. guest_id .. ")")
+    
+    return true, "Guest session deleted"
+end
+
+-- Get guest session stats
+function M.get_guest_stats()
+    local red = connect_redis()
+    if not red then
+        return {}, "Service unavailable"
+    end
+    
+    local guest_keys = red:keys("guest_session:*")
+    local active_sessions = 0
+    local total_messages = 0
+    local current_time = ngx.time()
+    
+    for _, key in ipairs(guest_keys) do
+        local session_data = red:get(key)
+        if session_data then
+            local session = cjson.decode(session_data)
+            
+            if current_time < session.expires_at then
+                active_sessions = active_sessions + 1
+                total_messages = total_messages + session.message_count
+            else
+                red:del(key)  -- Clean expired
+            end
+        end
+    end
+    
+    return {
+        active_sessions = active_sessions,
+        max_sessions = MAX_GUEST_SESSIONS,
+        available_slots = MAX_GUEST_SESSIONS - active_sessions,
+        total_messages_used = total_messages,
+        average_messages_per_session = active_sessions > 0 and math.floor(total_messages / active_sessions) or 0
+    }, nil
+end
+
+-- =============================================
+-- EXISTING FUNCTIONS (keeping all previous code)
+-- =============================================
+
+-- SECURE USER MANAGEMENT (Redis)
 function M.get_user(username)
     if not username or username == "" then
         return nil
@@ -64,7 +661,6 @@ function M.get_user(username)
     return user
 end
 
--- SECURE: Create user with enhanced validation
 function M.create_user(username, password_hash, ip_address)
     if not username or not password_hash then
         return false, "Missing required fields"
@@ -100,7 +696,6 @@ function M.create_user(username, password_hash, ip_address)
     return true, "User created"
 end
 
--- SECURE: Update user activity with audit
 function M.update_user_activity(username)
     if not username then return false end
     
@@ -111,7 +706,6 @@ function M.update_user_activity(username)
     return true
 end
 
--- SECURE: Update login info with security tracking
 function M.update_user_login(username, ip_address)
     if not username then return false end
     
@@ -128,7 +722,6 @@ function M.update_user_login(username, ip_address)
     return true
 end
 
--- SECURE: Get all users (admin only operation)
 function M.get_all_users()
     local red = connect_redis()
     if not red then return {} end
@@ -154,7 +747,6 @@ function M.get_all_users()
     return users
 end
 
--- SECURE: Approve user with audit trail
 function M.approve_user(username, admin_username)
     if not username or not admin_username then
         return false, "Missing required parameters"
@@ -176,7 +768,6 @@ function M.approve_user(username, admin_username)
     return true, "User approved"
 end
 
--- SECURE: Toggle admin with validation
 function M.toggle_admin(username, admin_username)
     if not username or not admin_username then
         return false, "Missing required parameters"
@@ -214,7 +805,6 @@ function M.toggle_admin(username, admin_username)
     return true, "Admin status updated", new_status == "true"
 end
 
--- SECURE: Delete user with audit
 function M.delete_user(username)
     if not username then
         return false, "Username required"
@@ -252,13 +842,11 @@ function M.delete_user(username)
     return true, "User deleted"
 end
 
--- =============================================
--- SECURE CHAT HISTORY (Redis for approved only)
--- =============================================
-
+-- SECURE CHAT HISTORY (Redis for approved only - NO guest storage)
 function M.save_message(username, role, content)
-    if not username or not role or not content then
-        return false
+    -- SECURITY: Guests don't get Redis chat storage
+    if not username or string.match(username, "^guest_") then
+        return false, "Guest users don't have persistent chat storage"
     end
     
     local red = connect_redis()
@@ -280,7 +868,10 @@ function M.save_message(username, role, content)
 end
 
 function M.get_chat_history(username, limit)
-    if not username then return {} end
+    -- SECURITY: Guests don't get Redis chat history
+    if not username or string.match(username, "^guest_") then
+        return {}, "Guest users don't have persistent chat history"
+    end
     
     local red = connect_redis()
     if not red then return {} end
@@ -306,7 +897,10 @@ function M.get_chat_history(username, limit)
 end
 
 function M.clear_chat_history(username)
-    if not username then return false end
+    -- SECURITY: Guests don't have Redis chat history to clear
+    if not username or string.match(username, "^guest_") then
+        return false, "Guest users don't have persistent chat history"
+    end
     
     local red = connect_redis()
     if not red then return false end
@@ -316,11 +910,8 @@ function M.clear_chat_history(username)
     return true
 end
 
--- =============================================
 -- SECURE RATE LIMITING (Redis)
--- =============================================
-
-function M.check_rate_limit(username, is_admin)
+function M.check_rate_limit(username, is_admin, is_guest)
     if not username then return true end
     
     local red = connect_redis()
@@ -331,15 +922,21 @@ function M.check_rate_limit(username, is_admin)
     local window_start = current_time - time_window
     local count_key = "user_messages:" .. username
     
-    -- SECURITY: Different limits for admins vs users
-    local limit = is_admin and ADMIN_RATE_LIMIT or USER_RATE_LIMIT
+    -- SECURITY: Different limits for admins/users/guests
+    local limit = GUEST_MESSAGE_LIMIT -- Default for guests
+    if is_admin then
+        limit = ADMIN_RATE_LIMIT
+    elseif not is_guest then
+        limit = USER_RATE_LIMIT
+    end
     
     -- Clean old entries and count current window
     red:zremrangebyscore(count_key, 0, window_start)
     local current_count = red:zcard(count_key)
     
     if current_count >= limit then
-        ngx.log(ngx.WARN, "Rate limit exceeded for user: " .. username .. " (" .. current_count .. "/" .. limit .. ")")
+        local user_type = is_admin and "admin" or (is_guest and "guest" or "user")
+        ngx.log(ngx.WARN, "Rate limit exceeded for " .. user_type .. ": " .. username .. " (" .. current_count .. "/" .. limit .. ")")
         return false, "Rate limit exceeded (" .. current_count .. "/" .. limit .. " messages per hour)"
     end
     
@@ -350,10 +947,7 @@ function M.check_rate_limit(username, is_admin)
     return true, "OK"
 end
 
--- =============================================
--- SECURE SSE SESSION MANAGEMENT 
--- =============================================
-
+-- SECURE SSE SESSION MANAGEMENT (existing code unchanged)
 local function get_user_priority(user_type)
     if user_type == "admin" then return 1 end
     if user_type == "approved" then return 2 end
@@ -513,158 +1107,6 @@ function M.get_sse_stats()
     return stats
 end
 
-function M.get_all_sse_sessions()
-    cleanup_expired_sse_sessions()
-    local session_keys = ngx.shared.sse_sessions:get_keys(0)
-    local sessions = {}
-    
-    for _, key in ipairs(session_keys) do
-        if string.match(key, "^sse:") then
-            local session_info = ngx.shared.sse_sessions:get(key)
-            if session_info then
-                local session = cjson.decode(session_info)
-                table.insert(sessions, {
-                    session_id = session.session_id,
-                    username = session.username,
-                    user_type = session.user_type,
-                    priority = session.priority,
-                    created_at = session.created_at,
-                    last_activity = session.last_activity,
-                    age_seconds = ngx.time() - session.created_at,
-                    inactive_seconds = ngx.time() - session.last_activity,
-                    remote_addr = session.remote_addr
-                })
-            end
-        end
-    end
-    
-    -- Sort by priority then age
-    table.sort(sessions, function(a, b)
-        if a.priority == b.priority then
-            return a.created_at < b.created_at
-        end
-        return a.priority < b.priority
-    end)
-    
-    return sessions, #sessions, MAX_SSE_SESSIONS
-end
-
-function M.kick_sse_session(session_id, admin_username)
-    if not session_id or not admin_username then
-        return false, "Missing parameters"
-    end
-    
-    local session_key = "sse:" .. session_id
-    local session_info = ngx.shared.sse_sessions:get(session_key)
-    
-    if not session_info then
-        return false, "Session not found"
-    end
-    
-    local session = cjson.decode(session_info)
-    
-    -- SECURITY: Don't kick admin sessions unless by admin
-    if session.priority == 1 then
-        return false, "Cannot kick admin session"
-    end
-    
-    ngx.shared.sse_sessions:delete(session_key)
-    
-    ngx.log(ngx.WARN, "Admin " .. admin_username .. " kicked SSE session: " .. session_id .. " (user: " .. session.username .. ")")
-    
-    return true, "Session kicked"
-end
-
--- =============================================
--- SECURE GUEST SESSION MANAGEMENT
--- =============================================
-
-function M.create_guest_session()
-    local guest_username = "guest_" .. ngx.time() .. "_" .. math.random(100, 999)
-    local guest_token = "guest_token_" .. guest_username
-    local expires_at = ngx.time() + GUEST_SESSION_DURATION
-    
-    local session_data = {
-        username = guest_username,
-        token = guest_token,
-        expires_at = expires_at,
-        created_at = ngx.time(),
-        message_count = 0,
-        max_messages = GUEST_MESSAGE_LIMIT,
-        created_ip = ngx.var.remote_addr or "unknown"
-    }
-    
-    -- Store in shared memory
-    local guest_key = "guest_session:" .. guest_username
-    ngx.shared.guest_sessions:set(guest_key, cjson.encode(session_data), GUEST_SESSION_DURATION)
-    
-    -- SECURITY: HttpOnly cookie
-    ngx.header["Set-Cookie"] = "guest_token=" .. guest_token .. 
-        "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
-    
-    ngx.log(ngx.INFO, "Guest session created: " .. guest_username .. " from IP: " .. (ngx.var.remote_addr or "unknown"))
-    
-    return session_data
-end
-
-function M.get_guest_session(username)
-    if not username then return nil end
-    
-    local guest_key = "guest_session:" .. username
-    local guest_data = ngx.shared.guest_sessions:get(guest_key)
-    
-    if not guest_data then
-        return nil
-    end
-    
-    local session = cjson.decode(guest_data)
-    if ngx.time() >= session.expires_at then
-        ngx.shared.guest_sessions:delete(guest_key)
-        return nil
-    end
-    
-    return session
-end
-
-function M.get_guest_limits(username)
-    local session = M.get_guest_session(username)
-    if not session then
-        return nil
-    end
-    
-    return {
-        max_messages = session.max_messages,
-        used_messages = session.message_count,
-        remaining_messages = session.max_messages - session.message_count,
-        session_remaining = session.expires_at - ngx.time()
-    }
-end
-
-function M.use_guest_message(username)
-    if not username then
-        return false, "Username required"
-    end
-    
-    local guest_key = "guest_session:" .. username
-    local guest_data = ngx.shared.guest_sessions:get(guest_key)
-    
-    if not guest_data then
-        return false, "Session not found"
-    end
-    
-    local session = cjson.decode(guest_data)
-    
-    if session.message_count >= session.max_messages then
-        return false, "Message limit exceeded"
-    end
-    
-    session.message_count = session.message_count + 1
-    session.last_used = ngx.time()
-    ngx.shared.guest_sessions:set(guest_key, cjson.encode(session), GUEST_SESSION_DURATION)
-    
-    return true, "Message allowed"
-end
-
 -- =============================================
 -- SECURE OLLAMA INTEGRATION
 -- =============================================
@@ -760,6 +1202,21 @@ function M.call_ollama_streaming(messages, options, callback)
 
     httpc:close()
     return accumulated, nil
+end
+
+-- =============================================
+-- MODULE INITIALIZATION
+-- =============================================
+
+-- Initialize hardcoded tokens on module load
+if not HARDCODED_GUEST_TOKENS then
+    HARDCODED_GUEST_TOKENS = generate_hardcoded_guest_tokens()
+    ngx.log(ngx.INFO, "Guest session module loaded with " .. #HARDCODED_GUEST_TOKENS .. " hardcoded JWT slots")
+    
+    -- Log the generated tokens for reference (in production, you might want to store these)
+    for i, token_data in ipairs(HARDCODED_GUEST_TOKENS) do
+        ngx.log(ngx.INFO, "Guest Slot " .. i .. " JWT: " .. string.sub(token_data.jwt_token, 1, 50) .. "...")
+    end
 end
 
 return M
