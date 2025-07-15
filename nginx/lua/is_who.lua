@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - SIMPLIFIED AUTHENTICATION WITHOUT NAV GENERATION
+-- nginx/lua/is_who.lua - SIMPLIFIED AUTHENTICATION WITH SAFER VARIABLE HANDLING
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -75,17 +75,28 @@ function M.set_vars()
         ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
         ngx.var.is_guest = (user_type == "guest") and "true" or "false"
         
-        -- SECURITY: For guests, store slot_id for JWT management
-        if user_type == "guest" then
-            ngx.var.guest_slot_id = user_data.slot_id or ""
-        else
-            ngx.var.guest_slot_id = ""
+        -- SECURITY: For guests, store slot_id for JWT management (if variable exists)
+        if user_type == "guest" and user_data.slot_id then
+            -- Use pcall to safely set guest_slot_id if it exists
+            local ok, err = pcall(function()
+                ngx.var.guest_slot_id = user_data.slot_id
+            end)
+            if not ok then
+                ngx.log(ngx.WARN, "guest_slot_id variable not defined in nginx.conf: " .. err)
+            end
         end
     else
         ngx.var.is_admin = "false"
         ngx.var.is_approved = "false"
         ngx.var.is_guest = "false"
-        ngx.var.guest_slot_id = ""
+        
+        -- Safely clear guest_slot_id if it exists
+        local ok, err = pcall(function()
+            ngx.var.guest_slot_id = ""
+        end)
+        if not ok then
+            ngx.log(ngx.DEBUG, "guest_slot_id variable not defined in nginx.conf: " .. err)
+        end
     end
     
     -- Derive user_type from permission flags
@@ -291,22 +302,55 @@ function M.route_to_handler(route_type)
         end
         
     elseif ngx.var.user_type == "ispending" then
-        -- PENDING: Redirect to pending page
-        ngx.log(ngx.INFO, "Redirecting pending user " .. username .. " to /pending")
-        return ngx.redirect("/pending")
+        -- PENDING: Show pending status on dashboard, redirect chat to dash
+        if route_type == "chat" then
+            ngx.log(ngx.INFO, "Redirecting pending user " .. username .. " to /dash (pending approval)")
+            return ngx.redirect("/dash")
+        elseif route_type == "dash" then
+            local is_pending = require "is_pending"
+            is_pending.handle_dash_page()
+        else
+            ngx.status = 404
+            ngx.say("Unknown pending route: " .. route_type)
+            ngx.exit(404)
+        end
         
-    elseif ngx.var.is_guest == "true" or ngx.var.user_type == "isnone" then
-        -- GUEST/PUBLIC: Route to is_guest handler
+    elseif ngx.var.is_guest == "true" then
+        -- ACTIVE GUEST: Route to guest handler
         local is_guest = require "is_guest"
         if route_type == "chat" then
             is_guest.handle_chat_page()
         elseif route_type == "dash" then
-            -- Guests can't access dashboard
+            -- Guests get redirected to login from dashboard
             ngx.log(ngx.INFO, "Guest user attempting to access dashboard, redirecting to /login")
             return ngx.redirect("/login")
         else
             ngx.status = 404
             ngx.say("Unknown guest route: " .. route_type)
+            ngx.exit(404)
+        end
+        
+    elseif ngx.var.user_type == "isnone" then
+        -- ANONYMOUS: Special handling for chat vs dash
+        if route_type == "chat" then
+            -- Try to create guest session automatically
+            local session_data, error_msg = server.create_secure_guest_session()
+            if session_data then
+                ngx.log(ngx.INFO, "Auto-created guest session for anonymous user: " .. session_data.username)
+                -- Redirect to chat with new guest session
+                return ngx.redirect("/chat")
+            else
+                ngx.log(ngx.WARN, "Failed to create guest session for anonymous user: " .. (error_msg or "unknown"))
+                -- Redirect to dashboard with guest unavailable message
+                return ngx.redirect("/dash?guest_unavailable=true")
+            end
+        elseif route_type == "dash" then
+            -- Show dashboard with guest session info or login prompt
+            local is_public = require "is_public"
+            is_public.handle_dash_page_with_guest_info()
+        else
+            ngx.status = 404
+            ngx.say("Unknown anonymous route: " .. route_type)
             ngx.exit(404)
         end
         
