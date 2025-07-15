@@ -189,38 +189,83 @@ function M.handle_index_page()
     local is_who = require "is_who"
     local user_type, username, user_data = is_who.check()
     
-    local redis_data = user_type == "none" and M.public_redis_data or {
-        username = username,
-        role = user_type,
-        permissions = user_type == "admin" and "full_system_access" or
+    -- Build combined context for original template system
+    local context = {}
+    
+    -- Add redis data
+    if user_type == "none" then
+        for k, v in pairs(M.public_redis_data) do
+            context[k] = v
+        end
+    else
+        context.username = username
+        context.role = user_type
+        context.permissions = user_type == "admin" and "full_system_access" or
                      user_type == "approved" and "full_chat_access" or
                      user_type == "guest" and "limited_chat_access" or
-                     "none",
-        user_badge = M.get_user_badge(user_type, user_data),
-        dash_buttons = M.get_nav_buttons(user_type, username, user_data),
-        authenticated = user_type ~= "none"
-    }
+                     "none"
+        context.user_badge = M.get_user_badge(user_type, user_data)
+        context.dash_buttons = M.get_nav_buttons(user_type, username, user_data)
+        context.authenticated = user_type ~= "none"
+    end
     
+    -- Add content data
     local content_data = M.build_content_data("index", user_type, {
         welcome_message = user_type == "none" and "Welcome to ai.junder.uk" or
                          "Welcome back, " .. username .. "!",
         auth_status = user_type == "none" and "anonymous" or "authenticated"
     })
     
-    template.render_and_output("index.html", redis_data, content_data)
+    for k, v in pairs(content_data) do
+        context[k] = v
+    end
+    
+    template.render_template("/usr/local/openresty/nginx/html/index.html", context)
 end
 
 function M.handle_login_page()
+    local context = {}
+    
+    -- Add public redis data
+    for k, v in pairs(M.public_redis_data) do
+        context[k] = v
+    end
+    
+    -- Add content data
     local content_data = M.build_content_data("login", "none")
-    template.render_and_output("login.html", M.public_redis_data, content_data)
+    for k, v in pairs(content_data) do
+        context[k] = v
+    end
+    
+    template.render_template("/usr/local/openresty/nginx/html/login.html", context)
 end
 
 function M.handle_register_page()
+    local context = {}
+    
+    -- Add public redis data
+    for k, v in pairs(M.public_redis_data) do
+        context[k] = v
+    end
+    
+    -- Add content data
     local content_data = M.build_content_data("register", "none")
-    template.render_and_output("register.html", M.public_redis_data, content_data)
+    for k, v in pairs(content_data) do
+        context[k] = v
+    end
+    
+    template.render_template("/usr/local/openresty/nginx/html/register.html", context)
 end
 
 function M.handle_404_page()
+    local context = {}
+    
+    -- Add public redis data
+    for k, v in pairs(M.public_redis_data) do
+        context[k] = v
+    end
+    
+    -- Add content data
     local content_data = M.build_content_data("404", "none", {
         page_title = "404 - Page Not Found",
         error_code = "404",
@@ -228,10 +273,22 @@ function M.handle_404_page()
         error_description = "The page you're looking for doesn't exist or has been moved. Let's get you back on track!"
     })
     
-    template.render_and_output("404.html", M.public_redis_data, content_data)
+    for k, v in pairs(content_data) do
+        context[k] = v
+    end
+    
+    template.render_template("/usr/local/openresty/nginx/html/404.html", context)
 end
 
 function M.handle_50x_page()
+    local context = {}
+    
+    -- Add public redis data
+    for k, v in pairs(M.public_redis_data) do
+        context[k] = v
+    end
+    
+    -- Add content data
     local content_data = M.build_content_data("50x", "none", {
         page_title = "Server Error",
         error_code = "500",
@@ -239,7 +296,11 @@ function M.handle_50x_page()
         error_description = "Something went wrong on our servers. We're working to fix this issue. Please try again in a few moments."
     })
     
-    template.render_and_output("50x.html", M.public_redis_data, content_data)
+    for k, v in pairs(content_data) do
+        context[k] = v
+    end
+    
+    template.render_template("/usr/local/openresty/nginx/html/50x.html", context)
 end
 
 -- =============================================

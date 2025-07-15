@@ -8,7 +8,7 @@ local function render_template(path, context, depth)
     local content = file:read("*a")
     file:close()
 
-    depth = depth or 3
+    depth = depth or 2
 
     for i = 1, depth do
         for key, value in pairs(context) do
