@@ -1,4 +1,4 @@
-You're absolutely right! With depth 3 on render_template, it will handle nested partials automatically. Let me show you the three files and remove the unnecessary read_partial function.
+### With depth 3 on render_template, it will handle nested partials automatically. Let me show you the three files and remove the unnecessary read_partial function. <== bro...
 
 =====
 
