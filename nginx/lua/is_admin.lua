@@ -1,91 +1,74 @@
 local function handle_chat_page()
     local is_who = require "is_who"
+    local is_public = require "is_public"
     local username = is_who.require_admin()
     local template = require "template"
-    local login = require "login"
     
-    -- Use login module's nav rendering
-    local nav_html = login.render_nav_for_user("admin", username, nil)
-    
-    template.render_template("/usr/local/openresty/nginx/html/app.html", {
-        page_title = "Admin Chat",
+    -- Admin Redis data - full system access
+    local is_admin_redis_data = {
         username = username,
-        css = [[
-            <link href="/css/bootstrap.min.css" rel="stylesheet">
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-            <link rel="stylesheet" href="/css/common.css">
-            <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-        ]],
-        nav = nav_html,
-        content = [[
-            <div class="chat-container">
-                <div class="user-features admin-features">
-                    <h6><i class="bi bi-shield-check text-danger"></i> Admin Chat Access</h6>
-                    <p>Full system access • Unlimited messages • All features</p>
-                </div>
-                
-                <div class="chat-messages" id="chat-messages"></div>
-                
-                <div class="chat-input-container">
-                    <form id="chat-form">
-                        <textarea class="form-control chat-input" id="chat-input" 
-                                placeholder="Admin console ready..." required></textarea>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-send"></i>
-                        </button>
-                    </form>
-                </div>
-            </div>
-        ]],
-        js = [[
-            <script src="/js/lib/jquery.min.js"></script>
-            <script src="/js/lib/bootstrap.min.js"></script>
-            <script src="/js/guest.js"></script>
+        role = "admin",
+        permissions = "full_system_access",
+        user_badge = is_public.get_user_badge("admin", nil),
+        dash_buttons = is_public.get_nav_buttons("admin", username, nil),
+        system_access = "enabled",
+        message_limit = "unlimited",
+        storage_type = "redis"
+    }
+    
+    -- Admin content data - extends public shared content
+    local is_admin_content_data = is_public.build_content_data("chat", "admin", {
+        -- Admin-specific JavaScript (extends base with approved + admin)
+        js_files = is_public.shared_content_data.base_js_files .. [[
             <script src="/js/approved.js"></script>
             <script src="/js/admin.js"></script>
-        ]]
-    }, 3)
+        ]],
+        
+        -- Admin-specific chat features
+        chat_features = is_public.get_chat_features("admin"),
+        
+        -- Admin-specific content
+        admin_features = "enabled",
+        priority_access = "highest"
+    })
+    
+    template.render_and_output("app.html", is_admin_redis_data, is_admin_content_data)
 end
 
 local function handle_dash_page()
     local is_who = require "is_who"
+    local is_public = require "is_public"
     local username = is_who.require_admin()
     local template = require "template"
-    local login = require "login"
     
-    -- Use login module's nav rendering
-    local nav_html = login.render_nav_for_user("admin", username, nil)
-    
-    template.render_template("/usr/local/openresty/nginx/html/app.html", {
-        page_title = "Admin Dashboard",
+    -- Admin Redis data - system administration
+    local is_admin_redis_data = {
         username = username,
-        css = [[
-            <link href="/css/bootstrap.min.css" rel="stylesheet">
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-            <link rel="stylesheet" href="/css/common.css">
-            <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-        ]],
-        nav = nav_html,
-        content = [[
-            <div class="dashboard-container">
-                <div class="admin-header">
-                    <h2><i class="bi bi-shield-check text-danger"></i> Admin Dashboard</h2>
-                    <p>System administration and user management</p>
-                </div>
-                
-                <div class="admin-content" id="admin-content">
-                    <!-- Populated by admin.js -->
-                </div>
-            </div>
-        ]],
-        js = [[
-            <script src="/js/lib/jquery.min.js"></script>
-            <script src="/js/lib/bootstrap.min.js"></script>
-            <script src="/js/guest.js"></script>
+        role = "admin",
+        permissions = "system_administration",
+        user_badge = is_public.get_user_badge("admin", nil),
+        dash_buttons = is_public.get_nav_buttons("admin", username, nil),
+        system_access = "enabled",
+        user_management = "enabled"
+    }
+    
+    -- Admin content data - extends public shared content
+    local is_admin_content_data = is_public.build_content_data("dashboard", "admin", {
+        -- Admin-specific JavaScript (extends base with approved + admin)
+        js_files = is_public.shared_content_data.base_js_files .. [[
             <script src="/js/approved.js"></script>
             <script src="/js/admin.js"></script>
-        ]]
-    }, 3)
+        ]],
+        
+        -- Admin-specific dashboard features
+        dashboard_content = is_public.get_dashboard_features("admin"),
+        
+        -- Admin-specific content
+        admin_panel = "enabled",
+        user_management_panel = "enabled"
+    })
+    
+    template.render_and_output("app.html", is_admin_redis_data, is_admin_content_data)
 end
 
 return {

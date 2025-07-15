@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - UNIFIED GUEST MANAGEMENT (Page Handler + API)
+-- nginx/lua/is_guest.lua - UNIFIED GUEST MANAGEMENT WITH TEMPLATE RENDERER
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -18,8 +18,8 @@ end
 
 local function handle_chat_page()
     local is_who = require "is_who"
+    local is_public = require "is_public"
     local template = require "template"
-    local login = require "login"
     
     local user_type, username, user_data = is_who.set_vars()
     
@@ -28,46 +28,33 @@ local function handle_chat_page()
         username = "Anonymous"
     end
     
-    -- Use login module's nav rendering with guest data
-    local nav_html = login.render_nav_for_user("guest", username, user_data)
-    
-    template.render_template("/usr/local/openresty/nginx/html/app.html", {
-        page_title = "Guest Chat",
+    -- Guest Redis data - limited access
+    local is_guest_redis_data = {
         username = username,
-        css = [[
-            <link href="/css/bootstrap.min.css" rel="stylesheet">
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-            <link rel="stylesheet" href="/css/common.css">
-            <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-        ]],
-        nav = nav_html,
-        content = [[
-            <div class="chat-container">
-                <div class="user-features guest-features">
-                    <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
-                    <p>10 messages • 30 minutes • localStorage only</p>
-                    <a href="/register" class="btn btn-warning btn-sm">Register for unlimited</a>
-                </div>
-                
-                <div class="chat-messages" id="chat-messages"></div>
-                
-                <div class="chat-input-container">
-                    <form id="chat-form">
-                        <textarea class="form-control chat-input" id="chat-input" 
-                                placeholder="Guest question (10 limit)..." required></textarea>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-send"></i>
-                        </button>
-                    </form>
-                </div>
-            </div>
-        ]],
-        js = [[
-            <script src="/js/lib/jquery.min.js"></script>
-            <script src="/js/lib/bootstrap.min.js"></script>
-            <script src="/js/guest.js"></script>
-        ]]
-    }, 3)
+        role = "guest",
+        permissions = "limited_chat_access",
+        user_badge = is_public.get_user_badge("guest", user_data),
+        dash_buttons = is_public.get_nav_buttons("guest", username, user_data),
+        slot_number = user_data and user_data.slot_number or "unknown",
+        message_limit = "10",
+        session_type = "temporary"
+    }
+    
+    -- Guest content data - extends public shared content
+    local is_guest_content_data = is_public.build_content_data("chat", "guest", {
+        -- Guest-specific JavaScript (only base - no extensions)
+        js_files = is_public.shared_content_data.base_js_files,
+        
+        -- Guest-specific chat features
+        chat_features = is_public.get_chat_features("guest"),
+        
+        -- Guest-specific content
+        storage_type = "localStorage",
+        session_duration = "30 minutes",
+        registration_prompt = "enabled"
+    })
+    
+    template.render_and_output("app.html", is_guest_redis_data, is_guest_content_data)
 end
 
 -- =============================================
