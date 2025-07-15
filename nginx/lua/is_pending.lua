@@ -64,7 +64,7 @@ local function handle_dash_page()
                                 <a href="/login" class="btn btn-primary">
                                     <i class="bi bi-arrow-clockwise"></i> Check Status
                                 </a>
-                                <button class="btn btn-outline-light ms-2" onclick="logout()">
+                                <button class="btn btn-outline-light ms-2" onclick="PublicInterface.logout()">
                                     <i class="bi bi-box-arrow-right"></i> Logout
                                 </button>
                             </div>

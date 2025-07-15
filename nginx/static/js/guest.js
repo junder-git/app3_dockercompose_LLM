@@ -458,23 +458,6 @@ window.downloadGuestHistory = function() {
     console.log('📥 Guest chat history downloaded');
 };
 
-window.logout = function() {
-    // Clear guest session
-    GuestChatStorage.clearMessages();
-    
-    // Clear cookies
-    const cookies = ['access_token', 'guest_token', 'session'];
-    cookies.forEach(name => {
-        document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    });
-    
-    // Clear storage
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    window.location.href = '/';
-};
-
 // FIXED: Auto-initialize chat system when page loads
 document.addEventListener('DOMContentLoaded', () => {
     // Only initialize if we're on a chat page
