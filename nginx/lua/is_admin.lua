@@ -70,7 +70,8 @@ local function handle_admin_api()
         
     elseif uri == "/api/admin/stats" and method == "GET" then
         -- Get system stats
-        local guest_stats = server.get_guest_stats()
+        local is_guest = require "is_guest"
+        local guest_stats = is_guest.get_guest_stats()
         local sse_stats = server.get_sse_stats()
         
         send_json(200, {
@@ -82,13 +83,25 @@ local function handle_admin_api()
             }
         })
         
+    elseif uri == "/api/admin/clear-guest-sessions" and method == "POST" then
+        -- Clear all guest sessions (for debugging)
+        local is_guest = require "is_guest"
+        local success, message = is_guest.clear_all_guest_sessions()
+        
+        if success then
+            send_json(200, { success = true, message = message })
+        else
+            send_json(500, { success = false, error = message })
+        end
+        
     else
         send_json(404, { 
             error = "Admin API endpoint not found",
             requested = method .. " " .. uri,
             available_endpoints = {
                 "GET /api/admin/users - Get all users",
-                "GET /api/admin/stats - Get system statistics"
+                "GET /api/admin/stats - Get system statistics",
+                "POST /api/admin/clear-guest-sessions - Clear all guest sessions (debug)"
             }
         })
     end

@@ -48,7 +48,8 @@ function M.check()
     local guest_token = ngx.var.cookie_guest_token
     if guest_token then
         -- SECURITY: Validate guest session with anti-hijacking
-        local guest_session, error_msg = server.validate_guest_session(guest_token)
+        local is_guest = require "is_guest"
+        local guest_session, error_msg = is_guest.validate_guest_session(guest_token)
         if guest_session then
             -- SECURITY: Use dynamic username from session, not JWT
             return "guest", guest_session.username, guest_session
@@ -237,18 +238,15 @@ function M.get_user_info()
         
         -- Add guest-specific session info
         if user_data then
-            local limits, err = server.get_guest_limits(user_data.slot_id)
-            if limits then
-                response.message_limit = limits.max_messages
-                response.messages_used = limits.used_messages
-                response.messages_remaining = limits.remaining_messages
-                response.session_remaining = limits.session_remaining
-                response.slot_number = limits.slot_number
-                response.priority = limits.priority
-            else
-                response.message_limit = 10
-                response.session_error = err
-            end
+            response.message_limit = user_data.max_messages or 10
+            response.messages_used = user_data.message_count or 0
+            response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
+            response.session_remaining = (user_data.expires_at or 0) - ngx.time()
+            response.slot_number = user_data.slot_number
+            response.priority = user_data.priority or 3
+        else
+            response.message_limit = 10
+            response.session_error = "No user data"
         end
         
     elseif user_type == "authenticated" then
@@ -328,7 +326,8 @@ function M.route_to_handler(route_type)
         -- ANONYMOUS: Special handling for chat vs dash
         if route_type == "chat" then
             -- Try to create guest session automatically
-            local session_data, error_msg = server.create_secure_guest_session()
+            local is_guest = require "is_guest"
+            local session_data, error_msg = is_guest.create_secure_guest_session()
             if session_data then
                 ngx.log(ngx.INFO, "Auto-created guest session for anonymous user: " .. session_data.username)
                 -- Redirect to chat with new guest session
