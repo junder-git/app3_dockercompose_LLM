@@ -876,6 +876,22 @@ function M.check_rate_limit(username, is_admin, is_guest)
     return true, "OK"
 end
 
+-- SECURE password verification - matches login registration
+function M.verify_password(password, stored_hash)
+    if not password or not stored_hash then
+        return false
+    end
+    
+    -- Generate hash using same method as registration
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
+                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
+    local handle = io.popen(hash_cmd)
+    local hash = handle:read("*a"):gsub("\n", "")
+    handle:close()
+    
+    return hash == stored_hash
+end
+
 -- SECURE SSE SESSION MANAGEMENT (existing code unchanged)
 local function get_user_priority(user_type)
     if user_type == "admin" then return 1 end
