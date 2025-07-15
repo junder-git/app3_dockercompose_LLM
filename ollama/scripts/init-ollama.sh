@@ -103,7 +103,8 @@ test_payload="{
         \"temperature\": ${MODEL_TEMPERATURE:-0.7},
         \"num_predict\": 50,
         \"num_ctx\": ${OLLAMA_CONTEXT_SIZE:-4096},
-        \"num_gpu\": ${OLLAMA_GPU_LAYERS:-32}
+        \"num_gpu\": ${OLLAMA_GPU_LAYERS:-32},
+        \"use_mmap\": ${MODEL_USE_MMAP:-false}
     }
 }"
 
