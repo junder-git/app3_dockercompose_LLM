@@ -1,3 +1,7 @@
+The templates will now use {{ redis.xyz }} for user-specific data and {{ content.xyz }} for shared/page-specific content, with {{ html.xyz }} for partial includes.
+  
+=====
+
 ### With depth 3 on render_template, it will handle nested partials automatically. Let me show you the three files and remove the unnecessary read_partial function. <== bro...
 
 =====
