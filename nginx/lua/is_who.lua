@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - UPDATED AUTHENTICATION WITH JWT LOCK SUPPORT
+-- nginx/lua/is_who.lua - SIMPLIFIED AUTHENTICATION WITHOUT NAV GENERATION
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -314,74 +314,6 @@ function M.route_to_handler(route_type)
         -- FALLBACK: Something went wrong
         ngx.log(ngx.ERR, "Unknown user state for routing: " .. ngx.var.user_type)
         return ngx.redirect("/login")
-    end
-end
-
--- ENHANCED: Navigation generator with guest session info
-function M.generate_nav()
-    local user_type, username, user_data = M.set_vars()
-    
-    if ngx.var.is_admin == "true" then
-        return [[
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-                    <div class="navbar-nav ms-auto">
-                        <a class="nav-link" href="/chat">Chat</a>
-                        <a class="nav-link" href="/dash">Admin Dashboard</a>
-                        <span class="navbar-text">]] .. username .. [[ (Admin)</span>
-                        <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>
-                    </div>
-                </div>
-            </nav>
-        ]]
-        
-    elseif ngx.var.is_approved == "true" then
-        return [[
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-                    <div class="navbar-nav ms-auto">
-                        <a class="nav-link" href="/chat">Chat</a>
-                        <a class="nav-link" href="/dash">Dashboard</a>
-                        <span class="navbar-text">]] .. username .. [[</span>
-                        <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>
-                    </div>
-                </div>
-            </nav>
-        ]]
-        
-    elseif user_type == "guest" then
-        local slot_info = ""
-        if user_data and user_data.slot_number then
-            slot_info = " [Slot " .. user_data.slot_number .. "]"
-        end
-        
-        return [[
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-                    <div class="navbar-nav ms-auto">
-                        <a class="nav-link" href="/chat">Guest Chat</a>
-                        <a class="nav-link" href="/register">Register</a>
-                        <span class="navbar-text">]] .. username .. slot_info .. [[</span>
-                    </div>
-                </div>
-            </nav>
-        ]]
-        
-    else
-        return [[
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
-                    <div class="navbar-nav ms-auto">
-                        <a class="nav-link" href="/login">Login</a>
-                        <a class="nav-link" href="/register">Register</a>
-                    </div>
-                </div>
-            </nav>
-        ]]
     end
 end
 

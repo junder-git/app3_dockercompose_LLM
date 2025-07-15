@@ -12,20 +12,6 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
--- =============================================================================
--- nginx/lua/is_guest.lua - UNIFIED GUEST MANAGEMENT (Page Handler + API)
--- =============================================================================
-
-local cjson = require "cjson"
-local server = require "server"
-
-local function send_json(status, tbl)
-    ngx.status = status
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode(tbl))
-    ngx.exit(status)
-end
-
 -- =============================================
 -- PAGE HANDLER - Guest Chat Interface
 -- =============================================
@@ -33,6 +19,7 @@ end
 local function handle_chat_page()
     local is_who = require "is_who"
     local template = require "template"
+    local login = require "login"
     
     local user_type, username, user_data = is_who.set_vars()
     
@@ -41,8 +28,8 @@ local function handle_chat_page()
         username = "Anonymous"
     end
     
-    -- Get navigation HTML
-    local nav = is_who.generate_nav()
+    -- Use login module's nav rendering with guest data
+    local nav_html = login.render_nav_for_user("guest", username, user_data)
     
     template.render_template("/usr/local/openresty/nginx/html/app.html", {
         page_title = "Guest Chat",
@@ -53,7 +40,7 @@ local function handle_chat_page()
             <link rel="stylesheet" href="/css/common.css">
             <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         ]],
-        nav = nav,
+        nav = nav_html,
         content = [[
             <div class="chat-container">
                 <div class="user-features guest-features">
@@ -80,7 +67,7 @@ local function handle_chat_page()
             <script src="/js/lib/bootstrap.min.js"></script>
             <script src="/js/guest.js"></script>
         ]]
-    }, 3)  -- Template depth 3
+    }, 3)
 end
 
 -- =============================================

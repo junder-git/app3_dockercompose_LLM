@@ -1,7 +1,11 @@
--- nginx/lua/login.lua - SECURE authentication with JWT creation
+-- =============================================================================
+-- nginx/lua/login.lua - LOGIN/LOGOUT WITH NAV RENDERING
+-- =============================================================================
+
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local server = require "server"
+local template = require "template"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
@@ -12,141 +16,209 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
-local function hash_password(password)
-    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
-                                   password:gsub("'", "'\"'\"'"), JWT_SECRET)
-    local handle = io.popen(hash_cmd)
-    local hash = handle:read("*a"):gsub("\n", "")
-    handle:close()
-    return hash
+-- =============================================
+-- NAV RENDERING FUNCTION
+-- =============================================
+
+local function render_nav_for_user(user_type, username, user_data)
+    local nav_template = template.read_partial("/usr/local/openresty/nginx/html/partials/nav.html")
+    
+    if user_type == "admin" then
+        return nav_template:gsub("{{%s*username%s*}}", username)
+                          :gsub("{{%s*user_badge%s*}}", " (Admin)")
+                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
+                          
+    elseif user_type == "approved" then
+        return nav_template:gsub("{{%s*username%s*}}", username)
+                          :gsub("{{%s*user_badge%s*}}", "")
+                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
+                          
+    elseif user_type == "guest" then
+        local slot_info = ""
+        if user_data and user_data.slot_number then
+            slot_info = " [Slot " .. user_data.slot_number .. "]"
+        end
+        return nav_template:gsub("{{%s*username%s*}}", username)
+                          :gsub("{{%s*user_badge%s*}}", slot_info)
+                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a>')
+                          
+    elseif user_type == "authenticated" then
+        return nav_template:gsub("{{%s*username%s*}}", username)
+                          :gsub("{{%s*user_badge%s*}}", " (Pending)")
+                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
+                          
+    else
+        -- Not logged in
+        return nav_template:gsub("{{%s*username%s*}}", "Anonymous")
+                          :gsub("{{%s*user_badge%s*}}", "")
+                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>')
+    end
 end
 
--- SECURE LOGIN - Only way to get valid JWT
+-- =============================================
+-- LOGIN/LOGOUT HANDLERS
+-- =============================================
+
 local function handle_login()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
+    
     if not body then
-        send_json(400, { error = "Missing request body" })
+        send_json(400, { error = "No request body" })
     end
-
+    
     local data = cjson.decode(body)
     local username = data.username
     local password = data.password
-
+    
     if not username or not password then
         send_json(400, { error = "Username and password required" })
     end
-
-    -- CRITICAL: Get user from Redis - SERVER IS SOURCE OF TRUTH
+    
+    -- Validate credentials
     local user_data = server.get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "Login attempt for non-existent user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
-
-    -- CRITICAL: Verify password
-    local password_hash = hash_password(password)
-    if user_data.password_hash ~= password_hash then
+    
+    local valid = server.verify_password(password, user_data.password_hash)
+    if not valid then
         ngx.log(ngx.WARN, "Invalid password for user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
-
-    -- CRITICAL: Check if user is approved (admins always approved)
-    if user_data.is_approved ~= "true" and user_data.is_admin ~= "true" then
-        ngx.log(ngx.WARN, "Login attempt by unapproved user: " .. username)
-        send_json(403, { 
-            error = "User not approved",
-            message = "Your account is pending administrator approval"
-        })
-    end
-
-    -- SECURITY: JWT payload contains MINIMAL data - server re-validates everything
-    local jwt_token = jwt:sign(JWT_SECRET, {
-        header = { typ = "JWT", alg = "HS256" },
-        payload = {
-            username = username,
-            iat = ngx.time(),  -- Issued at
-            exp = ngx.time() + 86400, -- 24 hours
-            -- DO NOT PUT PERMISSIONS IN JWT - server validates from Redis
-            version = 1 -- For token invalidation if needed
-        }
-    })
-
-    -- SECURITY: HttpOnly cookie prevents XSS
-    ngx.header["Set-Cookie"] = "access_token=" .. jwt_token .. 
-        "; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400; Secure=" .. 
-        (ngx.var.scheme == "https" and "true" or "false")
-
-    -- Update last login in Redis - FIXED FUNCTION CALLS
+    
+    -- Update login activity
     server.update_user_activity(username)
-    server.update_user_login(username, ngx.var.remote_addr)
-
-    ngx.log(ngx.INFO, "Successful login for user: " .. username .. " (admin: " .. (user_data.is_admin or "false") .. ")")
-
-    -- RESPONSE: Minimal data - client will call /api/auth/me for full permissions
+    
+    -- Generate JWT
+    local payload = {
+        username = username,
+        iat = ngx.time(),
+        exp = ngx.time() + 86400 * 7  -- 7 days
+    }
+    
+    local token = jwt:sign(JWT_SECRET, {
+        header = { typ = "JWT", alg = "HS256" },
+        payload = payload
+    })
+    
+    -- Set secure cookie
+    ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
+    
+    -- Determine user type for nav rendering
+    local user_type
+    if user_data.is_admin == "true" then
+        user_type = "admin"
+    elseif user_data.is_approved == "true" then
+        user_type = "approved"
+    else
+        user_type = "authenticated"
+    end
+    
+    -- Render nav for the logged-in user
+    local nav_html = render_nav_for_user(user_type, username, user_data)
+    
+    ngx.log(ngx.INFO, "User logged in successfully: " .. username .. " (type: " .. user_type .. ")")
+    
     send_json(200, {
         success = true,
-        token = jwt_token,
-        username = username,
         message = "Login successful",
-        dashboard_url = user_data.is_admin == "true" and "/admin" or "/dashboard"
+        user = {
+            username = username,
+            user_type = user_type,
+            is_admin = (user_type == "admin"),
+            is_approved = (user_type == "approved" or user_type == "admin"),
+            is_pending = (user_type == "authenticated")
+        },
+        nav_html = nav_html,
+        redirect = user_type == "authenticated" and "/pending" or "/chat"
     })
 end
 
--- SECURE LOGOUT - Invalidate session
 local function handle_logout()
-    -- Clear all auth cookies
-    ngx.header["Set-Cookie"] = {
-        "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
-        "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-    }
-
-    ngx.log(ngx.INFO, "User logged out from IP: " .. (ngx.var.remote_addr or "unknown"))
-
-    send_json(200, { 
+    -- Clear the access token cookie
+    ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+    
+    -- Also clear any guest token
+    ngx.header["Set-Cookie"] = "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+    
+    -- Render nav for anonymous user
+    local nav_html = render_nav_for_user("none", "Anonymous", nil)
+    
+    ngx.log(ngx.INFO, "User logged out successfully")
+    
+    send_json(200, {
         success = true,
-        message = "Logged out successfully" 
+        message = "Logout successful",
+        nav_html = nav_html,
+        redirect = "/"
     })
 end
 
--- SECURE USER INFO - Re-validates everything from Redis
-local function handle_me()
+local function handle_check_auth()
     local is_who = require "is_who"
+    local user_type, username, user_data = is_who.check()
     
-    -- CRITICAL: Always re-validate from Redis, never trust JWT alone
-    local user_info = is_who.get_user_info()
-    
-    -- Add session info for client
-    if user_info.success then
-        user_info.session_info = {
-            login_time = ngx.time(),
-            ip_address = ngx.var.remote_addr,
-            user_agent = string.sub(ngx.var.http_user_agent or "", 1, 100)
-        }
+    if user_type == "none" then
+        -- Return nav for anonymous user
+        local nav_html = render_nav_for_user("none", "Anonymous", nil)
+        send_json(200, {
+            authenticated = false,
+            user_type = "none",
+            nav_html = nav_html
+        })
+    else
+        -- Return nav for authenticated user
+        local nav_html = render_nav_for_user(user_type, username, user_data)
+        send_json(200, {
+            authenticated = true,
+            username = username,
+            user_type = user_type,
+            is_admin = (user_type == "admin"),
+            is_approved = (user_type == "approved" or user_type == "admin"),
+            is_guest = (user_type == "guest"),
+            is_pending = (user_type == "authenticated"),
+            nav_html = nav_html
+        })
     end
-    
-    send_json(200, user_info)
 end
 
--- SECURE API ROUTING - Authentication endpoints
+-- =============================================
+-- API ROUTING
+-- =============================================
+
 local function handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
-
+    
     if uri == "/api/auth/login" and method == "POST" then
         handle_login()
     elseif uri == "/api/auth/logout" and method == "POST" then
         handle_logout()
-    elseif uri == "/api/auth/me" and method == "GET" then
-        handle_me()
+    elseif uri == "/api/auth/check" and method == "GET" then
+        handle_check_auth()
     else
-        send_json(404, { error = "Auth endpoint not found" })
+        send_json(404, { 
+            error = "Auth endpoint not found",
+            requested = method .. " " .. uri,
+            available_endpoints = {
+                "POST /api/auth/login - User login",
+                "POST /api/auth/logout - User logout", 
+                "GET /api/auth/check - Check authentication status"
+            }
+        })
     end
 end
+
+-- =============================================
+-- MODULE EXPORTS
+-- =============================================
 
 return {
     handle_auth_api = handle_auth_api,
     handle_login = handle_login,
     handle_logout = handle_logout,
-    handle_me = handle_me
+    handle_check_auth = handle_check_auth,
+    render_nav_for_user = render_nav_for_user
 }
