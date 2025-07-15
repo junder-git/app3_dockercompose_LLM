@@ -104,6 +104,31 @@ class PublicInterface {
             }
         }
     }
+    async logout(e) {
+    // Call backend to clear cookies
+    e.preventDefault();
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+        .then(res => res.json())
+        .then(() => {
+            // Clear all storage
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // Remove all cookies forcibly
+            document.cookie.split(";").forEach(function(c) {
+                document.cookie = c
+                    .replace(/^ +/, "")
+                    .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+            });
+
+            // Finally, force reload to ensure nav refresh and backend state
+            location.href = "/";
+        })
+        .catch(() => {
+            // Even on error, fallback reload
+            location.href = "/";
+        });
+    }
 
     async handleRegister(e) {
         e.preventDefault();

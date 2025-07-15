@@ -105,33 +105,6 @@ local function handle_login()
     })
 end
 
-local function handle_logout()
-    -- Get current user info before logout for logging
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
-    
-    -- Clear the access token cookie
-    ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-    
-    -- Also clear any guest token
-    ngx.header["Set-Cookie"] = "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-    
-    -- Render nav for anonymous user (logged out state)
-    local nav_html = render_nav_for_user("none", "Anonymous", nil)
-    
-    local logout_user = username or "unknown"
-    ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user)
-    
-    send_json(200, {
-        success = true,
-        message = "Logout successful",
-        nav_html = nav_html,
-        redirect = "/",
-        logged_out_user = logout_user,
-        logged_out_type = user_type or "none"
-    })
-end
-
 local function handle_check_auth()
     local is_who = require "is_who"
     local user_type, username, user_data = is_who.check()
@@ -188,8 +161,6 @@ local function handle_auth_api()
     
     if uri == "/api/auth/login" and method == "POST" then
         handle_login()
-    elseif uri == "/api/auth/logout" and method == "POST" then
-        handle_logout()
     elseif uri == "/api/auth/check" and method == "GET" then
         handle_check_auth()
     elseif uri == "/api/auth/nav" and method == "GET" then
@@ -200,7 +171,6 @@ local function handle_auth_api()
             requested = method .. " " .. uri,
             available_endpoints = {
                 "POST /api/auth/login - User login",
-                "POST /api/auth/logout - User logout", 
                 "GET /api/auth/check - Check authentication status",
                 "GET /api/auth/nav - Refresh navigation"
             }
@@ -215,7 +185,6 @@ end
 return {
     handle_auth_api = handle_auth_api,
     handle_login = handle_login,
-    handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,
     handle_nav_refresh = handle_nav_refresh,
     render_nav_for_user = render_nav_for_user

@@ -38,17 +38,18 @@ M.public_js = [[
 
 function M.get_nav_buttons(user_type, username, user_data)
     if user_type == "admin" then
-        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
+        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
     elseif user_type == "approved" then
-        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
+        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
     elseif user_type == "guest" then
-        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="PublicInterface.logout()">End Session</button>'
     elseif user_type == "authenticated" then
-        return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
+        return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
     else
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     end
 end
+
 
 function M.get_user_badge(user_type, user_data)
     if user_type == "admin" then
