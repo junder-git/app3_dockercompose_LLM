@@ -20,6 +20,18 @@ local function render_template(path, context, depth)
     ngx.say(content)
 end
 
+-- Helper function to read a file and return its content
+local function read_file(path)
+    local file = io.open(path, "r")
+    if not file then
+        return "<!-- File not found: " .. path .. " -->"
+    end
+    local content = file:read("*a")
+    file:close()
+    return content
+end
+
 return {
-    render_template = render_template
+    render_template = render_template,
+    read_file = read_file
 }

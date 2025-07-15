@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    {{ css_files }}
+</head>
+<body>
+    {{ nav }}
+    
+    <main>
+        <div class="chat-container">
+            {{ chat_features }}
+            
+            <div class="chat-messages" id="chat-messages"></div>
+            
+            <div class="chat-input-container">
+                <form id="chat-form">
+                    <textarea class="form-control chat-input" id="chat-input" 
+                            placeholder="{{ chat_placeholder }}" required></textarea>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+    
+    {{ js_files }}
+</body>
+</html>
