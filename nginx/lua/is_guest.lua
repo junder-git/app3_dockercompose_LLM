@@ -651,6 +651,132 @@ local function handle_chat_api()
     end
 end
 
+-- =============================================================================
+-- Add to is_guest.lua - GUEST-SPECIFIC STREAMING
+-- =============================================================================
+
+local function handle_chat_stream()
+    local server = require "server"
+    local is_who = require "is_who"
+    local redis = require "resty.redis"
+    local cjson = require "cjson"
+    
+    -- Get guest session info
+    local user_type, username, user_data = is_who.check()
+    
+    if user_type ~= "guest" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Guest access required" }))
+        ngx.exit(403)
+    end
+    
+    -- Guest-specific validation
+    local function pre_stream_check(message, request_data)
+        if not user_data or not user_data.slot_id then
+            return false, "Invalid guest session"
+        end
+        
+        if user_data.message_count >= user_data.max_messages then
+            return false, "Guest message limit reached (" .. user_data.max_messages .. " messages)"
+        end
+        
+        return true, nil
+    end
+    
+    -- Update guest message count
+    local function save_user_message(message)
+        local red = redis:new()
+        if red:connect("redis", 6379) then
+            user_data.message_count = user_data.message_count + 1
+            user_data.last_activity = ngx.time()
+            red:set("guest_session:" .. user_data.slot_id, cjson.encode(user_data))
+            red:expire("guest_session:" .. user_data.slot_id, 1800)
+            red:close()
+        end
+    end
+    
+    -- Guest stream context
+    local stream_context = {
+        user_type = "guest",
+        username = username,
+        
+        -- Guest limitations
+        include_history = false,  -- Guests don't get history
+        save_user_message = save_user_message,
+        save_ai_response = nil,  -- Guests don't save AI responses
+        
+        -- Guest-specific checks
+        pre_stream_check = pre_stream_check,
+        
+        -- Guest AI options
+        default_options = {
+            temperature = 0.7,
+            max_tokens = 1024,  -- Limited for guests
+            num_predict = 1024,
+            num_ctx = 512,      -- Smaller context for guests
+            priority = 3        -- Lowest priority
+        }
+    }
+    
+    -- Call common streaming function
+    server.handle_chat_stream_common(stream_context)
+end
+
+-- Update the existing handle_chat_api function:
+local function handle_chat_api()
+    local cjson = require "cjson"
+    
+    local function send_json(status, tbl)
+        ngx.status = status
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(tbl))
+        ngx.exit(status)
+    end
+    
+    local is_who = require "is_who"
+    local user_type, username, user_data = is_who.check()
+    
+    -- Allow both guest and none for guest API
+    if user_type ~= "guest" and user_type ~= "none" then
+        send_json(403, {
+            error = "Guest chat access only",
+            user_type = user_type,
+            message = "This endpoint is for guest users only"
+        })
+    end
+    
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/chat/history" and method == "GET" then
+        send_json(200, {
+            success = true,
+            messages = {},
+            user_type = "guest",
+            storage_type = "none",
+            message = "Guest users don't have persistent chat history"
+        })
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        send_json(200, { 
+            success = true, 
+            message = "Guest chat history cleared (localStorage only)" 
+        })
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        handle_chat_stream() -- Guest-specific implementation
+    else
+        send_json(404, { 
+            error = "Guest chat API endpoint not found",
+            requested = method .. " " .. uri,
+            available_endpoints = {
+                "GET /api/chat/history - Get chat history (empty for guests)",
+                "POST /api/chat/clear - Clear chat history (localStorage only)",
+                "POST /api/chat/stream - Stream chat messages"
+            }
+        })
+    end
+end
+
 -- =============================================
 -- API ROUTING
 -- =============================================
@@ -700,6 +826,7 @@ return {
     -- API handlers
     handle_guest_api = handle_guest_api,
     handle_chat_api = handle_chat_api,
+    handle_chat_stream = handle_chat_stream,
     
     -- Core functions (for other modules to use)
     create_secure_guest_session = create_secure_guest_session,

@@ -26,12 +26,12 @@ class ApprovedChat extends GuestChat {
                     const welcomePrompt = document.getElementById('welcome-prompt');
                     if (welcomePrompt) welcomePrompt.style.display = 'none';
                     
-                    // Clear any guest messages first
+                    // Clear any existing messages first to prevent duplicates
                     const messagesContainer = document.getElementById('chat-messages');
                     if (messagesContainer) messagesContainer.innerHTML = '';
                     
                     data.messages.reverse().forEach(msg => {
-                        this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false);
+                        this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true); // Skip storage save
                     });
                     console.log('🗄️ Loaded', data.messages.length, 'messages from Redis');
                 }
@@ -51,28 +51,33 @@ class ApprovedChat extends GuestChat {
         console.log('🔧 Setting up approved user features');
     }
 
-    addMessage(sender, content, isStreaming = false) {
+    addMessage(sender, content, isStreaming = false, skipStorage = false) {
         const messagesContainer = document.getElementById('chat-messages');
         if (!messagesContainer) return;
 
         const messageDiv = document.createElement('div');
         messageDiv.className = `message message-${sender}`;
         
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = `message-avatar avatar-${sender}`;
+        
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         
         if (sender === 'user') {
-            // Show as approved user
+            avatarDiv.innerHTML = '<i class="bi bi-person-check"></i>';
             contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
                 <i class="bi bi-person-check text-success me-2"></i>
                 <strong>Approved User</strong>
             </div>` + (window.marked ? marked.parse(content) : content);
         } else {
+            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
             contentDiv.innerHTML = isStreaming ? 
                 '<span class="streaming-content"></span>' : 
                 (window.marked ? marked.parse(content) : content);
         }
         
+        messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;

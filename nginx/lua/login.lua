@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/login.lua - LOGIN/LOGOUT WITH SIMPLE TEMPLATE SYSTEM
+-- nginx/lua/login.lua - LOGIN/LOGOUT WITH NAV UPDATES
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -106,22 +106,29 @@ local function handle_login()
 end
 
 local function handle_logout()
+    -- Get current user info before logout for logging
+    local is_who = require "is_who"
+    local user_type, username, user_data = is_who.check()
+    
     -- Clear the access token cookie
     ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
     
     -- Also clear any guest token
     ngx.header["Set-Cookie"] = "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
     
-    -- Render nav for anonymous user
+    -- Render nav for anonymous user (logged out state)
     local nav_html = render_nav_for_user("none", "Anonymous", nil)
     
-    ngx.log(ngx.INFO, "User logged out successfully")
+    local logout_user = username or "unknown"
+    ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user)
     
     send_json(200, {
         success = true,
         message = "Logout successful",
         nav_html = nav_html,
-        redirect = "/"
+        redirect = "/",
+        logged_out_user = logout_user,
+        logged_out_type = user_type or "none"
     })
 end
 
@@ -135,7 +142,8 @@ local function handle_check_auth()
         send_json(200, {
             authenticated = false,
             user_type = "none",
-            nav_html = nav_html
+            nav_html = nav_html,
+            message = "Not authenticated"
         })
     else
         -- Return nav for authenticated user
@@ -148,9 +156,26 @@ local function handle_check_auth()
             is_approved = (user_type == "approved" or user_type == "admin"),
             is_guest = (user_type == "guest"),
             is_pending = (user_type == "authenticated"),
-            nav_html = nav_html
+            nav_html = nav_html,
+            message = "Authenticated as " .. user_type
         })
     end
+end
+
+-- NEW: Handle nav refresh endpoint
+local function handle_nav_refresh()
+    local is_who = require "is_who"
+    local user_type, username, user_data = is_who.check()
+    
+    local nav_html = render_nav_for_user(user_type or "none", username or "Anonymous", user_data)
+    
+    send_json(200, {
+        success = true,
+        nav_html = nav_html,
+        user_type = user_type or "none",
+        username = username or "Anonymous",
+        timestamp = os.date("!%Y-%m-%dT%TZ")
+    })
 end
 
 -- =============================================
@@ -167,6 +192,8 @@ local function handle_auth_api()
         handle_logout()
     elseif uri == "/api/auth/check" and method == "GET" then
         handle_check_auth()
+    elseif uri == "/api/auth/nav" and method == "GET" then
+        handle_nav_refresh()
     else
         send_json(404, { 
             error = "Auth endpoint not found",
@@ -174,7 +201,8 @@ local function handle_auth_api()
             available_endpoints = {
                 "POST /api/auth/login - User login",
                 "POST /api/auth/logout - User logout", 
-                "GET /api/auth/check - Check authentication status"
+                "GET /api/auth/check - Check authentication status",
+                "GET /api/auth/nav - Refresh navigation"
             }
         })
     end
@@ -189,5 +217,6 @@ return {
     handle_login = handle_login,
     handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,
+    handle_nav_refresh = handle_nav_refresh,
     render_nav_for_user = render_nav_for_user
 }

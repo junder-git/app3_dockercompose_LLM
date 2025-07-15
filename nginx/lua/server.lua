@@ -148,6 +148,135 @@ function M.verify_password(password, stored_hash)
     return hash == stored_hash
 end
 
+-- =============================================================================
+-- Add to server.lua - COMMON STREAMING FUNCTION
+-- =============================================================================
+
+-- Common streaming function - called by each module with their context
+function M.handle_chat_stream_common(stream_context)
+    local cjson = require "cjson"
+    
+    local function send_json(status, tbl)
+        ngx.status = status
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(tbl))
+        ngx.exit(status)
+    end
+    
+    -- Read request body
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    if not body then
+        send_json(400, { error = "No request body" })
+    end
+    
+    local ok, request_data = pcall(cjson.decode, body)
+    if not ok then
+        send_json(400, { error = "Invalid JSON" })
+    end
+    
+    local message = request_data.message
+    if not message or message == "" then
+        send_json(400, { error = "Message is required" })
+    end
+    
+    -- Execute pre-stream validation (user-specific)
+    if stream_context.pre_stream_check then
+        local check_ok, check_error = stream_context.pre_stream_check(message, request_data)
+        if not check_ok then
+            send_json(429, { error = check_error })
+        end
+    end
+    
+    -- Prepare messages for AI
+    local messages = {}
+    
+    -- Add chat history if enabled
+    if stream_context.include_history and request_data.include_history then
+        local history = stream_context.get_history(stream_context.history_limit or 10)
+        for _, msg in ipairs(history) do
+            table.insert(messages, {
+                role = msg.role,
+                content = msg.content
+            })
+        end
+    end
+    
+    -- Add current user message
+    table.insert(messages, {
+        role = "user", 
+        content = message
+    })
+    
+    -- Save user message if enabled
+    if stream_context.save_user_message then
+        stream_context.save_user_message(message)
+    end
+    
+    -- Set up SSE headers
+    ngx.header.content_type = 'text/event-stream'
+    ngx.header.cache_control = 'no-cache'
+    ngx.header.connection = 'keep-alive'
+    ngx.header.access_control_allow_origin = '*'
+    
+    -- Merge options with context defaults
+    local options = request_data.options or {}
+    if stream_context.default_options then
+        for k, v in pairs(stream_context.default_options) do
+            if options[k] == nil then
+                options[k] = v
+            end
+        end
+    end
+    
+    -- Stream response from Ollama
+    local accumulated_response = ""
+    
+    local success, error_msg = M.call_ollama_streaming(messages, options, function(chunk)
+        if chunk.content then
+            accumulated_response = accumulated_response .. chunk.content
+            
+            -- Send chunk to client
+            ngx.say("data: " .. cjson.encode({
+                content = chunk.content,
+                accumulated = chunk.accumulated,
+                done = chunk.done
+            }))
+            ngx.flush(true)
+        end
+        
+        if chunk.done then
+            -- Send completion signal
+            ngx.say("data: [DONE]")
+            ngx.flush(true)
+        end
+    end)
+    
+    if not success then
+        ngx.say("data: " .. cjson.encode({
+            error = error_msg or "AI service unavailable",
+            content = "*Error: " .. (error_msg or "AI service unavailable") .. "*",
+            done = true
+        }))
+        ngx.say("data: [DONE]")
+        ngx.flush(true)
+        accumulated_response = "Error: " .. (error_msg or "AI service unavailable")
+    end
+    
+    -- Save AI response if enabled
+    if stream_context.save_ai_response and accumulated_response ~= "" then
+        stream_context.save_ai_response(accumulated_response)
+    end
+    
+    -- Execute post-stream cleanup
+    if stream_context.post_stream_cleanup then
+        stream_context.post_stream_cleanup(accumulated_response)
+    end
+    
+    ngx.exit(200)
+end
+
 -- =============================================
 -- CHAT HISTORY
 -- =============================================

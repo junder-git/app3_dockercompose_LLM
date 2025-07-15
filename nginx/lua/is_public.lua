@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_public.lua - SIMPLE TEMPLATE SYSTEM
+-- nginx/lua/is_public.lua - SIMPLE TEMPLATE SYSTEM - UPDATED
 -- =============================================================================
 
 local template = require "template"
@@ -7,21 +7,25 @@ local template = require "template"
 local M = {}
 
 -- =============================================
--- SHARED CONTENT - Common CSS/JS
+-- SHARED CONTENT - Common CSS/JS - UPDATED
 -- =============================================
 
 M.common_css = [[
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/common.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 ]]
 
+-- FIXED: Common JS base now includes public.js for logout and global functions
 M.common_js_base = [[
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
+    <script src="/js/public.js"></script>
     <script src="/js/guest.js"></script>
 ]]
 
+-- Public-only JS (for login/register pages)
 M.public_js = [[
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
@@ -38,7 +42,7 @@ function M.get_nav_buttons(user_type, username, user_data)
     elseif user_type == "approved" then
         return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "guest" then
-        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a>'
+        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
     elseif user_type == "authenticated" then
         return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     else
@@ -68,23 +72,29 @@ function M.get_chat_features(user_type)
     if user_type == "admin" then
         return [[
             <div class="user-features admin-features">
-                <h6><i class="bi bi-shield-check text-danger"></i> Admin Chat Access</h6>
-                <p>Full system access • Unlimited messages • All features</p>
+                <div class="alert alert-info">
+                    <h6><i class="bi bi-shield-check text-danger"></i> Admin Chat Access</h6>
+                    <p class="mb-0">Full system access • Unlimited messages • All features</p>
+                </div>
             </div>
         ]]
     elseif user_type == "approved" then
         return [[
             <div class="user-features approved-features">
-                <h6><i class="bi bi-check-circle text-success"></i> Full Chat Access</h6>
-                <p>Unlimited messages • Redis storage • Export history</p>
+                <div class="alert alert-success">
+                    <h6><i class="bi bi-check-circle text-success"></i> Full Chat Access</h6>
+                    <p class="mb-0">Unlimited messages • Redis storage • Export history</p>
+                </div>
             </div>
         ]]
     else
         return [[
             <div class="user-features guest-features">
-                <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
-                <p>10 messages • 30 minutes • localStorage only</p>
-                <a href="/register" class="btn btn-warning btn-sm">Register for unlimited</a>
+                <div class="alert alert-warning">
+                    <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
+                    <p class="mb-1">10 messages • 30 minutes • localStorage only</p>
+                    <a href="/register" class="btn btn-warning btn-sm">Register for unlimited</a>
+                </div>
             </div>
         ]]
     end
@@ -99,7 +109,26 @@ function M.get_dashboard_content(user_type, username)
                     <p>System administration and user management</p>
                 </div>
                 <div class="admin-content" id="admin-content">
-                    <!-- Populated by admin.js -->
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="bi bi-gear"></i> Admin Controls</h5>
+                                </div>
+                                <div class="card-body">
+                                    <button class="btn btn-primary me-2" onclick="window.location.href='/chat'">
+                                        <i class="bi bi-chat-dots"></i> Admin Chat
+                                    </button>
+                                    <button class="btn btn-info me-2" onclick="exportAdminChats()">
+                                        <i class="bi bi-download"></i> Export Chats
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="viewSystemLogs()">
+                                        <i class="bi bi-journal-text"></i> View Logs
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         ]]
@@ -111,7 +140,26 @@ function M.get_dashboard_content(user_type, username)
                     <p>Welcome back, ]] .. (username or "User") .. [[!</p>
                 </div>
                 <div class="dashboard-content" id="dashboard-content">
-                    <!-- Populated by approved.js -->
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="bi bi-person-check"></i> User Controls</h5>
+                                </div>
+                                <div class="card-body">
+                                    <button class="btn btn-primary me-2" onclick="window.location.href='/chat'">
+                                        <i class="bi bi-chat-dots"></i> Start Chat
+                                    </button>
+                                    <button class="btn btn-info me-2" onclick="exportChats()">
+                                        <i class="bi bi-download"></i> Export History
+                                    </button>
+                                    <button class="btn btn-warning" onclick="clearHistory()">
+                                        <i class="bi bi-trash"></i> Clear History
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         ]]
@@ -265,9 +313,9 @@ function M.handle_dash_page_with_guest_info()
     
     if guest_stats.available_slots > 0 then
         dashboard_content = dashboard_content .. [[
-                                    <a href="/chat" class="btn btn-success">
+                                    <button class="btn btn-success" onclick="startGuestSession()">
                                         <i class="bi bi-chat-square-dots"></i> Start Guest Chat
-                                    </a>
+                                    </button>
         ]]
     else
         dashboard_content = dashboard_content .. [[

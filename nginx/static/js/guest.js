@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/guest.js - BASE FUNCTIONALITY (always loaded)
+// nginx/static/js/guest.js - BASE FUNCTIONALITY (always loaded) - FIXED
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -81,39 +81,79 @@ class GuestChat {
     }
 
     setupEventListeners() {
+        // FIXED: Prevent form submission from refreshing page
         const chatForm = document.getElementById('chat-form');
         if (chatForm) {
             chatForm.addEventListener('submit', (e) => {
-                e.preventDefault();
+                e.preventDefault(); // Prevent page refresh
+                e.stopPropagation(); // Stop event bubbling
                 this.sendMessage();
+                return false; // Extra insurance
             });
         }
 
         const stopButton = document.getElementById('stop-button');
         if (stopButton) {
-            stopButton.addEventListener('click', () => this.stopGeneration());
+            stopButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.stopGeneration();
+            });
         }
 
         const clearButton = document.getElementById('clear-chat');
         if (clearButton) {
-            clearButton.addEventListener('click', () => this.clearChat());
+            clearButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.clearChat();
+            });
         }
         
+        // FIXED: Better Enter key handling
         const textarea = document.getElementById('chat-input');
         if (textarea) {
             textarea.addEventListener('input', (e) => this.updateCharCount());
+            
+            // FIXED: Proper Enter key handling
             textarea.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                        // Shift+Enter: Allow new line (don't prevent default)
+                        return;
+                    } else {
+                        // Enter only: Send message
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.sendMessage();
+                        return false;
+                    }
+                }
+            });
+
+            // FIXED: Prevent form submission on Enter
+            textarea.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    this.sendMessage();
+                    return false;
                 }
+            });
+        }
+
+        // FIXED: Prevent any button clicks from submitting forms
+        const sendButton = document.getElementById('send-button');
+        if (sendButton) {
+            sendButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.sendMessage();
+                return false;
             });
         }
     }
 
     setupSuggestionChips() {
         document.querySelectorAll('.suggestion-chip').forEach(chip => {
-            chip.addEventListener('click', () => {
+            chip.addEventListener('click', (e) => {
+                e.preventDefault();
                 const input = document.getElementById('chat-input');
                 if (input) {
                     input.value = chip.dataset.prompt;
@@ -139,18 +179,41 @@ class GuestChat {
             const welcomePrompt = document.getElementById('welcome-prompt');
             if (welcomePrompt) welcomePrompt.style.display = 'none';
             
+            // Clear existing messages first to prevent duplicates
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer) {
+                messagesContainer.innerHTML = '';
+            }
+            
             messages.forEach(msg => {
-                this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false);
+                this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true); // Skip storage save
             });
             console.log('📱 Loaded', messages.length, 'messages from localStorage');
         }
     }
 
     async sendMessage() {
-        const input = document.getElementById('chat-input');
-        const message = input?.value?.trim();
+        console.log('🚀 sendMessage called');
         
-        if (!message || this.isTyping) return;
+        const input = document.getElementById('chat-input');
+        if (!input) {
+            console.error('Chat input not found');
+            return;
+        }
+
+        const message = input.value.trim();
+        
+        if (!message) {
+            console.warn('Empty message');
+            return;
+        }
+
+        if (this.isTyping) {
+            console.warn('Already typing');
+            return;
+        }
+
+        console.log('📤 Sending message:', message);
 
         // Check guest message limits
         const guestMessages = GuestChatStorage.getMessages();
@@ -162,10 +225,14 @@ class GuestChat {
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt) welcomePrompt.style.display = 'none';
         
+        // Add user message to UI
         this.addMessage('user', message);
+        
+        // Clear input
         input.value = '';
         this.updateCharCount();
         
+        // Set typing state
         this.isTyping = true;
         this.updateButtons(true);
 
@@ -174,22 +241,31 @@ class GuestChat {
         let accumulated = '';
 
         try {
+            // FIXED: Simplified fetch for testing
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
                 credentials: 'include',
                 signal: this.abortController.signal,
                 body: JSON.stringify({
                     message: message,
                     options: {
                         temperature: 0.7,
-                        max_tokens: 1024  // Limited for guests
+                        max_tokens: 1024
                     }
                 })
             });
 
-            if (!response.ok) throw new Error('HTTP ' + response.status);
+            console.log('📡 Response status:', response.status);
 
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            // FIXED: Handle streaming response
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
@@ -198,12 +274,15 @@ class GuestChat {
                 if (done) break;
 
                 const chunk = decoder.decode(value, { stream: true });
+                console.log('📦 Chunk received:', chunk);
+                
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const jsonStr = line.slice(6);
                         if (jsonStr === '[DONE]') {
+                            console.log('✅ Stream completed');
                             this.finishStreaming(aiMessage, accumulated);
                             return;
                         }
@@ -214,49 +293,69 @@ class GuestChat {
                                 accumulated += data.content;
                                 this.updateStreamingMessage(aiMessage, accumulated);
                             }
-                        } catch (e) {}
+                        } catch (e) {
+                            console.warn('JSON parse error:', e);
+                        }
                     }
                 }
             }
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Guest chat error:', error);
-                this.updateStreamingMessage(aiMessage, '*Error: ' + error.message + '*');
-            }
+
+            // If we get here, stream ended without [DONE]
             this.finishStreaming(aiMessage, accumulated);
+
+        } catch (error) {
+            console.error('❌ Chat error:', error);
+            
+            if (error.name !== 'AbortError') {
+                const errorMessage = `*Error: ${error.message}*`;
+                this.updateStreamingMessage(aiMessage, errorMessage);
+            }
+            
+            this.finishStreaming(aiMessage, accumulated || `Error: ${error.message}`);
         }
     }
 
-    addMessage(sender, content, isStreaming = false) {
+    addMessage(sender, content, isStreaming = false, skipStorage = false) {
         const messagesContainer = document.getElementById('chat-messages');
-        if (!messagesContainer) return;
+        if (!messagesContainer) {
+            console.error('Messages container not found');
+            return;
+        }
 
         const messageDiv = document.createElement('div');
         messageDiv.className = `message message-${sender}`;
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = `message-avatar avatar-${sender}`;
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         
         if (sender === 'user') {
-            contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
-                <i class="bi bi-person-circle text-warning me-2"></i>
-                <strong>Guest User</strong>
-            </div>` + (window.marked ? marked.parse(content) : content);
+            avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
+            contentDiv.innerHTML = window.marked ? marked.parse(content) : content;
             
-            GuestChatStorage.saveMessage('user', content);
+            // Save to localStorage only if not skipping storage (i.e., not loading from storage)
+            if (!skipStorage) {
+                GuestChatStorage.saveMessage('user', content);
+            }
         } else {
+            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
             contentDiv.innerHTML = isStreaming ? 
                 '<span class="streaming-content"></span>' : 
                 (window.marked ? marked.parse(content) : content);
                 
-            if (!isStreaming && content.trim()) {
+            if (!isStreaming && content.trim() && !skipStorage) {
                 GuestChatStorage.saveMessage('assistant', content);
             }
         }
         
+        messageDiv.appendChild(avatarDiv);
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
         
         return messageDiv;
     }
@@ -266,27 +365,46 @@ class GuestChat {
         if (streamingEl) {
             const parsedContent = window.marked ? marked.parse(content) : content;
             streamingEl.innerHTML = parsedContent + '<span class="cursor">▋</span>';
+            
+            // Auto-scroll
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         }
     }
 
     finishStreaming(messageDiv, finalContent) {
+        console.log('🏁 Finishing stream with content:', finalContent.substring(0, 50) + '...');
+        
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
             const parsedContent = window.marked ? marked.parse(finalContent) : finalContent;
             streamingEl.innerHTML = parsedContent;
             
+            // Only save if content exists and we're not loading from storage
             if (finalContent.trim()) {
                 GuestChatStorage.saveMessage('assistant', finalContent);
             }
         }
+        
         this.isTyping = false;
         this.updateButtons(false);
+        
+        // Final scroll
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     }
 
     stopGeneration() {
+        console.log('⏹️ Stopping generation');
         if (this.abortController) {
             this.abortController.abort();
         }
+        this.isTyping = false;
+        this.updateButtons(false);
     }
 
     updateButtons(isTyping) {
@@ -294,9 +412,17 @@ class GuestChat {
         const stopButton = document.getElementById('stop-button');
         const chatInput = document.getElementById('chat-input');
 
-        if (sendButton) sendButton.style.display = isTyping ? 'none' : 'flex';
-        if (stopButton) stopButton.style.display = isTyping ? 'flex' : 'none';
-        if (chatInput) chatInput.disabled = isTyping;
+        if (sendButton) {
+            sendButton.style.display = isTyping ? 'none' : 'inline-flex';
+            sendButton.disabled = isTyping;
+        }
+        if (stopButton) {
+            stopButton.style.display = isTyping ? 'inline-flex' : 'none';
+            stopButton.disabled = !isTyping;
+        }
+        if (chatInput) {
+            chatInput.disabled = isTyping;
+        }
     }
 
     clearChat() {
@@ -348,3 +474,12 @@ window.logout = function() {
     
     window.location.href = '/';
 };
+
+// FIXED: Auto-initialize chat system when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    // Only initialize if we're on a chat page
+    if (document.getElementById('chat-messages') || document.getElementById('chat-form')) {
+        console.log('🎯 Initializing chat system');
+        window.chatSystem = new GuestChat();
+    }
+});

@@ -163,9 +163,134 @@ local function handle_chat_api()
     end
 end
 
+-- =============================================================================
+-- Add to is_admin.lua - ADMIN-SPECIFIC STREAMING
+-- =============================================================================
+
+local function handle_chat_stream()
+    local server = require "server"
+    local is_who = require "is_who"
+    local cjson = require "cjson"
+    
+    -- Get admin user info
+    local username = is_who.require_admin()
+    
+    -- Admin rate limiting (higher limits)
+    local function pre_stream_check(message, request_data)
+        local rate_ok, rate_error = server.check_rate_limit(username, true, false)
+        if not rate_ok then
+            return false, rate_error
+        end
+        return true, nil
+    end
+    
+    -- Get chat history for admin users
+    local function get_history(limit)
+        return server.get_chat_history(username, limit)
+    end
+    
+    -- Save user message to Redis
+    local function save_user_message(message)
+        server.save_message(username, "user", message)
+    end
+    
+    -- Save AI response to Redis
+    local function save_ai_response(response)
+        server.save_message(username, "assistant", response)
+    end
+    
+    -- Admin logging
+    local function post_stream_cleanup(response)
+        ngx.log(ngx.INFO, "Admin chat completed: " .. username .. " - " .. 
+                string.sub(response or "", 1, 100) .. "...")
+    end
+    
+    -- Admin stream context
+    local stream_context = {
+        user_type = "admin",
+        username = username,
+        
+        -- Admin capabilities
+        include_history = true,   -- Admin gets full history
+        history_limit = 25,       -- Most history
+        get_history = get_history,
+        save_user_message = save_user_message,
+        save_ai_response = save_ai_response,
+        post_stream_cleanup = post_stream_cleanup,
+        
+        -- Admin-specific checks
+        pre_stream_check = pre_stream_check,
+        
+        -- Admin AI options (highest limits)
+        default_options = {
+            temperature = 0.7,
+            max_tokens = 4096,      -- Highest limit for admin
+            num_predict = 4096,
+            num_ctx = 2048,         -- Largest context
+            priority = 1            -- Highest priority
+        }
+    }
+    
+    -- Call common streaming function
+    server.handle_chat_stream_common(stream_context)
+end
+
+-- Update the existing handle_chat_api function:
+local function handle_chat_api()
+    local cjson = require "cjson"
+    local server = require "server"
+    
+    local function send_json(status, tbl)
+        ngx.status = status
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(tbl))
+        ngx.exit(status)
+    end
+    
+    -- Require admin access for chat API
+    local is_who = require "is_who"
+    local username = is_who.require_admin()
+    
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/chat/history" and method == "GET" then
+        -- Get chat history
+        local limit = tonumber(ngx.var.arg_limit) or 50
+        local messages = server.get_chat_history(username, limit)
+        
+        send_json(200, {
+            success = true,
+            messages = messages,
+            user_type = "admin",
+            storage_type = "redis"
+        })
+        
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        -- Clear chat history
+        local success = server.clear_chat_history(username)
+        
+        if success then
+            send_json(200, { success = true, message = "Chat history cleared" })
+        else
+            send_json(500, { success = false, error = "Failed to clear chat history" })
+        end
+        
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        handle_chat_stream() -- Admin-specific implementation
+        
+    else
+        send_json(404, { 
+            error = "Admin Chat API endpoint not found",
+            requested = method .. " " .. uri
+        })
+    end
+end
+
 return {
     handle_chat_page = handle_chat_page,
     handle_dash_page = handle_dash_page,
     handle_admin_api = handle_admin_api,
-    handle_chat_api = handle_chat_api
+    handle_chat_api = handle_chat_api,
+    handle_chat_stream = handle_chat_stream
 }
