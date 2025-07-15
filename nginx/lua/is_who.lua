@@ -66,36 +66,30 @@ end
 function M.set_vars()
     local user_type, username, user_data = M.check()
     
-    -- Set core variables
+    -- Set core variables (with fallback defaults)
     ngx.var.username = username or "anonymous"
     
     -- Set permission flags based on Redis data (ONLY source of truth)
-    if user_data then
-        ngx.var.is_admin = (user_type == "admin") and "true" or "false"
-        ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
-        ngx.var.is_guest = (user_type == "guest") and "true" or "false"
-        
-        -- SECURITY: For guests, store slot_id for JWT management (if variable exists)
-        if user_type == "guest" and user_data.slot_id then
-            -- Use pcall to safely set guest_slot_id if it exists
-            local ok, err = pcall(function()
-                ngx.var.guest_slot_id = user_data.slot_id
-            end)
-            if not ok then
-                ngx.log(ngx.WARN, "guest_slot_id variable not defined in nginx.conf: " .. err)
-            end
+    ngx.var.is_admin = (user_type == "admin") and "true" or "false"
+    ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
+    ngx.var.is_guest = (user_type == "guest") and "true" or "false"
+    
+    -- SECURITY: For guests, store slot_id for JWT management (with safe fallback)
+    if user_type == "guest" and user_data and user_data.slot_id then
+        -- Use pcall to safely set guest_slot_id if it exists
+        local ok, err = pcall(function()
+            ngx.var.guest_slot_id = user_data.slot_id
+        end)
+        if not ok then
+            ngx.log(ngx.WARN, "Failed to set guest_slot_id: " .. err)
         end
     else
-        ngx.var.is_admin = "false"
-        ngx.var.is_approved = "false"
-        ngx.var.is_guest = "false"
-        
-        -- Safely clear guest_slot_id if it exists
+        -- Safely clear guest_slot_id
         local ok, err = pcall(function()
             ngx.var.guest_slot_id = ""
         end)
         if not ok then
-            ngx.log(ngx.DEBUG, "guest_slot_id variable not defined in nginx.conf: " .. err)
+            ngx.log(ngx.DEBUG, "Failed to clear guest_slot_id: " .. err)
         end
     end
     

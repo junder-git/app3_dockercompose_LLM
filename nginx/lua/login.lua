@@ -1,11 +1,10 @@
 -- =============================================================================
--- nginx/lua/login.lua - LOGIN/LOGOUT WITH NAV RENDERING
+-- nginx/lua/login.lua - LOGIN/LOGOUT WITH SIMPLE TEMPLATE SYSTEM
 -- =============================================================================
 
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local server = require "server"
-local template = require "template"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
@@ -17,42 +16,12 @@ local function send_json(status, tbl)
 end
 
 -- =============================================
--- NAV RENDERING FUNCTION
+-- NAV RENDERING FUNCTION - Uses is_public
 -- =============================================
 
 local function render_nav_for_user(user_type, username, user_data)
-    local nav_template = template.read_partial("/usr/local/openresty/nginx/html/partials/nav.html")
-    
-    if user_type == "admin" then
-        return nav_template:gsub("{{%s*username%s*}}", username)
-                          :gsub("{{%s*user_badge%s*}}", " (Admin)")
-                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
-                          
-    elseif user_type == "approved" then
-        return nav_template:gsub("{{%s*username%s*}}", username)
-                          :gsub("{{%s*user_badge%s*}}", "")
-                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
-                          
-    elseif user_type == "guest" then
-        local slot_info = ""
-        if user_data and user_data.slot_number then
-            slot_info = " [Slot " .. user_data.slot_number .. "]"
-        end
-        return nav_template:gsub("{{%s*username%s*}}", username)
-                          :gsub("{{%s*user_badge%s*}}", slot_info)
-                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a>')
-                          
-    elseif user_type == "authenticated" then
-        return nav_template:gsub("{{%s*username%s*}}", username)
-                          :gsub("{{%s*user_badge%s*}}", " (Pending)")
-                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>')
-                          
-    else
-        -- Not logged in
-        return nav_template:gsub("{{%s*username%s*}}", "Anonymous")
-                          :gsub("{{%s*user_badge%s*}}", "")
-                          :gsub("{{%s*dash_buttons%s*}}", '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>')
-    end
+    local is_public = require "is_public"
+    return is_public.render_nav(user_type or "public", username or "Anonymous", user_data)
 end
 
 -- =============================================
