@@ -1,11 +1,8 @@
-# Multi-stage build with maximum caching
+# Multi-stage build with volume-based caching
 FROM ubuntu:22.04 AS base
 
-# Define build argument for Ollama version (gets value from docker-compose)
+# Define build argument for Ollama version
 ARG OLLAMA_VERSION
-
-# Debug: Show what version we received
-RUN echo "Building with OLLAMA_VERSION: ${OLLAMA_VERSION}"
 
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,27 +25,27 @@ RUN useradd -m -s /bin/bash ollama && \
     mkdir -p /home/ollama/.ollama && \
     chown -R ollama:ollama /home/ollama
 
-# Install Ollama using local install script with version control
-COPY scripts/install.sh /tmp/install.sh
-RUN chmod +x /tmp/install.sh && \
-    if [ -n "${OLLAMA_VERSION}" ]; then \
-        export OLLAMA_VERSION="${OLLAMA_VERSION}"; \
-    fi && \
-    echo "Installing Ollama version: ${OLLAMA_VERSION}" && \
-    /tmp/install.sh && \
-    rm /tmp/install.sh
-
-# Copy application files (cached unless these specific files change)
+# Copy install script and startup script
+COPY scripts/install.sh /scripts/install-ollama.sh
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
-COPY Modelfile /home/ollama/Modelfile
+COPY scripts/check-install.sh /scripts/check-install.sh
 
-# Set permissions (cached unless files change)
-RUN chmod +x /scripts/init-ollama.sh && \
-    chown ollama:ollama /home/ollama/Modelfile && \
+# Make scripts executable
+RUN chmod +x /scripts/install-ollama.sh && \
+    chmod +x /scripts/init-ollama.sh && \
+    chmod +x /scripts/check-install.sh
+
+# Copy application files
+COPY Modelfile /home/ollama/Modelfile
+RUN chown ollama:ollama /home/ollama/Modelfile && \
     chmod 644 /home/ollama/Modelfile
 
 # Set environment variables
 ENV OLLAMA_MODELS=/home/ollama/.ollama/models
+ENV OLLAMA_BINARY_CACHE=/ollama-cache
+
+# Create cache directory
+RUN mkdir -p /ollama-cache && chown ollama:ollama /ollama-cache
 
 # Expose port
 EXPOSE 11434
@@ -57,5 +54,5 @@ EXPOSE 11434
 USER root
 WORKDIR /home/ollama
 
-# Use the initialization script
-ENTRYPOINT ["/scripts/init-ollama.sh"]
+# Use the check-install script as entrypoint
+ENTRYPOINT ["/scripts/check-install.sh"]

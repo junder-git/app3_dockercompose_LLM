@@ -2,20 +2,11 @@
     <div class="container-fluid">
         <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
         <div class="navbar-nav ms-auto">
-            <!-- Admin nav items (only if admin) -->
-            {{ if_admin_nav }}
-            
-            <!-- Approved nav items (if approved or admin) -->
-            {{ if_approved_nav }}
-            
-            <!-- Guest nav items (always shown) -->
-            {{ if_guest_nav }}
-            
             <!-- User display -->
             <span class="navbar-text">{{ username }}{{ user_badge }}</span>
-            
-            <!-- Auth buttons -->
-            {{ auth_buttons }}
+           
+            <!-- Dash button -->
+            {{ dash_buttons }}
         </div>
     </div>
 </nav>
