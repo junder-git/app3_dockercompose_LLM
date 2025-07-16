@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - HARDCODED JWT WITH RANDOM UI USERNAMES + PERSISTENT CHAT
+-- nginx/lua/is_guest.lua - GUEST ACCOUNTS WITH USER HASH INTEGRATION
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -12,7 +12,7 @@ local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 -- Configuration
 local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 120  -- 2 minutes
+local GUEST_SESSION_DURATION = 1800  -- 30 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
 
@@ -27,42 +27,21 @@ local USERNAME_POOLS = {
     }
 }
 
--- HARDCODED GUEST ACCOUNTS - Simple username-based like regular users
+-- HARDCODED GUEST ACCOUNTS
 local GUEST_ACCOUNTS = {
     {
         slot_number = 1,
         username = "guest_slot_1",
-        password = "placeholder_token_1",  -- Fixed password for this slot
-        token = ""  -- JWT token will be generated/retrieved
+        password = "placeholder_token_1",
+        token = ""
     },
     {
         slot_number = 2,
         username = "guest_slot_2",
-        password = "placeholder_token_2",  -- Fixed password for this slot
-        token = ""  -- JWT token will be generated/retrieved
+        password = "placeholder_token_2",
+        token = ""
     }
 }
-
-local function generate_guest_jwts()
-    for i, guest_data in ipairs(GUEST_ACCOUNTS) do
-        local payload = {
-            username = guest_data.username,
-            user_type = "guest",
-            priority = 3,
-            slot_number = guest_data.slot_number,
-            iat = ngx.time(),
-            exp = 9999999999
-        }
-        local token = jwt:sign(JWT_SECRET, {
-            header = { typ = "JWT", alg = "HS256" },
-            payload = payload
-        })
-        GUEST_ACCOUNTS[i].token = token
-        ngx.log(ngx.INFO, "Generated JWT for " .. guest_data.username)
-    end
-end
-
-generate_guest_jwts()
 
 local function redis_to_lua(value)
     if value == ngx.null or value == nil then return nil end
@@ -145,12 +124,17 @@ local function create_secure_guest_session()
 
     local account, err = find_available_guest_slot()
     if not account then
-        ngx.log(ngx.WARN, "No available guest slot: " .. (err or "unknown"))
-        return nil, err
+        ngx.log(ngx.WARN, "Guest session creation failed: " .. (err or "unknown"))
+        ngx.status = 429
+        return ngx.exec("@custom_429")
     end
 
     local red = connect_redis()
-    if not red then return nil, "Service unavailable" end
+    if not red then
+        ngx.log(ngx.ERR, "Redis unavailable during guest session creation")
+        ngx.status = 503
+        return ngx.exec("@custom_50x")
+    end
 
     local display_name = generate_display_username(account.slot_number)
     local now = ngx.time()
@@ -178,34 +162,26 @@ local function create_secure_guest_session()
     red:set(key, cjson.encode(session))
     red:expire(key, GUEST_SESSION_DURATION)
 
-    local user_key = "guest_session:" .. account.username
-    red:set(user_key, cjson.encode(session))
-    red:expire(user_key, GUEST_SESSION_DURATION)
+    local user_session_key = "guest_session:" .. account.username
+    red:set(user_session_key, cjson.encode(session))
+    red:expire(user_session_key, GUEST_SESSION_DURATION)
 
-    local chat_key = "chat_history:guest:" .. display_name
-    local chat_record = {
-        session_id = display_name,
-        internal_username = account.username,
-        display_username = display_name,
-        slot_number = account.slot_number,
-        user_type = "guest",
-        created_at = now,
-        created_ip = ngx.var.remote_addr or "unknown",
-        expires_at = expires_at,
-        chat_retention_until = now + GUEST_CHAT_RETENTION,
-        messages = {},
-        last_activity = now,
-        session_active = true
-    }
-    red:set(chat_key, cjson.encode(chat_record))
-    red:expire(chat_key, GUEST_CHAT_RETENTION)
+    local user_key = "user:" .. account.username
 
-    red:set("current_chat_session:" .. account.username, display_name)
-    red:expire("current_chat_session:" .. account.username, GUEST_SESSION_DURATION)
+    -- Hash password for user hash
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
+                                   account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
+    local handle = io.popen(hash_cmd)
+    local hashed = handle:read("*a"):gsub("\n", "")
+    handle:close()
 
-    local admin_key = "admin:guest_sessions"
-    red:sadd(admin_key, display_name)
-    red:expire(admin_key, GUEST_CHAT_RETENTION)
+    red:hset(user_key, "username", account.username)
+    red:hset(user_key, "password_hash", hashed)
+    red:hset(user_key, "is_guest_account", "true")
+    red:hset(user_key, "is_admin", "false")
+    red:hset(user_key, "is_approved", "false")
+    red:hset(user_key, "created_at", os.date("!%Y-%m-%dT%H:%M:%SZ"))
+    red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
 
     ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
 
