@@ -48,11 +48,7 @@ end
 
 function M.require_admin()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    if not user_data or user_data.user_type ~= "is_admin" then
+    if user_type ~= "admin" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -61,11 +57,7 @@ end
 
 function M.require_approved()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" and user_type ~= "is_approved" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    if user_type == "is_approved" and (not user_data or user_data.user_type ~= "is_approved") then
+    if user_type ~= "admin" and user_type ~= "approved" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -74,7 +66,7 @@ end
 
 function M.require_guest()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "is_guest" then
+    if user_type ~= "guest" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -88,7 +80,7 @@ end
 function M.get_user_info()
     local user_type, username, user_data = auth.check()
     
-    if user_type == "is_none" then
+    if user_type == "none" then
         return { success = false, user_type = "is_none", authenticated = false, message = "Not authenticated" }
     end
     
@@ -99,7 +91,7 @@ function M.get_user_info()
         authenticated = true
     }
     
-    if user_type == "is_guest" and user_data then
+    if user_type == "guest" and user_data then
         response.message_limit = user_data.max_messages or 10
         response.messages_used = user_data.message_count or 0
         response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
@@ -119,56 +111,32 @@ function M.route_to_handler(route_type)
     ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", user: " .. (username or "unknown"))
 
     if ngx.var.user_type == "is_admin" then
-        local is_admin = require "is_admin"
-        if route_type == "chat" then
-            is_admin.handle_chat_page()
-        elseif route_type == "dash" then
-            is_admin.handle_dash_page()
-        elseif route_type == "chat_api" then
-            is_admin.handle_chat_api()
-        elseif uri == "/api/chat/stream" and method == "POST" then
-            is_admin.handle_chat_stream() 
-        else
-            ngx.status = 404
-            return ngx.exec("@custom_50x")
-        end
+        -- Admin functionality not implemented yet
+        ngx.status = 501
+        ngx.header.content_type = 'text/html'
+        ngx.say('<h1>Admin functionality not implemented yet</h1>')
+        ngx.exit(501)
 
     elseif ngx.var.user_type == "is_approved" then
-        local is_approved = require "is_approved"
-        if route_type == "chat" then
-            is_approved.handle_chat_page()
-        elseif route_type == "dash" then
-            is_approved.handle_dash_page()
-        elseif route_type == "chat_api" then
-            is_approved.handle_chat_api()
-        else
-            ngx.status = 404
-            return ngx.exec("@custom_50x")
-        end
+        -- Approved user functionality not implemented yet
+        ngx.status = 501
+        ngx.header.content_type = 'text/html'
+        ngx.say('<h1>Approved user functionality not implemented yet</h1>')
+        ngx.exit(501)
 
     elseif ngx.var.user_type == "is_guest" then
-        local is_guest = require "is_guest"
-        if route_type == "chat" then
-            is_guest.handle_chat_page()
-        elseif route_type == "dash" then
-            -- Guests can't access dashboard - redirect to main page
-            return ngx.redirect("/?guest_dashboard_redirect=1")
-        elseif route_type == "chat_api" then
-            is_guest.handle_chat_api()
-        else
-            ngx.status = 404
-            return ngx.exec("@custom_50x")
-        end
+        -- Guest functionality not implemented yet
+        ngx.status = 501
+        ngx.header.content_type = 'text/html'
+        ngx.say('<h1>Guest functionality not implemented yet</h1>')
+        ngx.exit(501)
 
     elseif ngx.var.user_type == "is_pending" then
-        -- Pending users
-        local is_pending = require "is_pending"
-        if route_type == "dash" then
-            is_pending.handle_dash_page()
-        else
-            -- Pending users can only access dashboard
-            return ngx.redirect("/pending")
-        end
+        -- Pending user functionality not implemented yet
+        ngx.status = 501
+        ngx.header.content_type = 'text/html'
+        ngx.say('<h1>Pending user functionality not implemented yet</h1>')
+        ngx.exit(501)
 
     elseif ngx.var.user_type == "is_none" then
         -- Anonymous users
@@ -187,8 +155,7 @@ function M.route_to_handler(route_type)
             
         elseif route_type == "dash" then
             -- Show public dashboard with guest session option
-            local is_public = require "is_public"
-            is_public.handle_dash_page_with_guest_info()
+            M.handle_dash_page_with_guest_info()
             
         elseif route_type == "chat_api" then
             -- API access without auth should return 401
@@ -347,7 +314,7 @@ end
 -- =============================================
 
 function M.render_nav(user_type, username, user_data)
-    local nav_content = template.read_file("/usr/local/openresty/nginx/html/nav.html")
+    local nav_content = template.read_file("/usr/local/openresty/nginx/dynamic_content/nav.html")
     
     -- Simple variable replacement
     nav_content = nav_content:gsub("{{%s*username%s*}}", username or "Anonymous")
@@ -403,8 +370,7 @@ end
 -- =============================================
 
 function M.handle_index_page()
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
+    local user_type, username, user_data = auth.check()
     
     if user_type == "none" then
         user_type = "public"
@@ -425,37 +391,50 @@ function M.handle_index_page()
         nav = M.render_nav(user_type, username, user_data),
         auto_start_guest = auto_start_guest
     }
-    template.render_template("/usr/local/openresty/nginx/html/index.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
 end
 
 -- =============================================
--- API ROUTING
+-- API ROUTING FUNCTIONS
 -- =============================================
 
-local function handle_auth_api()
+function M.handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
     if uri == "/api/auth/login" and method == "POST" then
-        login.handle_login()
+        auth.handle_login()
     elseif uri == "/api/auth/logout" and method == "POST" then
-        login.handle_logout()
+        auth.handle_logout()
     elseif uri == "/api/auth/check" and method == "GET" then
-        login.handle_check_auth()
-    elseif uri == "/api/auth/nav" and method == "GET" then
-        handle_nav_refresh()
+        auth.handle_check_auth()
     else
-        send_json(404, { 
-            error = "Auth endpoint not found",
-            requested = method .. " " .. uri,
-            available_endpoints = {
-                "POST /api/auth/login - User login",
-                "POST /api/auth/logout - User logout", 
-                "GET /api/auth/check - Check authentication status",
-                "GET /api/auth/nav - Refresh navigation"
-            }
-        })
+        ngx.status = 404
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"error":"Auth endpoint not found"}')
+        ngx.exit(404)
     end
+end
+
+function M.handle_register_api()
+    ngx.status = 501
+    ngx.header.content_type = 'application/json'
+    ngx.say('{"error":"Registration not implemented yet"}')
+    ngx.exit(501)
+end
+
+function M.handle_admin_api()
+    ngx.status = 501
+    ngx.header.content_type = 'application/json'
+    ngx.say('{"error":"Admin API not implemented yet"}')
+    ngx.exit(501)
+end
+
+function M.handle_guest_api()
+    ngx.status = 501
+    ngx.header.content_type = 'application/json'
+    ngx.say('{"error":"Guest API not implemented yet"}')
+    ngx.exit(501)
 end
 
 function M.handle_login_page()
@@ -463,10 +442,10 @@ function M.handle_login_page()
         page_title = "Login - ai.junder.uk",
         auth_title = "Welcome Back",
         auth_subtitle = "Sign in to access Devstral AI",
-        nav = M.render_nav("is_none", "guest", nil)
+        nav = M.render_nav("public", "Anonymous", nil)
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/login.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
 end
 
 function M.handle_register_page()
@@ -474,142 +453,37 @@ function M.handle_register_page()
         page_title = "Register - ai.junder.uk",
         auth_title = "Create Account",
         auth_subtitle = "Join the Devstral AI community",
-        nav = M.render_nav("is_none", "guest", nil)
+        nav = M.render_nav("public", "Anonymous", nil)
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/register.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
 end
 
 function M.handle_404_page()
     local context = {
         page_title = "404 - Page Not Found",
-        css_files = M.common_css,
-        js_files = M.public_js,
         nav = M.render_nav("public", "Anonymous", nil)
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/404.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/404.html", context)
 end
 
 function M.handle_429_page()
     local context = {
         page_title = "429 - Guest reached max sessions",
-        css_files = M.common_css,
-        js_files = M.public_js,
         nav = M.render_nav("public", "Anonymous", nil)
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/429.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/429.html", context)
 end
 
 function M.handle_50x_page()
     local context = {
         page_title = "Server Error",
-        css_files = M.common_css,
-        js_files = M.public_js,
         nav = M.render_nav("public", "Anonymous", nil)
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/50x.html", context)
-end
-
-function M.handle_dash_page_with_guest_info()
-    -- Check if user came from failed guest session creation
-    local guest_unavailable = ngx.var.arg_guest_unavailable
-    
-    -- FIXED: Use safe guest stats function with proper is_guest module
-    local guest_stats = get_safe_guest_stats()
-    
-    local dashboard_content = [[
-        <div class="dashboard-container">
-            <div class="dashboard-header text-center">
-                <h2><i class="bi bi-speedometer2"></i> Welcome to ai.junder.uk</h2>
-                <p>Advanced coding model, powered by Devstral</p>
-            </div>
-            
-            <div class="dashboard-content">
-                <div class="row justify-content-center">
-                    <div class="col-md-8">
-    ]]
-    
-    if guest_unavailable then
-        dashboard_content = dashboard_content .. [[
-                        <div class="alert alert-warning" role="alert">
-                            <h5><i class="bi bi-exclamation-triangle"></i> Guest Chat Unavailable</h5>
-                            <p>All guest chat sessions are currently occupied. Please try again later or create an account for guaranteed access.</p>
-                        </div>
-        ]]
-    end
-    
-    dashboard_content = dashboard_content .. [[
-                        <div class="card bg-dark border-primary mb-4">
-                            <div class="card-body">
-                                <h5 class="card-title text-primary">
-                                    <i class="bi bi-chat-dots"></i> Guest Chat Status
-                                </h5>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Active Sessions:</strong> ]] .. guest_stats.active_sessions .. [[/]] .. guest_stats.max_sessions .. [[</p>
-                                        <p><strong>Available Slots:</strong> ]] .. guest_stats.available_slots .. [[</p>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <p><strong>Session Duration:</strong> 30 minutes</p>
-                                        <p><strong>Message Limit:</strong> 10 messages</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="mt-3">
-    ]]
-    
-    if guest_stats.available_slots > 0 then
-        dashboard_content = dashboard_content .. [[
-                                    <button class="btn btn-success" onclick="startGuestSession()">
-                                        <i class="bi bi-chat-square-dots"></i> Start Guest Chat
-                                    </button>
-        ]]
-    else
-        dashboard_content = dashboard_content .. [[
-                                    <button class="btn btn-secondary" disabled>
-                                        <i class="bi bi-chat-square-dots"></i> Guest Chat Full
-                                    </button>
-                                    <small class="text-muted ms-2">Try again in a few minutes</small>
-        ]]
-    end
-    
-    dashboard_content = dashboard_content .. [[
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="card bg-dark border-success">
-                            <div class="card-body">
-                                <h5 class="card-title text-success">
-                                    <i class="bi bi-person-plus"></i> Get Full Access
-                                </h5>
-                                <p>Create an account for unlimited chat access and persistent history.</p>
-                                
-                                <div class="mt-3">
-                                    <a href="/register" class="btn btn-success me-2">
-                                        <i class="bi bi-person-plus"></i> Create Account
-                                    </a>
-                                    <a href="/login" class="btn btn-outline-primary">
-                                        <i class="bi bi-box-arrow-in-right"></i> Login
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    ]]
-    
-    local context = {
-        page_title = "Dashboard - ai.junder.uk",
-        nav = M.render_nav("is_none", "guest", nil),
-        dashboard_content = dashboard_content
-    }
-    template.render_template("/usr/local/openresty/nginx/html/index.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/50x.html", context)
 end
 
 return M

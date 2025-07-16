@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/login.lua - LOGIN/LOGOUT WITH JWT BLACKLISTING
+-- nginx/lua/auth.lua - LOGIN/LOGOUT WITH JWT BLACKLISTING
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -19,7 +19,7 @@ local function send_json(status, tbl)
 end
 
 -- Server-side JWT verification with enhanced guest validation
-function check()
+local function check()
     local token = ngx.var.cookie_access_token
     if token then
         local jwt_obj = jwt:verify(JWT_SECRET, token)
@@ -190,7 +190,7 @@ local function handle_logout()
     ngx.header["Expires"] = "0"
     
     -- Guest session cleanup
-    if user_type == "is_guest" and user_data and user_data.slot_number then
+    if user_type == "guest" and user_data and user_data.slot_number then
         local ok, err = pcall(function()
             local is_guest = require "is_guest"
             if is_guest.cleanup_guest_session then
@@ -203,11 +203,8 @@ local function handle_logout()
         end
     end
     
-    -- Render nav for anonymous user
-    local nav_html = render_nav_for_user("is_none", "guest", nil)
-    
     local logout_user = username or "guest"
-    local logout_type = user_type or "is_none"
+    local logout_type = user_type or "none"
     
     ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
     ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
@@ -215,7 +212,6 @@ local function handle_logout()
     send_json(200, {
         success = true,
         message = "Logout successful",
-        nav_html = nav_html,
         redirect = "/",
         logged_out_user = logout_user,
         logged_out_type = logout_type,
@@ -224,11 +220,105 @@ local function handle_logout()
     })
 end
 
+local function handle_check_auth()
+    local user_type, username, user_data = check()
+    
+    if user_type == "none" then
+        send_json(200, { 
+            success = false, 
+            user_type = "is_none", 
+            authenticated = false, 
+            message = "Not authenticated" 
+        })
+    end
+    
+    local response = {
+        success = true,
+        username = username,
+        user_type = user_type,
+        authenticated = true
+    }
+    
+    if user_type == "guest" and user_data then
+        response.message_limit = user_data.max_messages or 10
+        response.messages_used = user_data.message_count or 0
+        response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
+        response.session_remaining = (user_data.expires_at or 0) - ngx.time()
+        response.slot_number = user_data.slot_number
+        response.priority = user_data.priority or 3
+    end
+    
+    send_json(200, response)
+end
+
+local function handle_check_auth()
+    local user_type, username, user_data = check()
+    
+    if user_type == "none" then
+        send_json(200, { 
+            success = false, 
+            user_type = "is_none", 
+            authenticated = false, 
+            message = "Not authenticated" 
+        })
+    end
+    
+    local response = {
+        success = true,
+        username = username,
+        user_type = user_type,
+        authenticated = true
+    }
+    
+    if user_type == "guest" and user_data then
+        response.message_limit = user_data.max_messages or 10
+        response.messages_used = user_data.message_count or 0
+        response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
+        response.session_remaining = (user_data.expires_at or 0) - ngx.time()
+        response.slot_number = user_data.slot_number
+        response.priority = user_data.priority or 3
+    end
+    
+    send_json(200, response)
+end
+
+local function handle_check_auth()
+    local user_type, username, user_data = check()
+    
+    if user_type == "none" then
+        send_json(200, { 
+            success = false, 
+            user_type = "is_none", 
+            authenticated = false, 
+            message = "Not authenticated" 
+        })
+    end
+    
+    local response = {
+        success = true,
+        username = username,
+        user_type = user_type,
+        authenticated = true
+    }
+    
+    if user_type == "guest" and user_data then
+        response.message_limit = user_data.max_messages or 10
+        response.messages_used = user_data.message_count or 0
+        response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
+        response.session_remaining = (user_data.expires_at or 0) - ngx.time()
+        response.slot_number = user_data.slot_number
+        response.priority = user_data.priority or 3
+    end
+    
+    send_json(200, response)
+end
+
 -- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
 return {
+    check = check,
     handle_login = handle_login,
     handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,

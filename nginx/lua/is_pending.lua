@@ -75,7 +75,7 @@ local function handle_dash_page()
         ]]
     }
     
-    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/dashboard.html", context)
 end
 
 return {

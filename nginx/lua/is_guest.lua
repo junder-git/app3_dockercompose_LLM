@@ -360,7 +360,7 @@ local function handle_chat_page()
         chat_features = is_who.get_chat_features("guest"),
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 30 minutes)"
     }
-    template.render_template("/usr/local/openresty/nginx/html/chat_guest.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_guest.html", context)
 end
 
 -- =============================================

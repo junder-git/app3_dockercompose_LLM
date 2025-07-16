@@ -8,7 +8,7 @@ local function handle_chat_page()
         chat_features = is_who.get_chat_features("approved"),
         chat_placeholder = "Ask anything..."
     }
-    template.render_template("/usr/local/openresty/nginx/html/chat_approved.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_approved.html", context)
 end
 
 local function handle_dash_page()
@@ -20,7 +20,7 @@ local function handle_dash_page()
         nav = is_public.render_nav("approved", username, nil),
         dashboard_content = is_public.get_dashboard_content("approved", username)
     }
-    template.render_template("/usr/local/openresty/nginx/html/dash_approved.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash_approved.html", context)
 end
 
 -- =============================================

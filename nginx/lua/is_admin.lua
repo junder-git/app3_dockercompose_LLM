@@ -12,7 +12,7 @@ local function handle_chat_page()
         chat_features = is_who.get_chat_features("admin"),
         chat_placeholder = "Admin console ready... "
     }
-    template.render_template("/usr/local/openresty/nginx/html/chat_admin.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_admin.html", context)
 end
 
 local function handle_dash_page()
@@ -52,7 +52,7 @@ local function handle_dash_page()
         version = "OpenResty 1.21.4.1",
         recent_activity = recent_activity
     }
-    template.render_template("/usr/local/openresty/nginx/html/dash_admin.html", context)
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash_admin.html", context)
 end
 
 -- =============================================
