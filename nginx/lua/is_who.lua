@@ -240,14 +240,11 @@ end
 -- =============================================
 
 function M.render_nav(user_type, username, user_data)
-    local nav_content = template.read_file("/usr/local/openresty/nginx/dynamic_content/nav.html")
-    
-    -- Simple variable replacement
-    nav_content = nav_content:gsub("{{%s*username%s*}}", username or "guest")
-    nav_content = nav_content:gsub("{{%s*user_badge%s*}}", M.get_user_badge(user_type, user_data))
-    nav_content = nav_content:gsub("{{%s*dash_buttons%s*}}", M.get_nav_buttons(user_type, username, user_data))
-    
-    return nav_content
+    local context = {
+        username = username or "guest",
+        dash_buttons = M.get_nav_buttons(user_type, username, user_data)
+    }
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/nav.html", context)
 end
 
 -- =============================================
