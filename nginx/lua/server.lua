@@ -1,4 +1,4 @@
--- nginx/lua/server.lua - CORE SERVER FUNCTIONS
+-- nginx/lua/server.lua - CORE SERVER FUNCTIONS (NO DUPLICATION)
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local http = require "resty.http"
@@ -78,26 +78,40 @@ function M.create_user(username, password_hash, ip_address)
     
     local user_key = "user:" .. username
     
+    -- Check if user already exists
     if red:exists(user_key) == 1 then
+        red:close()
         return false, "User already exists"
     end
     
+    -- Validate username doesn't conflict with guest accounts
+    if string.match(username, "^guest_slot_") then
+        red:close()
+        return false, "Username conflicts with system accounts"
+    end
+    
+    local current_time = os.date("!%Y-%m-%dT%TZ")
     local user_data = {
         username = username,
         password_hash = password_hash,
         is_admin = "false",
-        is_approved = "false",
-        created_at = os.date("!%Y-%m-%dT%TZ"),
+        is_approved = "false",  -- Default to pending
+        created_at = current_time,
         created_ip = ip_address or "unknown",
         login_count = "0",
-        last_active = os.date("!%Y-%m-%dT%TZ")
+        last_active = current_time,
+        status = "pending_approval"
     }
     
+    -- Store user data
     for k, v in pairs(user_data) do
         red:hset(user_key, k, v)
     end
     
-    return true, "User created"
+    red:close()
+    
+    ngx.log(ngx.INFO, "New user created (pending): " .. username .. " from " .. (ip_address or "unknown"))
+    return true, "User created successfully"
 end
 
 function M.update_user_activity(username)
@@ -148,11 +162,170 @@ function M.verify_password(password, stored_hash)
     return hash == stored_hash
 end
 
--- =============================================================================
--- Add to server.lua - COMMON STREAMING FUNCTION
--- =============================================================================
+-- =============================================
+-- ENHANCED USER MANAGEMENT WITH APPROVAL SYSTEM
+-- =============================================
 
--- Common streaming function - called by each module with their context
+-- Get user counts by status (for admin dashboard)
+function M.get_user_counts()
+    local red = connect_redis()
+    if not red then return { total = 0, pending = 0, approved = 0, admin = 0 } end
+    
+    local user_keys = redis_to_lua(red:keys("user:*")) or {}
+    local counts = { total = 0, pending = 0, approved = 0, admin = 0 }
+    
+    for _, key in ipairs(user_keys) do
+        if key ~= "user:" then
+            local user_data = red:hgetall(key)
+            if user_data and #user_data > 0 then
+                local user = {}
+                for i = 1, #user_data, 2 do
+                    user[user_data[i]] = user_data[i + 1]
+                end
+                
+                if user.username then
+                    counts.total = counts.total + 1
+                    
+                    if user.is_admin == "true" then
+                        counts.admin = counts.admin + 1
+                    elseif user.is_approved == "true" then
+                        counts.approved = counts.approved + 1
+                    else
+                        counts.pending = counts.pending + 1
+                    end
+                end
+            end
+        end
+    end
+    
+    red:close()
+    return counts
+end
+
+-- Get pending users (for admin approval)
+function M.get_pending_users()
+    local red = connect_redis()
+    if not red then return {} end
+    
+    local user_keys = redis_to_lua(red:keys("user:*")) or {}
+    local pending_users = {}
+    
+    for _, key in ipairs(user_keys) do
+        if key ~= "user:" then
+            local user_data = red:hgetall(key)
+            if user_data and #user_data > 0 then
+                local user = {}
+                for i = 1, #user_data, 2 do
+                    user[user_data[i]] = user_data[i + 1]
+                end
+                
+                -- Only pending users (not approved, not admin)
+                if user.username and user.is_approved == "false" and user.is_admin == "false" then
+                    user.password_hash = nil -- Don't return password hash
+                    table.insert(pending_users, user)
+                end
+            end
+        end
+    end
+    
+    red:close()
+    
+    -- Sort by creation date (newest first)
+    table.sort(pending_users, function(a, b)
+        return (a.created_at or "") > (b.created_at or "")
+    end)
+    
+    return pending_users
+end
+
+-- Approve a user (admin function)
+function M.approve_user(username, approved_by)
+    if not username or not approved_by then
+        return false, "Missing required parameters"
+    end
+    
+    local red = connect_redis()
+    if not red then return false, "Service unavailable" end
+    
+    local user_key = "user:" .. username
+    
+    -- Check if user exists
+    if red:exists(user_key) ~= 1 then
+        red:close()
+        return false, "User not found"
+    end
+    
+    -- Get current user data
+    local user_data = red:hgetall(user_key)
+    if not user_data or #user_data == 0 then
+        red:close()
+        return false, "User data not found"
+    end
+    
+    -- Update user status
+    red:hset(user_key, "is_approved", "true")
+    red:hset(user_key, "approved_at", os.date("!%Y-%m-%dT%TZ"))
+    red:hset(user_key, "approved_by", approved_by)
+    red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%TZ"))
+    
+    red:close()
+    
+    ngx.log(ngx.INFO, "User approved: " .. username .. " by " .. approved_by)
+    return true, "User approved successfully"
+end
+
+-- Reject a user (admin function)
+function M.reject_user(username, rejected_by, reason)
+    if not username or not rejected_by then
+        return false, "Missing required parameters"
+    end
+    
+    local red = connect_redis()
+    if not red then return false, "Service unavailable" end
+    
+    local user_key = "user:" .. username
+    
+    -- Check if user exists
+    if red:exists(user_key) ~= 1 then
+        red:close()
+        return false, "User not found"
+    end
+    
+    -- Log rejection before deletion
+    ngx.log(ngx.INFO, "User rejected and deleted: " .. username .. " by " .. rejected_by .. 
+            (reason and (" - Reason: " .. reason) or ""))
+    
+    -- Delete user account
+    red:del(user_key)
+    
+    -- Also clear any related data
+    red:del("chat:" .. username)
+    red:del("user_messages:" .. username)
+    
+    red:close()
+    
+    return true, "User rejected and account deleted"
+end
+
+-- Get registration statistics
+function M.get_registration_stats()
+    local user_counts = M.get_user_counts()
+    return {
+        total_users = user_counts.total,
+        pending_users = user_counts.pending,
+        approved_users = user_counts.approved,
+        admin_users = user_counts.admin,
+        registration_health = {
+            pending_ratio = user_counts.total > 0 and (user_counts.pending / user_counts.total) or 0,
+            status = user_counts.pending > 5 and "high_pending" or "normal"
+        }
+    }
+end
+
+-- =============================================
+-- COMMON STREAMING FUNCTION
+-- =============================================
+
 function M.handle_chat_stream_common(stream_context)
     local cjson = require "cjson"
     

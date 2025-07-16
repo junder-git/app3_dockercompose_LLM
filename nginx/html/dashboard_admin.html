@@ -6,20 +6,6 @@
     <title>{{ page_title }}</title>
     {{ css_files }}
     <style>
-        :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
-            --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-            --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-            --info-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-        }
-
-        body {
-            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
-            min-height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
         .glass-card {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
@@ -30,47 +16,30 @@
         }
 
         .glass-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
         }
 
         .metric-card {
-            background: var(--primary-gradient);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
             color: white;
             padding: 1.5rem;
             border-radius: 15px;
-            position: relative;
-            overflow: hidden;
             cursor: pointer;
+            transition: all 0.3s ease;
         }
 
-        .metric-card.success { background: var(--success-gradient); }
-        .metric-card.warning { background: var(--warning-gradient); }
-        .metric-card.danger { background: var(--danger-gradient); }
-        .metric-card.info { background: var(--info-gradient); }
+        .metric-card.success { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
+        .metric-card.warning { background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); color: #333; }
+        .metric-card.danger { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); }
 
-        .metric-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.1);
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .metric-card:hover::before {
-            opacity: 1;
-        }
+        .metric-card:hover { transform: translateY(-3px); }
 
         .metric-value {
             font-size: 2.5rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
 
         .metric-label {
@@ -78,14 +47,6 @@
             opacity: 0.9;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-        }
-
-        .metric-icon {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            font-size: 2rem;
-            opacity: 0.3;
         }
 
         .activity-item {
@@ -102,52 +63,6 @@
             transform: translateX(5px);
         }
 
-        .status-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .status-online { background: #28a745; color: white; }
-        .status-offline { background: #dc3545; color: white; }
-        .status-pending { background: #ffc107; color: black; }
-        .status-admin { background: #007bff; color: white; }
-
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin: 1rem 0;
-        }
-
-        .nav-tabs .nav-link {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: rgba(255, 255, 255, 0.8);
-            margin-right: 0.5rem;
-            border-radius: 10px 10px 0 0;
-        }
-
-        .nav-tabs .nav-link.active {
-            background: var(--primary-gradient);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
-        .table-dark {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .btn-action {
-            padding: 0.25rem 0.5rem;
-            font-size: 0.8rem;
-            border-radius: 6px;
-            margin: 0 0.1rem;
-        }
-
         .real-time-indicator {
             display: inline-block;
             width: 10px;
@@ -159,9 +74,8 @@
         }
 
         @keyframes pulse {
-            0% { opacity: 1; }
+            0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
-            100% { opacity: 1; }
         }
 
         .system-info {
@@ -170,12 +84,11 @@
             background: rgba(0, 0, 0, 0.3);
             padding: 1rem;
             border-radius: 8px;
-            margin: 1rem 0;
         }
 
-        @media (max-width: 768px) {
-            .metric-value { font-size: 2rem; }
-            .metric-card { padding: 1rem; }
+        body {
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
         }
     </style>
 </head>
@@ -189,21 +102,20 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h1 class="text-white mb-0">
-                            <i class="fas fa-tachometer-alt me-2"></i>
-                            Admin Dashboard
+                            <i class="bi bi-speedometer2"></i> Admin Dashboard
                         </h1>
                         <p class="text-muted mb-0">
                             <span class="real-time-indicator"></span>
-                            Real-time system monitoring - {{ username }}
+                            System monitoring - {{ username }}
                         </p>
                     </div>
                     <div class="text-end">
-                        <button class="btn btn-outline-light me-2" id="refreshBtn">
-                            <i class="fas fa-sync-alt"></i> Refresh
+                        <button class="btn btn-outline-light me-2" onclick="refreshSystemStats()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
                         </button>
-                        <button class="btn btn-outline-danger" id="emergencyBtn">
-                            <i class="fas fa-exclamation-triangle"></i> Emergency
-                        </button>
+                        <a href="/chat" class="btn btn-primary">
+                            <i class="bi bi-chat-dots"></i> Admin Chat
+                        </a>
                     </div>
                 </div>
             </div>
@@ -212,211 +124,113 @@
         <!-- System Metrics -->
         <div class="row mb-4">
             <div class="col-md-3 col-sm-6 mb-3">
-                <div class="metric-card" data-bs-toggle="modal" data-bs-target="#usersModal">
-                    <div class="metric-icon"><i class="fas fa-users"></i></div>
+                <div class="metric-card" onclick="loadAllUsers()">
                     <div class="metric-value" id="totalUsers">-</div>
                     <div class="metric-label">Total Users</div>
                 </div>
             </div>
             <div class="col-md-3 col-sm-6 mb-3">
-                <div class="metric-card success" data-bs-toggle="modal" data-bs-target="#sessionsModal">
-                    <div class="metric-icon"><i class="fas fa-plug"></i></div>
+                <div class="metric-card success">
                     <div class="metric-value" id="activeSessions">-</div>
                     <div class="metric-label">Active Sessions</div>
                 </div>
             </div>
             <div class="col-md-3 col-sm-6 mb-3">
-                <div class="metric-card warning" data-bs-toggle="modal" data-bs-target="#guestModal">
-                    <div class="metric-icon"><i class="fas fa-user-clock"></i></div>
+                <div class="metric-card warning">
                     <div class="metric-value" id="guestSessions">-</div>
                     <div class="metric-label">Guest Sessions</div>
                 </div>
             </div>
             <div class="col-md-3 col-sm-6 mb-3">
-                <div class="metric-card info">
-                    <div class="metric-icon"><i class="fas fa-server"></i></div>
-                    <div class="metric-value" id="systemLoad">{{ system_load }}%</div>
-                    <div class="metric-label">System Load</div>
+                <div class="metric-card danger" onclick="loadPendingUsers()">
+                    <div class="metric-value" id="pendingUsers">-</div>
+                    <div class="metric-label">Pending Users</div>
                 </div>
             </div>
         </div>
 
-        <!-- Main Content Tabs -->
+        <!-- Main Content -->
+        <div class="row">
+            <!-- User Management -->
+            <div class="col-lg-8">
+                <div class="glass-card p-4 mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="text-white mb-0">
+                            <i class="bi bi-people"></i> User Management
+                        </h5>
+                        <div>
+                            <button class="btn btn-warning btn-sm me-2" onclick="loadPendingUsers()">
+                                <i class="bi bi-clock-history"></i> Pending Users
+                            </button>
+                            <button class="btn btn-info btn-sm" onclick="loadAllUsers()">
+                                <i class="bi bi-people-fill"></i> All Users
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="user-management-content">
+                        <div class="text-center text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            Click "Pending Users" or "All Users" to manage users
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Status & Controls -->
+            <div class="col-lg-4">
+                <div class="glass-card p-4 mb-4">
+                    <h5 class="text-white mb-3">
+                        <i class="bi bi-info-circle"></i> System Status
+                    </h5>
+                    <div class="system-info">
+                        <strong>Redis:</strong> {{ redis_status }}<br>
+                        <strong>Ollama:</strong> {{ ollama_status }}<br>
+                        <strong>Uptime:</strong> {{ uptime }}<br>
+                        <strong>Version:</strong> {{ version }}
+                    </div>
+                </div>
+
+                <div class="glass-card p-4 mb-4">
+                    <h5 class="text-white mb-3">
+                        <i class="bi bi-gear"></i> System Controls
+                    </h5>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-warning" onclick="clearGuestSessions()">
+                            <i class="bi bi-trash"></i> Clear Guest Sessions
+                        </button>
+                        <button class="btn btn-outline-info" onclick="refreshSystemStats()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh Stats
+                        </button>
+                        <button class="btn btn-outline-success" onclick="exportAdminChats()">
+                            <i class="bi bi-download"></i> Export Chats
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live System Stats -->
+                <div class="glass-card p-4">
+                    <h5 class="text-white mb-3">
+                        <i class="bi bi-bar-chart"></i> Live Stats
+                    </h5>
+                    <div id="system-stats">
+                        <div class="text-center text-muted">
+                            <i class="bi bi-hourglass-split"></i> Loading...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
         <div class="row">
             <div class="col-12">
-                <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">
-                            <i class="fas fa-chart-line me-2"></i>Overview
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">
-                            <i class="fas fa-users me-2"></i>Users
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="sessions-tab" data-bs-toggle="tab" data-bs-target="#sessions" type="button" role="tab">
-                            <i class="fas fa-plug me-2"></i>Sessions
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system" type="button" role="tab">
-                            <i class="fas fa-cogs me-2"></i>System
-                        </button>
-                    </li>
-                </ul>
-
-                <div class="tab-content" id="mainTabsContent">
-                    <!-- Overview Tab -->
-                    <div class="tab-pane fade show active" id="overview" role="tabpanel">
-                        <div class="row">
-                            <div class="col-lg-8">
-                                <div class="glass-card p-4 mb-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-chart-area me-2"></i>System Activity
-                                    </h5>
-                                    <div class="chart-container">
-                                        <canvas id="activityChart"></canvas>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="glass-card p-4 mb-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-info-circle me-2"></i>System Status
-                                    </h5>
-                                    <div class="system-info">
-                                        <strong>Redis:</strong> {{ redis_status }}<br>
-                                        <strong>Ollama:</strong> {{ ollama_status }}<br>
-                                        <strong>Uptime:</strong> {{ uptime }}<br>
-                                        <strong>Version:</strong> {{ version }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-lg-6">
-                                <div class="glass-card p-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-clock me-2"></i>Recent Activity
-                                    </h5>
-                                    <div id="recentActivity">
-                                        {{ recent_activity }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-lg-6">
-                                <div class="glass-card p-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-exclamation-triangle me-2"></i>System Alerts
-                                    </h5>
-                                    <div id="systemAlerts">
-                                        {{ system_alerts }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Users Tab -->
-                    <div class="tab-pane fade" id="users" role="tabpanel">
-                        <div class="glass-card p-4">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h5 class="text-white mb-0">
-                                    <i class="fas fa-users me-2"></i>User Management
-                                </h5>
-                                <div>
-                                    <button class="btn btn-outline-primary btn-sm me-2" id="exportUsers">
-                                        <i class="fas fa-download"></i> Export
-                                    </button>
-                                    <button class="btn btn-primary btn-sm" id="addUser">
-                                        <i class="fas fa-plus"></i> Add User
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table table-dark table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Username</th>
-                                            <th>Status</th>
-                                            <th>Type</th>
-                                            <th>Last Active</th>
-                                            <th>Created</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="usersTableBody">
-                                        <!-- Populated by JavaScript -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Sessions Tab -->
-                    <div class="tab-pane fade" id="sessions" role="tabpanel">
-                        <div class="glass-card p-4">
-                            <h5 class="text-white mb-3">
-                                <i class="fas fa-plug me-2"></i>Active Sessions
-                            </h5>
-                            <div class="table-responsive">
-                                <table class="table table-dark table-striped">
-                                    <thead>
-                                        <tr>
-                                            <th>Session ID</th>
-                                            <th>User</th>
-                                            <th>Type</th>
-                                            <th>Duration</th>
-                                            <th>IP Address</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="sessionsTableBody">
-                                        <!-- Populated by JavaScript -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- System Tab -->
-                    <div class="tab-pane fade" id="system" role="tabpanel">
-                        <div class="row">
-                            <div class="col-lg-6">
-                                <div class="glass-card p-4 mb-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-info-circle me-2"></i>System Information
-                                    </h5>
-                                    <div class="system-info">
-                                        {{ system_info }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-lg-6">
-                                <div class="glass-card p-4 mb-4">
-                                    <h5 class="text-white mb-3">
-                                        <i class="fas fa-tools me-2"></i>System Controls
-                                    </h5>
-                                    <div class="d-grid gap-2">
-                                        <button class="btn btn-outline-warning" id="clearGuestSessions">
-                                            <i class="fas fa-broom"></i> Clear Guest Sessions
-                                        </button>
-                                        <button class="btn btn-outline-info" id="refreshCache">
-                                            <i class="fas fa-sync"></i> Refresh Cache
-                                        </button>
-                                        <button class="btn btn-outline-success" id="testOllama">
-                                            <i class="fas fa-robot"></i> Test Ollama Connection
-                                        </button>
-                                        <button class="btn btn-outline-primary" id="testRedis">
-                                            <i class="fas fa-database"></i> Test Redis Connection
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <div class="glass-card p-4">
+                    <h5 class="text-white mb-3">
+                        <i class="bi bi-clock-history"></i> Recent Activity
+                    </h5>
+                    <div id="recentActivity">
+                        {{ recent_activity }}
                     </div>
                 </div>
             </div>
@@ -427,212 +241,56 @@
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer"></div>
 
     {{ js_files }}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    
     <script>
+        // Admin dashboard controller that uses admin.js functions
         class AdminDashboard {
             constructor() {
-                this.data = { users: [], sessions: [], stats: {} };
-                this.charts = {};
-                this.updateInterval = null;
                 this.init();
             }
 
             init() {
-                this.setupEventListeners();
-                this.initializeCharts();
                 this.loadInitialData();
                 this.startAutoRefresh();
             }
 
-            setupEventListeners() {
-                document.getElementById('refreshBtn').addEventListener('click', () => this.loadInitialData());
-                document.getElementById('clearGuestSessions').addEventListener('click', () => this.clearGuestSessions());
-                document.getElementById('testOllama').addEventListener('click', () => this.testOllamaConnection());
-                document.getElementById('testRedis').addEventListener('click', () => this.testRedisConnection());
-                document.getElementById('exportUsers').addEventListener('click', () => this.exportUsers());
-                
-                document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
-                    tab.addEventListener('shown.bs.tab', (event) => {
-                        const target = event.target.getAttribute('data-bs-target');
-                        if (target === '#users') this.loadUsers();
-                        else if (target === '#sessions') this.loadSessions();
-                    });
-                });
+            async loadInitialData() {
+                await this.updateMetrics();
+                await refreshSystemStats();
             }
 
-            initializeCharts() {
-                const activityCtx = document.getElementById('activityChart').getContext('2d');
-                this.charts.activity = new Chart(activityCtx, {
-                    type: 'line',
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: 'Users',
-                            data: [],
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            tension: 0.4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { labels: { color: '#fff' } } },
-                        scales: {
-                            x: { ticks: { color: '#fff' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
-                            y: { ticks: { color: '#fff' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+            async updateMetrics() {
+                try {
+                    const response = await fetch('/api/admin/stats', { credentials: 'include' });
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            this.displayMetrics(data.stats);
                         }
                     }
-                });
-            }
-
-            async loadInitialData() {
-                try {
-                    const [users, stats] = await Promise.all([this.fetchUsers(), this.fetchStats()]);
-                    this.data.users = users;
-                    this.data.stats = stats;
-                    this.updateMetrics();
-                    this.updateCharts();
-                    this.showToast('Data refreshed successfully', 'success');
                 } catch (error) {
-                    console.error('Error loading data:', error);
-                    this.showToast('Failed to load dashboard data', 'error');
+                    console.warn('Failed to load metrics:', error);
                 }
             }
 
-            async fetchUsers() {
-                const response = await fetch('/api/admin/users');
-                const data = await response.json();
-                return data.success ? data.users : [];
-            }
-
-            async fetchStats() {
-                const response = await fetch('/api/admin/stats');
-                const data = await response.json();
-                return data.success ? data.stats : {};
-            }
-
-            updateMetrics() {
-                const users = this.data.users;
-                const stats = this.data.stats;
+            displayMetrics(stats) {
+                // Update metric cards
+                document.getElementById('totalUsers').textContent = stats.user_counts?.total || 0;
+                document.getElementById('activeSessions').textContent = stats.sse_sessions?.total_sessions || 0;
+                document.getElementById('guestSessions').textContent = stats.guest_sessions?.active_sessions || 0;
+                document.getElementById('pendingUsers').textContent = stats.user_counts?.pending || 0;
                 
-                document.getElementById('totalUsers').textContent = users.length;
-                document.getElementById('activeSessions').textContent = stats.sse_sessions ? stats.sse_sessions.total_sessions : 0;
-                document.getElementById('guestSessions').textContent = stats.guest_sessions ? Object.keys(stats.guest_sessions).length : 0;
-            }
-
-            updateCharts() {
-                const now = new Date();
-                const labels = [];
-                const userData = [];
+                // Update pending users card color based on count
+                const pendingCard = document.getElementById('pendingUsers').closest('.metric-card');
+                const pendingCount = stats.user_counts?.pending || 0;
                 
-                for (let i = 11; i >= 0; i--) {
-                    const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-                    labels.push(time.getHours() + ':00');
-                    userData.push(Math.floor(Math.random() * 20) + 10);
+                if (pendingCount > 0) {
+                    pendingCard.classList.remove('danger');
+                    pendingCard.classList.add('warning');
+                } else {
+                    pendingCard.classList.remove('warning');
+                    pendingCard.classList.add('success');
                 }
-                
-                this.charts.activity.data.labels = labels;
-                this.charts.activity.data.datasets[0].data = userData;
-                this.charts.activity.update();
-            }
-
-            async loadUsers() {
-                try {
-                    const users = await this.fetchUsers();
-                    this.data.users = users;
-                    this.renderUsersTable();
-                } catch (error) {
-                    console.error('Error loading users:', error);
-                    this.showToast('Failed to load users', 'error');
-                }
-            }
-
-            renderUsersTable() {
-                const tbody = document.getElementById('usersTableBody');
-                tbody.innerHTML = this.data.users.map(user => `
-                    <tr>
-                        <td>${user.username}</td>
-                        <td><span class="status-badge ${user.is_approved === 'true' ? 'status-online' : 'status-pending'}">${user.is_approved === 'true' ? 'Approved' : 'Pending'}</span></td>
-                        <td><span class="status-badge ${user.is_admin === 'true' ? 'status-admin' : 'status-online'}">${user.is_admin === 'true' ? 'Admin' : 'User'}</span></td>
-                        <td>${this.formatDate(user.last_active)}</td>
-                        <td>${this.formatDate(user.created_at)}</td>
-                        <td>
-                            <button class="btn btn-success btn-action" onclick="dashboard.approveUser('${user.username}')" ${user.is_approved === 'true' ? 'disabled' : ''}>
-                                <i class="fas fa-check"></i>
-                            </button>
-                            <button class="btn btn-danger btn-action" onclick="dashboard.deleteUser('${user.username}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `).join('');
-            }
-
-            async loadSessions() {
-                const tbody = document.getElementById('sessionsTableBody');
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading sessions...</td></tr>';
-            }
-
-            async clearGuestSessions() {
-                try {
-                    const response = await fetch('/api/admin/clear-guest-sessions', { method: 'POST' });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        this.showToast('Guest sessions cleared successfully', 'success');
-                        this.loadInitialData();
-                    } else {
-                        this.showToast('Failed to clear guest sessions', 'error');
-                    }
-                } catch (error) {
-                    console.error('Error clearing guest sessions:', error);
-                    this.showToast('Error clearing guest sessions', 'error');
-                }
-            }
-
-            async testOllamaConnection() {
-                this.showToast('Testing Ollama connection...', 'info');
-                setTimeout(() => this.showToast('Ollama connection successful', 'success'), 1000);
-            }
-
-            async testRedisConnection() {
-                this.showToast('Testing Redis connection...', 'info');
-                setTimeout(() => this.showToast('Redis connection successful', 'success'), 1000);
-            }
-
-            exportUsers() {
-                const csv = this.convertToCSV(this.data.users);
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'users_export.csv';
-                a.click();
-                window.URL.revokeObjectURL(url);
-            }
-
-            convertToCSV(data) {
-                const headers = ['Username', 'Is Admin', 'Is Approved', 'Created At', 'Last Active'];
-                const rows = data.map(user => [user.username, user.is_admin, user.is_approved, user.created_at, user.last_active]);
-                return [headers, ...rows].map(row => row.map(field => `"${field}"`).join(',')).join('\n');
-            }
-
-            approveUser(username) {
-                this.showToast(`User ${username} approved`, 'success');
-                this.loadUsers();
-            }
-
-            deleteUser(username) {
-                if (confirm(`Are you sure you want to delete user ${username}?`)) {
-                    this.showToast(`User ${username} deleted`, 'success');
-                    this.loadUsers();
-                }
-            }
-
-            formatDate(dateString) {
-                if (!dateString) return 'N/A';
-                return new Date(dateString).toLocaleString();
             }
 
             showToast(message, type = 'info') {
@@ -654,19 +312,17 @@
             }
 
             startAutoRefresh() {
-                this.updateInterval = setInterval(() => this.loadInitialData(), 30000);
+                setInterval(() => {
+                    this.updateMetrics();
+                    refreshSystemStats();
+                }, 30000); // Update every 30 seconds
             }
         }
 
+        // Initialize dashboard when page loads
         let dashboard;
         document.addEventListener('DOMContentLoaded', function() {
             dashboard = new AdminDashboard();
-        });
-
-        window.addEventListener('beforeunload', function() {
-            if (dashboard && dashboard.updateInterval) {
-                clearInterval(dashboard.updateInterval);
-            }
         });
     </script>
 </body>
