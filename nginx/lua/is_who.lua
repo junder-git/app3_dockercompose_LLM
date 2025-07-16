@@ -236,6 +236,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
+    end
     if user_type == "is_none" then
         return [[ ]]
     end
@@ -324,19 +325,19 @@ end
 function M.handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
-    
     if uri == "/api/auth/login" and method == "POST" then
-        auth.handle_login()
-    elseif uri == "/api/auth/logout" and method == "POST" then
-        auth.handle_logout()
-    elseif uri == "/api/auth/check" and method == "GET" then
-        auth.handle_check_auth()
-    else
-        ngx.status = 404
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error":"Auth endpoint not found"}')
-        ngx.exit(404)
+        return auth.handle_login()
     end
+    if uri == "/api/auth/logout" and method == "POST" then
+        return auth.handle_logout()
+    end
+    if uri == "/api/auth/check" and method == "GET" then
+        return auth.handle_check_auth()
+    end
+    ngx.status = 404
+    ngx.header.content_type = 'application/json'
+    ngx.say('{"error":"Auth endpoint not found"}')
+    ngx.exit(404)
 end
 
 function M.handle_register_api()
