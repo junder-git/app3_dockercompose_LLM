@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - WITH RESTORED ROUTE_TO_HANDLER FUNCTION AND 50X HOOK
+-- nginx/lua/is_who.lua - FIXED ROUTING WITH PROPER GUEST SESSION HANDLING
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -25,7 +25,7 @@ function M.check()
                     local is_guest = require "is_guest"
                     local guest_session, error_msg = is_guest.validate_guest_session(token)
                     if guest_session then
-                        return "guest", guest_session.username, guest_session
+                        return "guest", guest_session.display_username or guest_session.username, guest_session
                     else
                         ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
                         ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
@@ -158,7 +158,7 @@ function M.get_user_info()
 end
 
 -- =====================================================================
--- Restored route_to_handler function
+-- FIXED route_to_handler function with proper guest session creation
 -- =====================================================================
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
@@ -195,7 +195,8 @@ function M.route_to_handler(route_type)
         if route_type == "chat" then
             is_guest.handle_chat_page()
         elseif route_type == "dash" then
-            ngx.redirect("/login")
+            -- Guests can't access dashboard - redirect to main page
+            return ngx.redirect("/?guest_dashboard_redirect=1")
         elseif route_type == "chat_api" then
             is_guest.handle_chat_api()
         else
@@ -203,32 +204,42 @@ function M.route_to_handler(route_type)
             return ngx.exec("@custom_50x")
         end
 
+    elseif ngx.var.user_type == "ispending" then
+        -- Pending users
+        local is_pending = require "is_pending"
+        if route_type == "dash" then
+            is_pending.handle_dash_page()
+        else
+            -- Pending users can only access dashboard
+            return ngx.redirect("/pending")
+        end
+
     elseif ngx.var.user_type == "isnone" then
-        ngx.log(ngx.INFO, "Anonymous user accessing " .. route_type .. " - creating guest session")
-        local is_guest = require "is_guest"
-        local session_data, err = is_guest.create_secure_guest_session()
-        if session_data then
-            ngx.log(ngx.INFO, "Guest session created: " .. session_data.username .. " [Slot " .. session_data.slot_number .. "]")
-            if route_type == "chat" then
-                return ngx.redirect("/chat")
-            elseif route_type == "chat_api" then
-                user_type, username, user_data = M.set_vars()
-                if ngx.var.is_guest == "true" then
-                    is_guest.handle_chat_api()
-                else
-                    ngx.status = 500
-                    return ngx.exec("@custom_50x")
-                end
-            else
-                ngx.status = 404
-                return ngx.exec("@custom_50x")
-            end
-            else
-                ngx.log(ngx.WARN, "Guest session creation failed: " .. (err or "unknown"))
-                ngx.status = 429
-                return ngx.exec("@custom_429")
-            end
+        -- Anonymous users
+        if route_type == "chat" then
+            -- FIXED: Don't auto-create guest session here - redirect to home page with guest option
+            ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
+            return ngx.redirect("/?start_guest_chat=1")
+            
+        elseif route_type == "dash" then
+            -- Show public dashboard with guest session option
+            local is_public = require "is_public"
+            is_public.handle_dash_page_with_guest_info()
+            
+        elseif route_type == "chat_api" then
+            -- API access without auth should return 401
+            ngx.status = 401
+            ngx.header.content_type = 'application/json'
+            ngx.say('{"error":"Authentication required","message":"Please login or start a guest session"}')
+            return ngx.exit(401)
+            
+        else
+            ngx.status = 404
+            return ngx.exec("@custom_50x")
+        end
     else
+        -- Unknown user type
+        ngx.log(ngx.ERROR, "Unknown user type: " .. ngx.var.user_type)
         return ngx.redirect("/login")
     end
 end

@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/guest.js - BASE FUNCTIONALITY (always loaded) - FIXED
+// nginx/static/js/guest.js - BASE FUNCTIONALITY (always loaded) - COMPLETE VERSION
 // =============================================================================
 
 // Guest Chat Storage - localStorage only

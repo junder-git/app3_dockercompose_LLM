@@ -64,10 +64,24 @@
             <h1 class="hero-title">{{ hero_title }}</h1>
             <p class="hero-subtitle">
                 {{ hero_subtitle }}<br>
-                Transform your ideas into code effortlessly. <br>
-                <br>
-                No login:</p>
-            <a href="/chat" class="btn btn-primary btn-lg mt-3">Start chat</a>
+                Transform your ideas into code effortlessly.
+            </p>
+            
+            <div class="mt-4">
+                <button class="btn btn-primary btn-lg me-3" onclick="handleChatStart()">
+                    <i class="bi bi-chat-dots"></i> Start Chat
+                </button>
+                <a href="/register" class="btn btn-outline-light btn-lg">
+                    <i class="bi bi-person-plus"></i> Create Account
+                </a>
+            </div>
+            
+            <div class="mt-3">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle"></i> 
+                    Guest: 10 messages, 30 minutes • Account: Unlimited access
+                </small>
+            </div>
         </div>
     </main>
 
@@ -138,6 +152,33 @@
 
         createPoints();
         animate();
+
+        // SUPER SIMPLE: Just handle the button click
+        async function handleChatStart() {
+            try {
+                const authData = await window.appInterface.checkAuth();
+                
+                if (authData.user_type === 'none') {
+                    // Anonymous user - start guest session
+                    window.startGuestSession();
+                } else {
+                    // Any authenticated user - go to chat
+                    window.location.href = '/chat';
+                }
+            } catch (error) {
+                console.error('Auth check failed, defaulting to guest session:', error);
+                window.startGuestSession();
+            }
+        }
+
+        // Handle auto-start parameter if present
+        document.addEventListener('DOMContentLoaded', function() {
+            const autoStartGuest = '{{ auto_start_guest }}' === 'true';
+            if (autoStartGuest) {
+                console.log('🎯 Auto-starting chat from URL parameter');
+                setTimeout(() => handleChatStart(), 500);
+            }
+        });
     </script>
 </body>
 </html>
