@@ -19,7 +19,7 @@ local function process_template_content(content, context, depth)
         context = {}
     end
     
-    depth = depth or 2
+    depth = depth or 1  -- FIXED: Default to 1 pass, not 2
     
     -- First pass: process context values (check for partials)
     local processed_context = {}
@@ -33,14 +33,15 @@ local function process_template_content(content, context, depth)
         end
     end
     
-    -- Replace template variables with processed context
-    for i = 1, depth do
-        for key, value in pairs(processed_context) do
-            if value then
-                content = content:gsub("{{%s*" .. key .. "%s*}}", tostring(value))
-            else
-                content = content:gsub("{{%s*" .. key .. "%s*}}", "")
-            end
+    -- FIXED: Only do replacement once to avoid infinite loops
+    for key, value in pairs(processed_context) do
+        if value then
+            -- Use a more specific pattern and only replace once
+            content = content:gsub("{{%s*" .. key .. "%s*}}", function()
+                return tostring(value)
+            end)
+        else
+            content = content:gsub("{{%s*" .. key .. "%s*}}", "")
         end
     end
     

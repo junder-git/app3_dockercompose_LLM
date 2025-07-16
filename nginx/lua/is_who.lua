@@ -140,11 +140,37 @@ function M.route_to_handler(route_type)
         
     elseif ngx.var.user_type == "is_none" then
         -- Handle anonymous users
-        if route_type == "dash" then
+        if route_type == "chat" then
+            -- Check if user is explicitly requesting guest chat
+            local start_guest_chat = ngx.var.arg_start_guest_chat
+            if start_guest_chat == "1" then
+                -- Redirect to guest session creation
+                ngx.log(ngx.INFO, "Anonymous user requesting guest chat - redirecting to guest session creation")
+                return ngx.redirect("/?guest_session_requested=1")
+            else
+                -- Regular chat access without guest session - redirect to home
+                ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
+                return ngx.redirect("/?start_guest_chat=1")
+            end
+            
+        elseif route_type == "dash" then
             M.handle_dash_page_with_guest_info()
+            
+        elseif route_type == "chat_api" then
+            -- API access without auth should return 401
+            ngx.status = 401
+            ngx.header.content_type = 'application/json'
+            ngx.say('{"error":"Authentication required","message":"Please login or start a guest session"}')
+            return ngx.exit(401)
+            
         else
-            return ngx.redirect("/")
+            ngx.status = 404
+            return ngx.exec("@custom_50x")
         end
+    else
+        -- Unknown user type
+        ngx.log(ngx.ERROR, "Unknown user type: " .. ngx.var.user_type)
+        return ngx.redirect("/login")
     end
 end
 
@@ -167,7 +193,7 @@ function M.get_nav_buttons(user_type, username, user_data)
 end
 
 function M.get_chat_features(user_type)
-    if user_type == "is_admin" then  -- FIXED: was "admin"
+    if user_type == "is_admin" then
         return [[
             <div class="user-features admin-features">
                 <div class="alert alert-info">
@@ -176,7 +202,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
-    elseif user_type == "is_approved" then  -- FIXED: was "approved"
+    elseif user_type == "is_approved" then
         return [[
             <div class="user-features approved-features">
                 <div class="alert alert-success">
@@ -254,6 +280,13 @@ end
 function M.handle_index_page()
     local user_type, username, user_data = auth.check()
     
+    -- Check if guest session was requested
+    local guest_session_requested = ngx.var.arg_guest_session_requested
+    local auto_start_guest = "false"
+    if guest_session_requested == "1" then
+        auto_start_guest = "true"
+    end
+    
     local context = {
         page_title = "ai.junder.uk",
         hero_title = "ai.junder.uk",
@@ -290,32 +323,28 @@ function M.handle_auth_api()
 end
 
 function M.handle_register_api()
-    ngx.status = 501
-    ngx.header.content_type = 'application/json'
-    ngx.say('{"error":"Registration not implemented yet"}')
-    ngx.exit(501)
+    local register = require "register"
+    register.handle_register_api()
 end
 
 function M.handle_admin_api()
-    ngx.status = 501
-    ngx.header.content_type = 'application/json'
-    ngx.say('{"error":"Admin API not implemented yet"}')
-    ngx.exit(501)
+    local is_admin = require "is_admin"
+    is_admin.handle_admin_api()
 end
 
 function M.handle_guest_api()
-    ngx.status = 501
-    ngx.header.content_type = 'application/json'
-    ngx.say('{"error":"Guest API not implemented yet"}')
-    ngx.exit(501)
+    local is_guest = require "is_guest"
+    is_guest.handle_guest_api()
 end
 
 function M.handle_login_page()
     local context = {
         page_title = "Login - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil),  -- Nav context
         auth_title = "Welcome Back",
-        auth_subtitle = "Sign in to access Devstral AI",
-        nav = M.render_nav("public", "Anonymous", nil)
+        auth_subtitle = "Sign in to access Devstral AI"
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
@@ -324,9 +353,11 @@ end
 function M.handle_register_page()
     local context = {
         page_title = "Register - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil),  -- Nav context
         auth_title = "Create Account",
-        auth_subtitle = "Join the Devstral AI community",
-        nav = M.render_nav("public", "Anonymous", nil)
+        auth_subtitle = "Join the Devstral AI community"
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
@@ -335,7 +366,9 @@ end
 function M.handle_404_page()
     local context = {
         page_title = "404 - Page Not Found",
-        nav = M.render_nav("public", "Anonymous", nil)
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil)  -- Nav context
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/404.html", context)
@@ -344,7 +377,9 @@ end
 function M.handle_429_page()
     local context = {
         page_title = "429 - Guest reached max sessions",
-        nav = M.render_nav("public", "Anonymous", nil)
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil)  -- Nav context
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/429.html", context)
@@ -353,7 +388,9 @@ end
 function M.handle_50x_page()
     local context = {
         page_title = "Server Error",
-        nav = M.render_nav("public", "Anonymous", nil)
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil)  -- Nav context
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/50x.html", context)
@@ -363,7 +400,7 @@ function M.handle_dash_page_with_guest_info()
     -- Check if user came from failed guest session creation
     local guest_unavailable = ngx.var.arg_guest_unavailable
     
-    -- FIXED: Use safe guest stats function with proper is_guest module
+    -- Use safe guest stats function with proper is_guest module
     local guest_stats = get_safe_guest_stats()
     
     local dashboard_content = [[
@@ -452,9 +489,12 @@ function M.handle_dash_page_with_guest_info()
     
     local context = {
         page_title = "Dashboard - ai.junder.uk",
-        nav = M.render_nav("is_none", "guest", nil),
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons("is_none", "guest", nil),  -- Nav context
         dashboard_content = dashboard_content
     }
+    
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
 end
 
