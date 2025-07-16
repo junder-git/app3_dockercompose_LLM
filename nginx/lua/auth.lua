@@ -18,6 +18,51 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
+-- Server-side JWT verification with enhanced guest validation
+function check()
+    local token = ngx.var.cookie_access_token
+    if token then
+        local jwt_obj = jwt:verify(JWT_SECRET, token)
+        if jwt_obj.verified then
+            local username = jwt_obj.payload.username
+            local user_type_claim = jwt_obj.payload.user_type
+            
+            local user_data = server.get_user(username)
+            
+            if user_data then
+                if user_data.is_guest_account == "true" or user_type_claim == "guest" then
+                    local is_guest = require "is_guest"
+                    local guest_session, error_msg = is_guest.validate_guest_session(token)
+                    if guest_session then
+                        return "guest", guest_session.display_username or guest_session.username, guest_session
+                    else
+                        ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
+                        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+                        return "none", nil, nil
+                    end
+                else
+                    server.update_user_activity(username)
+                    
+                    if user_data.is_admin == "true" then
+                        return "admin", username, user_data
+                    elseif user_data.is_approved == "true" then
+                        return "approved", username, user_data
+                    else
+                        return "authenticated", username, user_data
+                    end
+                end
+            else
+                ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username)
+                return "none", nil, nil
+            end
+        else
+            ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
+        end
+    end
+    
+    return "none", nil, nil
+end
+
 -- =============================================
 -- JWT BLACKLISTING FUNCTIONS
 -- =============================================
@@ -50,15 +95,6 @@ local function blacklist_jwt_token(token)
     red:close()
     ngx.log(ngx.INFO, "Blacklisted JWT for 5 seconds to prevent logout race condition")
     return true, "JWT blacklisted for 5 seconds"
-end
-
--- =============================================
--- NAV RENDERING FUNCTION - Uses is_public
--- =============================================
-
-local function render_nav_for_user(user_type, username, user_data)
-    local is_public = require "is_public"
-    return is_public.render_nav(user_type or "public", username or "Anonymous", user_data)
 end
 
 -- =============================================
@@ -112,42 +148,19 @@ local function handle_login()
     -- Set secure cookie
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
     
-    -- Determine user type for nav rendering
-    local user_type
-    if user_data.is_admin == "true" then
-        user_type = "admin"
-    elseif user_data.is_approved == "true" then
-        user_type = "approved"
-    else
-        user_type = "authenticated"
-    end
-    
-    -- Render nav for the logged-in user
-    local nav_html = render_nav_for_user(user_type, username, user_data)
-    
-    ngx.log(ngx.INFO, "User logged in successfully: " .. username .. " (type: " .. user_type .. ")")
+    ngx.log(ngx.INFO, "User logged in successfully: " .. username .. ".")
     
     send_json(200, {
         success = true,
         message = "Login successful",
-        user = {
-            username = username,
-            user_type = user_type,
-            is_admin = (user_type == "admin"),
-            is_approved = (user_type == "approved" or user_type == "admin"),
-            is_pending = (user_type == "authenticated")
-        },
-        nav_html = nav_html,
-        redirect = user_type == "authenticated" and "/pending" or "/chat"
+        username = username
     })
 end
 
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
     
-    -- Get current user info before logout for logging
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
+    local user_type, username, user_data = check()
     
     ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
     
@@ -177,7 +190,7 @@ local function handle_logout()
     ngx.header["Expires"] = "0"
     
     -- Guest session cleanup
-    if user_type == "guest" and user_data and user_data.slot_number then
+    if user_type == "is_guest" and user_data and user_data.slot_number then
         local ok, err = pcall(function()
             local is_guest = require "is_guest"
             if is_guest.cleanup_guest_session then
@@ -191,10 +204,10 @@ local function handle_logout()
     end
     
     -- Render nav for anonymous user
-    local nav_html = render_nav_for_user("none", "Anonymous", nil)
+    local nav_html = render_nav_for_user("is_none", "guest", nil)
     
-    local logout_user = username or "anonymous"
-    local logout_type = user_type or "none"
+    local logout_user = username or "guest"
+    local logout_type = user_type or "is_none"
     
     ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
     ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
@@ -211,92 +224,13 @@ local function handle_logout()
     })
 end
 
-local function handle_check_auth()
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
-    
-    if user_type == "none" then
-        -- Return nav for anonymous user
-        local nav_html = render_nav_for_user("none", "Anonymous", nil)
-        send_json(200, {
-            authenticated = false,
-            user_type = "none",
-            nav_html = nav_html,
-            message = "Not authenticated"
-        })
-    else
-        -- Return nav for authenticated user
-        local nav_html = render_nav_for_user(user_type, username, user_data)
-        send_json(200, {
-            authenticated = true,
-            username = username,
-            user_type = user_type,
-            is_admin = (user_type == "admin"),
-            is_approved = (user_type == "approved" or user_type == "admin"),
-            is_guest = (user_type == "guest"),
-            is_pending = (user_type == "authenticated"),
-            nav_html = nav_html,
-            message = "Authenticated as " .. user_type
-        })
-    end
-end
-
--- Handle nav refresh endpoint
-local function handle_nav_refresh()
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
-    
-    local nav_html = render_nav_for_user(user_type or "none", username or "Anonymous", user_data)
-    
-    send_json(200, {
-        success = true,
-        nav_html = nav_html,
-        user_type = user_type or "none",
-        username = username or "Anonymous",
-        timestamp = os.date("!%Y-%m-%dT%TZ")
-    })
-end
-
--- =============================================
--- API ROUTING
--- =============================================
-
-local function handle_auth_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/auth/login" and method == "POST" then
-        handle_login()
-    elseif uri == "/api/auth/logout" and method == "POST" then
-        handle_logout()
-    elseif uri == "/api/auth/check" and method == "GET" then
-        handle_check_auth()
-    elseif uri == "/api/auth/nav" and method == "GET" then
-        handle_nav_refresh()
-    else
-        send_json(404, { 
-            error = "Auth endpoint not found",
-            requested = method .. " " .. uri,
-            available_endpoints = {
-                "POST /api/auth/login - User login",
-                "POST /api/auth/logout - User logout", 
-                "GET /api/auth/check - Check authentication status",
-                "GET /api/auth/nav - Refresh navigation"
-            }
-        })
-    end
-end
-
 -- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
 return {
-    handle_auth_api = handle_auth_api,
     handle_login = handle_login,
     handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,
-    handle_nav_refresh = handle_nav_refresh,
-    render_nav_for_user = render_nav_for_user,
     blacklist_jwt_token = blacklist_jwt_token
 }

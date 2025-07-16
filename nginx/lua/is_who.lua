@@ -4,59 +4,15 @@
 
 local jwt = require "resty.jwt"
 local server = require "server"
+local auth = require "auth"
 local template = require "template"
 
 local JWT_SECRET = os.getenv("JWT_SECRET")
 
 local M = {}
 
--- Server-side JWT verification with enhanced guest validation
-function M.check()
-    local token = ngx.var.cookie_access_token
-    if token then
-        local jwt_obj = jwt:verify(JWT_SECRET, token)
-        if jwt_obj.verified then
-            local username = jwt_obj.payload.username
-            local user_type_claim = jwt_obj.payload.user_type
-            
-            local user_data = server.get_user(username)
-            
-            if user_data then
-                if user_data.is_guest_account == "true" or user_type_claim == "guest" then
-                    local is_guest = require "is_guest"
-                    local guest_session, error_msg = is_guest.validate_guest_session(token)
-                    if guest_session then
-                        return "guest", guest_session.display_username or guest_session.username, guest_session
-                    else
-                        ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
-                        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-                        return "none", nil, nil
-                    end
-                else
-                    server.update_user_activity(username)
-                    
-                    if user_data.is_admin == "true" then
-                        return "admin", username, user_data
-                    elseif user_data.is_approved == "true" then
-                        return "approved", username, user_data
-                    else
-                        return "authenticated", username, user_data
-                    end
-                end
-            else
-                ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username)
-                return "none", nil, nil
-            end
-        else
-            ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
-        end
-    end
-    
-    return "none", nil, nil
-end
-
 function M.set_vars()
-    local user_type, username, user_data = M.check()
+    local user_type, username, user_data = auth.check()
     
     ngx.var.username = username or "anonymous"
     ngx.var.is_admin = (user_type == "admin") and "true" or "false"
@@ -91,12 +47,12 @@ function M.set_vars()
 end
 
 function M.require_admin()
-    local user_type, username, user_data = M.check()
-    if user_type ~= "admin" then
+    local user_type, username, user_data = auth.check()
+    if user_type ~= "is_admin" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
-    if not user_data or user_data.is_admin ~= "true" then
+    if not user_data or user_data.user_type ~= "is_admin" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -104,12 +60,12 @@ function M.require_admin()
 end
 
 function M.require_approved()
-    local user_type, username, user_data = M.check()
-    if user_type ~= "admin" and user_type ~= "approved" then
+    local user_type, username, user_data = auth.check()
+    if user_type ~= "is_admin" and user_type ~= "is_approved" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
-    if user_type == "approved" and (not user_data or user_data.is_approved ~= "true") then
+    if user_type == "is_approved" and (not user_data or user_data.user_type ~= "is_approved") then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -117,8 +73,8 @@ function M.require_approved()
 end
 
 function M.require_guest()
-    local user_type, username, user_data = M.check()
-    if user_type ~= "guest" then
+    local user_type, username, user_data = auth.check()
+    if user_type ~= "is_guest" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -130,23 +86,20 @@ function M.require_guest()
 end
 
 function M.get_user_info()
-    local user_type, username, user_data = M.check()
+    local user_type, username, user_data = auth.check()
     
-    if user_type == "none" then
-        return { success = false, user_type = "none", authenticated = false, message = "Not authenticated" }
+    if user_type == "is_none" then
+        return { success = false, user_type = "is_none", authenticated = false, message = "Not authenticated" }
     end
     
     local response = {
         success = true,
         username = username,
         user_type = user_type,
-        authenticated = true,
-        is_admin = (user_type == "admin"),
-        is_approved = (user_type == "approved" or user_type == "admin"),
-        is_guest = (user_type == "guest")
+        authenticated = true
     }
     
-    if user_type == "guest" and user_data then
+    if user_type == "is_guest" and user_data then
         response.message_limit = user_data.max_messages or 10
         response.messages_used = user_data.message_count or 0
         response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
@@ -165,7 +118,7 @@ function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
     ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", user: " .. (username or "unknown"))
 
-    if ngx.var.is_admin == "true" then
+    if ngx.var.user_type == "is_admin" then
         local is_admin = require "is_admin"
         if route_type == "chat" then
             is_admin.handle_chat_page()
@@ -174,13 +127,13 @@ function M.route_to_handler(route_type)
         elseif route_type == "chat_api" then
             is_admin.handle_chat_api()
         elseif uri == "/api/chat/stream" and method == "POST" then
-            is_admin.handle_chat_stream() -- Admin-specific implementation
+            is_admin.handle_chat_stream() 
         else
             ngx.status = 404
             return ngx.exec("@custom_50x")
         end
 
-    elseif ngx.var.is_approved == "true" then
+    elseif ngx.var.user_type == "is_approved" then
         local is_approved = require "is_approved"
         if route_type == "chat" then
             is_approved.handle_chat_page()
@@ -193,7 +146,7 @@ function M.route_to_handler(route_type)
             return ngx.exec("@custom_50x")
         end
 
-    elseif ngx.var.is_guest == "true" then
+    elseif ngx.var.user_type == "is_guest" then
         local is_guest = require "is_guest"
         if route_type == "chat" then
             is_guest.handle_chat_page()
@@ -469,13 +422,40 @@ function M.handle_index_page()
         page_title = "ai.junder.uk",
         hero_title = "ai.junder.uk",
         hero_subtitle = "Advanced coding model, powered by Devstral.",
-        css_files = M.common_css,
-        js_files = M.public_js,
         nav = M.render_nav(user_type, username, user_data),
         auto_start_guest = auto_start_guest
     }
-    
     template.render_template("/usr/local/openresty/nginx/html/index.html", context)
+end
+
+-- =============================================
+-- API ROUTING
+-- =============================================
+
+local function handle_auth_api()
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/auth/login" and method == "POST" then
+        login.handle_login()
+    elseif uri == "/api/auth/logout" and method == "POST" then
+        login.handle_logout()
+    elseif uri == "/api/auth/check" and method == "GET" then
+        login.handle_check_auth()
+    elseif uri == "/api/auth/nav" and method == "GET" then
+        handle_nav_refresh()
+    else
+        send_json(404, { 
+            error = "Auth endpoint not found",
+            requested = method .. " " .. uri,
+            available_endpoints = {
+                "POST /api/auth/login - User login",
+                "POST /api/auth/logout - User logout", 
+                "GET /api/auth/check - Check authentication status",
+                "GET /api/auth/nav - Refresh navigation"
+            }
+        })
+    end
 end
 
 function M.handle_login_page()
@@ -483,9 +463,7 @@ function M.handle_login_page()
         page_title = "Login - ai.junder.uk",
         auth_title = "Welcome Back",
         auth_subtitle = "Sign in to access Devstral AI",
-        css_files = M.common_css,
-        js_files = M.public_js,
-        nav = M.render_nav("public", "Anonymous", nil)
+        nav = M.render_nav("is_none", "guest", nil)
     }
     
     template.render_template("/usr/local/openresty/nginx/html/login.html", context)
@@ -496,9 +474,7 @@ function M.handle_register_page()
         page_title = "Register - ai.junder.uk",
         auth_title = "Create Account",
         auth_subtitle = "Join the Devstral AI community",
-        css_files = M.common_css,
-        js_files = M.public_js,
-        nav = M.render_nav("public", "Anonymous", nil)
+        nav = M.render_nav("is_none", "guest", nil)
     }
     
     template.render_template("/usr/local/openresty/nginx/html/register.html", context)
@@ -630,13 +606,10 @@ function M.handle_dash_page_with_guest_info()
     
     local context = {
         page_title = "Dashboard - ai.junder.uk",
-        css_files = M.common_css,
-        js_files = M.public_js,
-        nav = M.render_nav("public", "Anonymous", nil),
+        nav = M.render_nav("is_none", "guest", nil),
         dashboard_content = dashboard_content
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/index.html", context)
 end
 
 return M
