@@ -567,3 +567,14 @@ window.addEventListener('unhandledrejection', (event) => {
         appInterface.showError('An unexpected error occurred');
     }
 });
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('input', function() {
+            this.style.height = '';
+            this.style.height = this.scrollHeight + 'px';
+        });
+    }
+});

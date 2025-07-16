@@ -5,7 +5,7 @@
 local jwt = require "resty.jwt"
 local server = require "server"
 
-local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
+local JWT_SECRET = os.getenv("JWT_SECRET")
 
 local M = {}
 

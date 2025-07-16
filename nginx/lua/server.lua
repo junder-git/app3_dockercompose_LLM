@@ -43,17 +43,17 @@ end
 
 function M.get_user(username)
     if not username or username == "" then
-        return nil
+        return "is_none"
     end
     
     local red = connect_redis()
     if not red then return nil end
     
-    local user_key = "user:" .. username
+    local user_key = "username:" .. username
     local user_data = red:hgetall(user_key)
     
     if not user_data or #user_data == 0 then
-        return nil
+        return "is_none"
     end
     
     local user = {}
@@ -62,7 +62,7 @@ function M.get_user(username)
     end
     
     if not user.username or not user.password_hash then
-        return nil
+        return "is_none"
     end
     
     return user
@@ -76,7 +76,7 @@ function M.create_user(username, password_hash, ip_address)
     local red = connect_redis()
     if not red then return false, "Service unavailable" end
     
-    local user_key = "user:" .. username
+    local user_key = "username:" .. username
     
     -- Check if user already exists
     if red:exists(user_key) == 1 then
@@ -94,13 +94,11 @@ function M.create_user(username, password_hash, ip_address)
     local user_data = {
         username = username,
         password_hash = password_hash,
-        is_admin = "false",
-        is_approved = "false",  -- Default to pending
+        user_type = "is_pending",
         created_at = current_time,
         created_ip = ip_address or "unknown",
         login_count = "0",
-        last_active = current_time,
-        status = "pending_approval"
+        last_active = current_time
     }
     
     -- Store user data
@@ -120,7 +118,7 @@ function M.update_user_activity(username)
     local red = connect_redis()
     if not red then return false end
     
-    red:hset("user:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
+    red:hset("username:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
     return true
 end
 
@@ -128,11 +126,11 @@ function M.get_all_users()
     local red = connect_redis()
     if not red then return {} end
     
-    local user_keys = redis_to_lua(red:keys("user:*")) or {}
+    local user_keys = redis_to_lua(red:keys("username:*")) or {}
     local users = {}
     
     for _, key in ipairs(user_keys) do
-        if key ~= "user:" then
+        if key ~= "username:" then
             local user_data = red:hgetall(key)
             if user_data and #user_data > 0 then
                 local user = {}
@@ -171,11 +169,11 @@ function M.get_user_counts()
     local red = connect_redis()
     if not red then return { total = 0, pending = 0, approved = 0, admin = 0 } end
     
-    local user_keys = redis_to_lua(red:keys("user:*")) or {}
-    local counts = { total = 0, pending = 0, approved = 0, admin = 0 }
+    local user_keys = redis_to_lua(red:keys("username:*")) or {}
+    local counts = { total = 0, guest = 0, pending = 0, approved = 0, admin = 0 }
     
     for _, key in ipairs(user_keys) do
-        if key ~= "user:" then
+        if key ~= "username:" then
             local user_data = red:hgetall(key)
             if user_data and #user_data > 0 then
                 local user = {}
@@ -185,13 +183,17 @@ function M.get_user_counts()
                 
                 if user.username then
                     counts.total = counts.total + 1
-                    
-                    if user.is_admin == "true" then
+                    if user.user_type == "is_admin" then
                         counts.admin = counts.admin + 1
-                    elseif user.is_approved == "true" then
+                    end
+                    if user.user_type == "is_approved" then
                         counts.approved = counts.approved + 1
-                    else
+                    end
+                    if user.user_type == "is_pending" then
                         counts.pending = counts.pending + 1
+                    end
+                    if user.user_type == "is_guest" then
+                        counts.guest = counts.guest + 1
                     end
                 end
             end
@@ -207,11 +209,11 @@ function M.get_pending_users()
     local red = connect_redis()
     if not red then return {} end
     
-    local user_keys = redis_to_lua(red:keys("user:*")) or {}
+    local user_keys = redis_to_lua(red:keys("username:*")) or {}
     local pending_users = {}
     
     for _, key in ipairs(user_keys) do
-        if key ~= "user:" then
+        if key ~= "username:" then
             local user_data = red:hgetall(key)
             if user_data and #user_data > 0 then
                 local user = {}
@@ -220,7 +222,7 @@ function M.get_pending_users()
                 end
                 
                 -- Only pending users (not approved, not admin)
-                if user.username and user.is_approved == "false" and user.is_admin == "false" then
+                if user.username and user.user_type == "is_pending" then
                     user.password_hash = nil -- Don't return password hash
                     table.insert(pending_users, user)
                 end
@@ -247,7 +249,7 @@ function M.approve_user(username, approved_by)
     local red = connect_redis()
     if not red then return false, "Service unavailable" end
     
-    local user_key = "user:" .. username
+    local user_key = "username:" .. username
     
     -- Check if user exists
     if red:exists(user_key) ~= 1 then
@@ -263,10 +265,10 @@ function M.approve_user(username, approved_by)
     end
     
     -- Update user status
-    red:hset(user_key, "is_approved", "true")
-    red:hset(user_key, "approved_at", os.date("!%Y-%m-%dT%TZ"))
-    red:hset(user_key, "approved_by", approved_by)
-    red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%TZ"))
+    red:hset(user_key, "user_type:", "is_approved")
+    red:hset(user_key, "approved_at:", os.date("!%Y-%m-%dT%TZ"))
+    red:hset(user_key, "approved_by:", approved_by)
+    red:hset(user_key, "last_active:", os.date("!%Y-%m-%dT%TZ"))
     
     red:close()
     
@@ -283,7 +285,7 @@ function M.reject_user(username, rejected_by, reason)
     local red = connect_redis()
     if not red then return false, "Service unavailable" end
     
-    local user_key = "user:" .. username
+    local user_key = "username:" .. username
     
     -- Check if user exists
     if red:exists(user_key) ~= 1 then
@@ -551,9 +553,9 @@ end
 -- =============================================
 
 local function get_user_priority(user_type)
-    if user_type == "admin" then return 1 end
-    if user_type == "approved" then return 2 end
-    if user_type == "guest" then return 3 end
+    if user_type == "is_admin" then return 1 end
+    if user_type == "is_approved" then return 2 end
+    if user_type == "is_guest" then return 3 end
     return 4
 end
 
@@ -607,7 +609,7 @@ function M.can_start_sse_session(user_type, username)
         return true, "Session allowed"
     end
     
-    if user_type == "admin" then
+    if user_type == "is_admin" then
         return true, "Admin session granted"
     end
     
@@ -721,13 +723,12 @@ function M.call_ollama_streaming(messages, options, callback)
 
     local safe_options = {
         temperature = math.min(math.max(options.temperature or 0.7, 0), 1),
-        num_predict = math.min(options.max_tokens or 2048, 4096),
+        num_predict = math.min(options.max_tokens or 2048, 1024),
         num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 1024,
         num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 8,
         num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 6,
         num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 64,
-        use_mmap = false,
-        use_mlock = true
+        use_mmap = false
     }
 
     local payload = {
