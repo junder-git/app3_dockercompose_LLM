@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/public.js - COMPLETE CLASS-BASED APPROACH
+// nginx/static/js/public.js - COMPLETE CLASS-BASED APPROACH WITH SIMPLE LOGOUT
 // =============================================================================
 
 class PublicInterface {
@@ -266,6 +266,7 @@ class PublicInterface {
         }
         
         try {
+            // JWT blacklisting on server prevents race condition - simple logout now!
             const response = await fetch('/api/auth/logout', { 
                 method: 'POST', 
                 credentials: 'include',
@@ -281,16 +282,16 @@ class PublicInterface {
                 console.log('🔄 Navigation updated after logout');
             }
             
-            // Clear client-side data after server confirms logout
+            // Clear client-side data
             this.clearClientData();
             
             // Show success message
             this.showSuccess('Logged out successfully');
             
-            // Redirect after brief delay
+            // Simple redirect - JWT is blacklisted so no re-auth possible
             setTimeout(() => {
                 window.location.href = data.redirect || '/';
-            }, 800);
+            }, 500);
             
         } catch (error) {
             console.warn('Server logout failed, but continuing with client logout:', error);
@@ -550,13 +551,3 @@ window.addEventListener('unhandledrejection', (event) => {
         appInterface.showError('An unexpected error occurred');
     }
 });
-
-// Export for debugging (only in development)
-if (window.location.hostname === 'localhost' || window.location.hostname.includes('dev')) {
-    window.DEBUG = {
-        getAppStatus: () => appInterface ? appInterface.getStatus() : 'Not initialized',
-        forceLogout: () => appInterface ? appInterface.logout() : 'Not initialized',
-        forceNavUpdate: () => appInterface ? appInterface.updateNavigation() : 'Not initialized',
-        clearData: () => appInterface ? appInterface.clearClientData() : 'Not initialized'
-    };
-}

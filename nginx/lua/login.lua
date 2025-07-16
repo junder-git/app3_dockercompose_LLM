@@ -1,18 +1,55 @@
 -- =============================================================================
--- nginx/lua/login.lua - LOGIN/LOGOUT WITH PROPER GUEST MANAGEMENT
+-- nginx/lua/login.lua - LOGIN/LOGOUT WITH JWT BLACKLISTING
 -- =============================================================================
 
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
+local redis = require "resty.redis"
 local server = require "server"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
+local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
+local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 
 local function send_json(status, tbl)
     ngx.status = status
     ngx.header.content_type = 'application/json'
     ngx.say(cjson.encode(tbl))
     ngx.exit(status)
+end
+
+-- =============================================
+-- JWT BLACKLISTING FUNCTIONS
+-- =============================================
+
+-- Blacklist JWT for 5 seconds to prevent logout race condition
+local function blacklist_jwt_token(token)
+    if not token then 
+        return false, "No token provided"
+    end
+    
+    local red = redis:new()
+    red:set_timeout(1000)
+    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
+    if not ok then
+        ngx.log(ngx.WARN, "Failed to connect to Redis for JWT blacklisting: " .. (err or "unknown"))
+        return false, "Redis connection failed"
+    end
+    
+    -- Create a hash of the token (don't store full JWT for security)
+    local token_hash = ngx.md5(token)
+    local blacklist_key = "blacklisted_jwt:" .. token_hash
+    
+    -- Store in Redis with 5 second TTL (just to prevent race condition)
+    red:set(blacklist_key, cjson.encode({
+        blacklisted_at = ngx.time(),
+        reason = "logout_race_prevention"
+    }))
+    red:expire(blacklist_key, 5)  -- 5 seconds only
+    
+    red:close()
+    ngx.log(ngx.INFO, "Blacklisted JWT for 5 seconds to prevent logout race condition")
+    return true, "JWT blacklisted for 5 seconds"
 end
 
 -- =============================================
@@ -106,48 +143,60 @@ local function handle_login()
 end
 
 local function handle_logout()
+    ngx.log(ngx.INFO, "=== LOGOUT START ===")
+    
     -- Get current user info before logout for logging
     local is_who = require "is_who"
     local user_type, username, user_data = is_who.check()
     
-    -- Clear cookies with multiple approaches to ensure they're gone
-    local cookie_options = {
+    ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
+    
+    -- BLACKLIST THE JWT TOKEN IMMEDIATELY (5 seconds to prevent race condition)
+    local token = ngx.var.cookie_access_token
+    if token then
+        local ok, err = pcall(function()
+            blacklist_jwt_token(token)
+        end)
+        if not ok then
+            ngx.log(ngx.WARN, "Failed to blacklist JWT: " .. tostring(err))
+        end
+    end
+    
+    -- Clear cookies with multiple approaches
+    local cookie_headers = {
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
         "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
         "guest_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
     }
+    ngx.header["Set-Cookie"] = cookie_headers
     
-    -- Set multiple Set-Cookie headers to ensure logout
-    for _, cookie_str in ipairs(cookie_options) do
-        ngx.header["Set-Cookie"] = cookie_str
-    end
+    -- Anti-cache headers
+    ngx.header["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    ngx.header["Pragma"] = "no-cache"
+    ngx.header["Expires"] = "0"
     
-    -- FIXED: Proper guest session cleanup using is_guest module
+    -- Guest session cleanup
     if user_type == "guest" and user_data and user_data.slot_number then
         local ok, err = pcall(function()
-            -- Use the is_guest module for proper cleanup
             local is_guest = require "is_guest"
-            
             if is_guest.cleanup_guest_session then
                 is_guest.cleanup_guest_session(user_data.slot_number)
                 ngx.log(ngx.INFO, "Guest session cleaned up for slot: " .. user_data.slot_number)
-            else
-                ngx.log(ngx.WARN, "Guest cleanup function not available")
             end
         end)
-        
         if not ok then
             ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. tostring(err))
         end
     end
     
-    -- Render nav for anonymous user (logged out state)
+    -- Render nav for anonymous user
     local nav_html = render_nav_for_user("none", "Anonymous", nil)
     
     local logout_user = username or "anonymous"
     local logout_type = user_type or "none"
     
+    ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
     ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
     
     send_json(200, {
@@ -157,7 +206,8 @@ local function handle_logout()
         redirect = "/",
         logged_out_user = logout_user,
         logged_out_type = logout_type,
-        timestamp = os.date("!%Y-%m-%dT%TZ")
+        timestamp = os.date("!%Y-%m-%dT%TZ"),
+        jwt_blacklisted = (token ~= nil)
     })
 end
 
@@ -247,5 +297,6 @@ return {
     handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,
     handle_nav_refresh = handle_nav_refresh,
-    render_nav_for_user = render_nav_for_user
+    render_nav_for_user = render_nav_for_user,
+    blacklist_jwt_token = blacklist_jwt_token
 }
