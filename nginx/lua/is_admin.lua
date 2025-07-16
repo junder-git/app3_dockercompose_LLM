@@ -4,31 +4,21 @@
 
 local function handle_chat_page()
     local is_who = require "is_who"
-    local is_public = require "is_public"
-    local username = is_who.require_admin()
     local template = require "template"
-    
+    local username = is_who.require_admin()
     local context = {
         page_title = "Admin Chat - ai.junder.uk",
-        css_files = is_public.common_css,
-        js_files = is_public.common_js_base .. [[
-            <script src="/js/approved.js"></script>
-            <script src="/js/admin.js"></script>
-        ]],
-        nav = is_public.render_nav("admin", username, nil),
-        chat_features = is_public.get_chat_features("admin"),
-        chat_placeholder = "Admin console ready... (Unlimited access)"
+        nav = is_who.render_nav("admin", username, nil),
+        chat_features = is_who.get_chat_features("admin"),
+        chat_placeholder = "Admin console ready... "
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/chat.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/chat_admin.html", context)
 end
 
 local function handle_dash_page()
     local is_who = require "is_who"
-    local is_public = require "is_public"
-    local username = is_who.require_admin()
     local template = require "template"
-    
+    local username = is_who.require_admin()
     -- Get recent activity
     local recent_activity = [[
         <div class="activity-item">
@@ -52,24 +42,17 @@ local function handle_dash_page()
             <small class="text-muted d-block">2 hours ago</small>
         </div>
     ]]
-    
     local context = {
         page_title = "Admin Dashboard - ai.junder.uk",
-        css_files = is_public.common_css,
-        js_files = is_public.common_js_base .. [[
-            <script src="/js/approved.js"></script>
-            <script src="/js/admin.js"></script>
-        ]],
-        nav = is_public.render_nav("admin", username, nil),
+        nav = is_who.render_nav("admin", username, nil),
         username = username,
         redis_status = "Connected",
         ollama_status = "Connected", 
-        uptime = "3 days, 12 hours",
+        uptime = "idunno yet...",
         version = "OpenResty 1.21.4.1",
         recent_activity = recent_activity
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/dashboard_admin.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/dash_admin.html", context)
 end
 
 -- =============================================
@@ -316,7 +299,7 @@ local function handle_admin_api()
             server_info = {
                 nginx_version = "OpenResty 1.21.4.1",
                 lua_version = "LuaJIT 2.1.0",
-                uptime = "3 days, 12 hours",
+                uptime = "idunno yet...",
                 load_average = math.random(15, 45) / 10
             },
             configuration = {
@@ -456,7 +439,7 @@ local function handle_chat_stream()
     
     -- Admin stream context
     local stream_context = {
-        user_type = "admin",
+        user_type = "is_admin",
         username = username,
         
         -- Admin capabilities

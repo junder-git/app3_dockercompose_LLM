@@ -17,45 +17,25 @@ local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
 
 local USERNAME_POOLS = {
-    {
-        adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool"},
-        animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog"}
-    },
-    {
-        adjectives = {"Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
-        animals = {"Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
-    }
+    adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
+    animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 }
-
--- HARDCODED GUEST ACCOUNTS WITH VALID JWT TOKENS
-local function generate_guest_jwt(username, slot_number)
-    local payload = {
-        username = username,
-        user_type = "guest",
-        slot_number = slot_number,
-        iat = ngx.time(),
-        exp = ngx.time() + GUEST_SESSION_DURATION
-    }
-    
-    return jwt:sign(JWT_SECRET, {
-        header = { typ = "JWT", alg = "HS256" },
-        payload = payload
-    })
-end
 
 local function get_guest_accounts()
     return {
         {
             slot_number = 1,
-            username = "guest_slot_1",
-            password = "placeholder_token_1",
-            token = generate_guest_jwt("guest_slot_1", 1)
+            guest_active_session = false,
+            username = "guest_user_1",
+            password = "nkcukfulnckfckufnckdgjvjgv",
+            token = generate_guest_jwt(nkcukfulnckfckufnckdgjvjgv, 1)
         },
         {
             slot_number = 2,
-            username = "guest_slot_2", 
-            password = "placeholder_token_2",
-            token = generate_guest_jwt("guest_slot_2", 2)
+            guest_active_session = false,
+            username = "guest_user_2", 
+            password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
+            token = generate_guest_jwt(ymbkclhfpbdfbsdfwdsbwfdsbp, 2)
         }
     }
 end
@@ -79,13 +59,13 @@ end
 local function generate_display_username(slot_number)
     local red = connect_redis()
     if not red then
-        local pool = USERNAME_POOLS[slot_number] or USERNAME_POOLS[1]
+        local pool = USERNAME_POOLS
         return pool.adjectives[math.random(#pool.adjectives)] ..
                pool.animals[math.random(#pool.animals)] ..
                tostring(math.random(100, 999))
     end
 
-    local pool = USERNAME_POOLS[slot_number] or USERNAME_POOLS[1]
+    local pool = USERNAME_POOLS
     local max_attempts, attempts = 3, 0
 
     while attempts < max_attempts do
@@ -166,7 +146,7 @@ local function create_secure_guest_session()
 
     local session = {
         username = account.username,
-        user_type = "guest",
+        user_type = "is_guest",
         jwt_token = account.token,
         slot_number = account.slot_number,
         session_id = display_name,
@@ -190,7 +170,7 @@ local function create_secure_guest_session()
     red:set(user_session_key, cjson.encode(session))
     red:expire(user_session_key, GUEST_SESSION_DURATION)
 
-    local user_key = "user:" .. account.username
+    local user_key = "username:" .. account.username
 
     -- Hash password for user hash
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
@@ -199,12 +179,10 @@ local function create_secure_guest_session()
     local hashed = handle:read("*a"):gsub("\n", "")
     handle:close()
 
-    red:hset(user_key, "username", account.username)
-    red:hset(user_key, "password_hash", hashed)
-    red:hset(user_key, "is_guest_account", "true")
-    red:hset(user_key, "is_admin", "false")
-    red:hset(user_key, "is_approved", "false")
-    red:hset(user_key, "created_at", os.date("!%Y-%m-%dT%H:%M:%SZ"))
+    red:hset(user_key, "username:", account.username)
+    red:hset(user_key, "password_hash:", hashed)
+    red:hset(user_key, "user_type:", "is_guest")
+    red:hset(user_key, "created_at:", os.date("!%Y-%m-%dT%H:%M:%SZ"))
     red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
 
     red:close()
@@ -286,7 +264,7 @@ local function get_guest_stats()
     local red = connect_redis()
     if not red then 
         return {
-            active_sessions = 0,
+            guest_active_session = 0,
             max_sessions = MAX_GUEST_SESSIONS,
             available_slots = MAX_GUEST_SESSIONS
         }
@@ -312,7 +290,7 @@ local function get_guest_stats()
     red:close()
     
     return {
-        active_sessions = active_count,
+        guest_active_session = active_count,
         max_sessions = MAX_GUEST_SESSIONS,
         available_slots = MAX_GUEST_SESSIONS - active_count
     }
@@ -332,7 +310,7 @@ local function cleanup_guest_session(slot_number)
     for _, acc in ipairs(guest_accounts) do
         if acc.slot_number == slot_number then
             red:del("guest_session:" .. acc.username)
-            red:del("user:" .. acc.username)
+            red:del("username:" .. acc.username)
             break
         end
     end
@@ -374,20 +352,15 @@ end
 
 local function handle_chat_page()
     local is_who = require "is_who"
-    local is_public = require "is_public"
-    local username = is_who.require_guest()
     local template = require "template"
-    
+    local username = is_who.require_guest()    
     local context = {
         page_title = "Guest Chat",
-        css_files = is_public.common_css,
-        js_files = is_public.common_js_base,
-        nav = is_public.render_nav("guest", username, nil),
-        chat_features = is_public.get_chat_features("guest"),
+        nav = is_who.render_nav("guest", username, nil),
+        chat_features = is_who.get_chat_features("guest"),
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 30 minutes)"
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/chat.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/chat_guest.html", context)
 end
 
 -- =============================================
@@ -396,17 +369,14 @@ end
 
 local function handle_guest_api()
     local cjson = require "cjson"
-    
     local function send_json(status, tbl)
         ngx.status = status
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode(tbl))
         ngx.exit(status)
     end
-    
     local uri = ngx.var.uri
     local method = ngx.var.request_method
-    
     if uri == "/api/guest/create-session" and method == "POST" then
         -- Create new guest session
         local session_data, err = create_secure_guest_session()
@@ -507,7 +477,7 @@ local function handle_chat_stream()
     
     -- Guest stream context (minimal features)
     local stream_context = {
-        user_type = "guest",
+        user_type = "is_guest",
         username = username,
         
         -- Guest limitations

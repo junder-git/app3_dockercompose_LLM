@@ -1,40 +1,26 @@
 local function handle_chat_page()
     local is_who = require "is_who"
-    local is_public = require "is_public"
-    local username = is_who.require_approved()
     local template = require "template"
-    
+    local username = is_who.require_approved()
     local context = {
         page_title = "Chat",
-        css_files = is_public.common_css,
-        js_files = is_public.common_js_base .. [[
-            <script src="/js/approved.js"></script>
-        ]],
-        nav = is_public.render_nav("approved", username, nil),
-        chat_features = is_public.get_chat_features("approved"),
+        nav = is_who.render_nav("approved", username, nil),
+        chat_features = is_who.get_chat_features("approved"),
         chat_placeholder = "Ask anything..."
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/chat.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/chat_approved.html", context)
 end
 
 local function handle_dash_page()
     local is_who = require "is_who"
-    local is_public = require "is_public"
-    local username = is_who.require_approved()
     local template = require "template"
-    
+    local username = is_who.require_approved()
     local context = {
-        page_title = "Dashboard",
-        css_files = is_public.common_css,
-        js_files = is_public.common_js_base .. [[
-            <script src="/js/approved.js"></script>
-        ]],
+        page_title = "Approved dashboard",
         nav = is_public.render_nav("approved", username, nil),
         dashboard_content = is_public.get_dashboard_content("approved", username)
     }
-    
-    template.render_template("/usr/local/openresty/nginx/html/dashboard.html", context)
+    template.render_template("/usr/local/openresty/nginx/html/dash_approved.html", context)
 end
 
 -- =============================================
@@ -129,7 +115,7 @@ local function handle_chat_stream()
     
     -- Approved stream context
     local stream_context = {
-        user_type = "approved",
+        user_type = "is_approved",
         username = username,
         
         -- Approved capabilities
@@ -171,15 +157,12 @@ local function handle_chat_api()
     -- Require approved access for chat API
     local is_who = require "is_who"
     local username = is_who.require_approved()
-    
     local uri = ngx.var.uri
     local method = ngx.var.request_method
-    
     if uri == "/api/chat/history" and method == "GET" then
         -- Get chat history
         local limit = tonumber(ngx.var.arg_limit) or 50
         local messages = server.get_chat_history(username, limit)
-        
         send_json(200, {
             success = true,
             messages = messages,
