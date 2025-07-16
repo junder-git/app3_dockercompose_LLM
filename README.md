@@ -1,3 +1,7 @@
+This is much cleaner and follows the DRY principle perfectly. All the complex logic lives in one place (is_who.lua), and nginx just delegates to it.
+
+=====
+
 my /static/js is public though... need to tweak that for adminjs and approvedjs
 
 /

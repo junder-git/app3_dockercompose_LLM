@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/login.lua - LOGIN/LOGOUT WITH NAV UPDATES
+-- nginx/lua/login.lua - LOGIN/LOGOUT WITH PROPER GUEST MANAGEMENT
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -105,6 +105,62 @@ local function handle_login()
     })
 end
 
+local function handle_logout()
+    -- Get current user info before logout for logging
+    local is_who = require "is_who"
+    local user_type, username, user_data = is_who.check()
+    
+    -- Clear cookies with multiple approaches to ensure they're gone
+    local cookie_options = {
+        "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        "guest_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+        "guest_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    }
+    
+    -- Set multiple Set-Cookie headers to ensure logout
+    for _, cookie_str in ipairs(cookie_options) do
+        ngx.header["Set-Cookie"] = cookie_str
+    end
+    
+    -- FIXED: Proper guest session cleanup using is_guest module
+    if user_type == "guest" and user_data and user_data.slot_number then
+        local ok, err = pcall(function()
+            -- Use the is_guest module for proper cleanup
+            local is_guest = require "is_guest"
+            
+            if is_guest.cleanup_guest_session then
+                is_guest.cleanup_guest_session(user_data.slot_number)
+                ngx.log(ngx.INFO, "Guest session cleaned up for slot: " .. user_data.slot_number)
+            else
+                ngx.log(ngx.WARN, "Guest cleanup function not available")
+            end
+        end)
+        
+        if not ok then
+            ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. tostring(err))
+        end
+    end
+    
+    -- Render nav for anonymous user (logged out state)
+    local nav_html = render_nav_for_user("none", "Anonymous", nil)
+    
+    local logout_user = username or "anonymous"
+    local logout_type = user_type or "none"
+    
+    ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
+    
+    send_json(200, {
+        success = true,
+        message = "Logout successful",
+        nav_html = nav_html,
+        redirect = "/",
+        logged_out_user = logout_user,
+        logged_out_type = logout_type,
+        timestamp = os.date("!%Y-%m-%dT%TZ")
+    })
+end
+
 local function handle_check_auth()
     local is_who = require "is_who"
     local user_type, username, user_data = is_who.check()
@@ -135,7 +191,7 @@ local function handle_check_auth()
     end
 end
 
--- NEW: Handle nav refresh endpoint
+-- Handle nav refresh endpoint
 local function handle_nav_refresh()
     local is_who = require "is_who"
     local user_type, username, user_data = is_who.check()
@@ -161,6 +217,8 @@ local function handle_auth_api()
     
     if uri == "/api/auth/login" and method == "POST" then
         handle_login()
+    elseif uri == "/api/auth/logout" and method == "POST" then
+        handle_logout()
     elseif uri == "/api/auth/check" and method == "GET" then
         handle_check_auth()
     elseif uri == "/api/auth/nav" and method == "GET" then
@@ -171,6 +229,7 @@ local function handle_auth_api()
             requested = method .. " " .. uri,
             available_endpoints = {
                 "POST /api/auth/login - User login",
+                "POST /api/auth/logout - User logout", 
                 "GET /api/auth/check - Check authentication status",
                 "GET /api/auth/nav - Refresh navigation"
             }
@@ -185,6 +244,7 @@ end
 return {
     handle_auth_api = handle_auth_api,
     handle_login = handle_login,
+    handle_logout = handle_logout,
     handle_check_auth = handle_check_auth,
     handle_nav_refresh = handle_nav_refresh,
     render_nav_for_user = render_nav_for_user

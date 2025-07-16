@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_public.lua - SIMPLE TEMPLATE SYSTEM - UPDATED
+-- nginx/lua/is_public.lua - SIMPLE TEMPLATE SYSTEM - CORRECTED
 -- =============================================================================
 
 local template = require "template"
@@ -25,7 +25,7 @@ M.common_js_base = [[
     <script src="/js/guest.js"></script>
 ]]
 
--- Public-only JS (for login/register pages)
+-- Public-only JS (for login/register pages) - No source map requests
 M.public_js = [[
     <script src="/js/lib/jquery.min.js"></script>
     <script src="/js/lib/bootstrap.min.js"></script>
@@ -38,18 +38,17 @@ M.public_js = [[
 
 function M.get_nav_buttons(user_type, username, user_data)
     if user_type == "admin" then
-        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
+        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "approved" then
-        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
+        return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "guest" then
-        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="PublicInterface.logout()">End Session</button>'
+        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
     elseif user_type == "authenticated" then
-        return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="PublicInterface.logout()">Logout</button>'
+        return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     else
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     end
 end
-
 
 function M.get_user_badge(user_type, user_data)
     if user_type == "admin" then
@@ -183,6 +182,47 @@ function M.render_nav(user_type, username, user_data)
 end
 
 -- =============================================
+-- SAFE GUEST STATS HELPER - USING is_guest MODULE
+-- =============================================
+
+local function get_safe_guest_stats()
+    -- Use the proper is_guest module
+    local ok, is_guest = pcall(require, "is_guest")
+    if not ok then
+        ngx.log(ngx.WARN, "Failed to load is_guest module: " .. tostring(is_guest))
+        return {
+            active_sessions = 0,
+            max_sessions = 2,
+            available_slots = 2
+        }
+    end
+    
+    -- Try to get guest stats from is_guest module
+    local guest_stats, err = nil, nil
+    local ok_stats, result = pcall(function()
+        return is_guest.get_guest_stats()
+    end)
+    
+    if ok_stats and result then
+        guest_stats, err = result, nil
+    else
+        err = tostring(result or "Unknown error")
+    end
+    
+    if not guest_stats then
+        ngx.log(ngx.WARN, "Failed to get guest stats from is_guest: " .. tostring(err))
+        -- Return safe defaults
+        guest_stats = {
+            active_sessions = 0,
+            max_sessions = 2,
+            available_slots = 2
+        }
+    end
+    
+    return guest_stats
+end
+
+-- =============================================
 -- PAGE HANDLERS
 -- =============================================
 
@@ -256,20 +296,11 @@ function M.handle_50x_page()
 end
 
 function M.handle_dash_page_with_guest_info()
-    local server = require "server"
-    
     -- Check if user came from failed guest session creation
     local guest_unavailable = ngx.var.arg_guest_unavailable
     
-    -- Get guest session stats for display
-    local guest_stats, err = server.get_guest_stats()
-    if not guest_stats then
-        guest_stats = {
-            active_sessions = 0,
-            max_sessions = 5,
-            available_slots = 0
-        }
-    end
+    -- FIXED: Use safe guest stats function with proper is_guest module
+    local guest_stats = get_safe_guest_stats()
     
     local dashboard_content = [[
         <div class="dashboard-container">
