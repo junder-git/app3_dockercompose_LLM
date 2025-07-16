@@ -284,6 +284,17 @@ function M.handle_404_page()
     template.render_template("/usr/local/openresty/nginx/html/404.html", context)
 end
 
+function M.handle_429_page()
+    local context = {
+        page_title = "429 - Guest reached max sessions",
+        css_files = M.common_css,
+        js_files = M.public_js,
+        nav = M.render_nav("public", "Anonymous", nil)
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/html/429.html", context)
+end
+
 function M.handle_50x_page()
     local context = {
         page_title = "Server Error",
