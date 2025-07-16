@@ -21,6 +21,7 @@ local USERNAME_POOLS = {
     animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 }
 
+-- FIXED: Remove generate_guest_jwt dependency
 local function get_guest_accounts()
     return {
         {
@@ -28,14 +29,33 @@ local function get_guest_accounts()
             guest_active_session = false,
             username = "guest_user_1",
             password = "nkcukfulnckfckufnckdgjvjgv",
-            token = generate_guest_jwt("nkcukfulnckfckufnckdgjvjgv", 1)
+            -- Generate token on-demand instead of pre-generating
+            token = jwt:sign(JWT_SECRET, {
+                header = { typ = "JWT", alg = "HS256" },
+                payload = {
+                    username = "guest_user_1",
+                    user_type = "guest",
+                    slot_number = 1,
+                    iat = ngx.time(),
+                    exp = ngx.time() + GUEST_SESSION_DURATION
+                }
+            })
         },
         {
             slot_number = 2,
             guest_active_session = false,
             username = "guest_user_2", 
             password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
-            token = generate_guest_jwt("ymbkclhfpbdfbsdfwdsbwfdsbp", 2)
+            token = jwt:sign(JWT_SECRET, {
+                header = { typ = "JWT", alg = "HS256" },
+                payload = {
+                    username = "guest_user_2",
+                    user_type = "guest",
+                    slot_number = 2,
+                    iat = ngx.time(),
+                    exp = ngx.time() + GUEST_SESSION_DURATION
+                }
+            })
         }
     }
 end

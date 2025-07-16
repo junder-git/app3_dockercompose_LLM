@@ -15,11 +15,15 @@ local function handle_dash_page()
     local is_who = require "is_who"
     local template = require "template"
     local username = is_who.require_approved()
+    
     local context = {
-        page_title = "Approved dashboard",
-        nav = is_public.render_nav("approved", username, nil),
-        dashboard_content = is_public.get_dashboard_content("approved", username)
+        page_title = "Approved Dashboard - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = username or "guest",  -- Nav context
+        dash_buttons = is_who.get_nav_buttons("is_approved", username, nil),  -- Nav context
+        dashboard_content = is_who.get_dashboard_content("is_approved", username)
     }
+    
     template.render_template("/usr/local/openresty/nginx/dynamic_content/dash_approved.html", context)
 end
 

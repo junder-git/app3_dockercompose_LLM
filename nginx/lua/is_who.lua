@@ -92,70 +92,59 @@ end
 -- =====================================================================
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
-    ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", username: " .. (username or "unknown"))
-
+    
     if ngx.var.user_type == "is_admin" then
-        -- Admin functionality not implemented yet
-        ngx.status = 501
-        ngx.header.content_type = 'text/html'
-        ngx.say('<h1>Admin functionality not implemented yet</h1>')
-        ngx.exit(501)
-
-    elseif ngx.var.user_type == "is_approved" then
-        -- Approved user functionality not implemented yet
-        ngx.status = 501
-        ngx.header.content_type = 'text/html'
-        ngx.say('<h1>Approved user functionality not implemented yet</h1>')
-        ngx.exit(501)
-
-    elseif ngx.var.user_type == "is_guest" then
-        -- Guest functionality not implemented yet
-        ngx.status = 501
-        ngx.header.content_type = 'text/html'
-        ngx.say('<h1>Guest functionality not implemented yet</h1>')
-        ngx.exit(501)
-
-    elseif ngx.var.user_type == "is_pending" then
-        -- Pending user functionality not implemented yet
-        ngx.status = 501
-        ngx.header.content_type = 'text/html'
-        ngx.say('<h1>Pending user functionality not implemented yet</h1>')
-        ngx.exit(501)
-
-    elseif ngx.var.user_type == "is_none" then
-        -- Anonymous users
+        local is_admin = require "is_admin"
         if route_type == "chat" then
-            -- FIXED: Check if user is explicitly requesting guest chat
-            local start_guest_chat = ngx.var.arg_start_guest_chat
-            if start_guest_chat == "1" then
-                -- Redirect to guest session creation
-                ngx.log(ngx.INFO, "Anonymous user requesting guest chat - redirecting to guest session creation")
-                return ngx.redirect("/?guest_session_requested=1")
-            else
-                -- Regular chat access without guest session - redirect to home
-                ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
-                return ngx.redirect("/?start_guest_chat=1")
-            end
-            
+            is_admin.handle_chat_page()
         elseif route_type == "dash" then
-            -- Show public dashboard with guest session option
-            M.handle_dash_page_with_guest_info()
-            
+            is_admin.handle_dash_page()
         elseif route_type == "chat_api" then
-            -- API access without auth should return 401
-            ngx.status = 401
-            ngx.header.content_type = 'application/json'
-            ngx.say('{"error":"Authentication required","message":"Please login or start a guest session"}')
-            return ngx.exit(401)
-            
+            is_admin.handle_chat_api()
         else
             ngx.status = 404
             return ngx.exec("@custom_50x")
         end
-    else
-        -- Unknown user type
-        ngx.log(ngx.ERROR, "Unknown user type: " .. ngx.var.user_type)
-        return ngx.redirect("/login")
+        
+    elseif ngx.var.user_type == "is_approved" then
+        local is_approved = require "is_approved"
+        if route_type == "chat" then
+            is_approved.handle_chat_page()
+        elseif route_type == "dash" then
+            is_approved.handle_dash_page()
+        elseif route_type == "chat_api" then
+            is_approved.handle_chat_api()
+        else
+            ngx.status = 404
+            return ngx.exec("@custom_50x")
+        end
+        
+    elseif ngx.var.user_type == "is_guest" then
+        local is_guest = require "is_guest"
+        if route_type == "chat" then
+            is_guest.handle_chat_page()
+        elseif route_type == "chat_api" then
+            is_guest.handle_chat_api()
+        else
+            ngx.status = 404
+            return ngx.exec("@custom_50x")
+        end
+        
+    elseif ngx.var.user_type == "is_pending" then
+        local is_pending = require "is_pending"
+        if route_type == "dash" then
+            is_pending.handle_dash_page()
+        else
+            return ngx.redirect("/pending")
+        end
+        
+    elseif ngx.var.user_type == "is_none" then
+        -- Handle anonymous users
+        if route_type == "dash" then
+            M.handle_dash_page_with_guest_info()
+        else
+            return ngx.redirect("/")
+        end
     end
 end
 
@@ -164,39 +153,21 @@ end
 -- =============================================
 
 function M.get_nav_buttons(user_type, username, user_data)
-    if user_type == "admin" then
+    if user_type == "is_admin" then
         return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
-    elseif user_type == "approved" then
+    elseif user_type == "is_approved" then
         return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
-    elseif user_type == "guest" then
+    elseif user_type == "is_guest" then
         return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
-    elseif user_type == "authenticated" then
+    elseif user_type == "is_pending" then
         return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
     else
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     end
 end
 
-function M.get_user_badge(user_type, user_data)
-    if user_type == "admin" then
-        return '<span class="badge bg-danger ms-2">Admin</span>'
-    elseif user_type == "approved" then
-        return '<span class="badge bg-success ms-2">Approved</span>'
-    elseif user_type == "guest" then
-        local slot_info = ""
-        if user_data and user_data.slot_number then
-            slot_info = ' [Slot ' .. user_data.slot_number .. ']'
-        end
-        return '<span class="badge bg-warning ms-2">Guest' .. slot_info .. '</span>'
-    elseif user_type == "authenticated" then
-        return '<span class="badge bg-secondary ms-2">Pending</span>'
-    else
-        return ""
-    end
-end
-
 function M.get_chat_features(user_type)
-    if user_type == "admin" then
+    if user_type == "is_admin" then  -- FIXED: was "admin"
         return [[
             <div class="user-features admin-features">
                 <div class="alert alert-info">
@@ -205,7 +176,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
-    elseif user_type == "approved" then
+    elseif user_type == "is_approved" then  -- FIXED: was "approved"
         return [[
             <div class="user-features approved-features">
                 <div class="alert alert-success">
@@ -233,18 +204,6 @@ function M.get_dashboard_content(user_type, username)
         return dashboard_content
     end
     return nil
-end
-
--- =============================================
--- RENDER NAV FROM FILE
--- =============================================
-
-function M.render_nav(user_type, username, user_data)
-    local context = {
-        username = username or "guest",
-        dash_buttons = M.get_nav_buttons(user_type, username, user_data)
-    }
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/nav.html", context)
 end
 
 -- =============================================
@@ -295,24 +254,16 @@ end
 function M.handle_index_page()
     local user_type, username, user_data = auth.check()
     
-    if user_type == "is_none" then
-        username = "guest"
-    end
-    
-    -- Check if guest session was requested
-    local guest_session_requested = ngx.var.arg_guest_session_requested
-    local auto_start_guest = "false"
-    if guest_session_requested == "1" then
-        auto_start_guest = "true"
-    end
-    
     local context = {
         page_title = "ai.junder.uk",
         hero_title = "ai.junder.uk",
         hero_subtitle = "Advanced coding model, powered by Devstral.",
-        nav = M.render_nav(user_type, username, user_data),
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = username or "guest",  -- Nav context
+        dash_buttons = M.get_nav_buttons(user_type, username, user_data),  -- Nav context
         auto_start_guest = auto_start_guest
     }
+    
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
 end
 
