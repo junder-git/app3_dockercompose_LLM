@@ -244,70 +244,10 @@ function M.get_chat_features(user_type)
 end
 
 function M.get_dashboard_content(user_type, username)
-    if user_type == "admin" then
-        return [[
-            <div class="dashboard-container">
-                <div class="admin-header">
-                    <h2><i class="bi bi-shield-check text-danger"></i> Admin Dashboard</h2>
-                    <p>System administration and user management</p>
-                </div>
-                <div class="admin-content" id="admin-content">
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h5><i class="bi bi-gear"></i> Admin Controls</h5>
-                                </div>
-                                <div class="card-body">
-                                    <button class="btn btn-primary me-2" onclick="window.location.href='/chat'">
-                                        <i class="bi bi-chat-dots"></i> Admin Chat
-                                    </button>
-                                    <button class="btn btn-info me-2" onclick="exportAdminChats()">
-                                        <i class="bi bi-download"></i> Export Chats
-                                    </button>
-                                    <button class="btn btn-secondary" onclick="viewSystemLogs()">
-                                        <i class="bi bi-journal-text"></i> View Logs
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        ]]
-    else
-        return [[
-            <div class="dashboard-container">
-                <div class="dashboard-header">
-                    <h2><i class="bi bi-speedometer2"></i> Dashboard</h2>
-                    <p>Welcome back, ]] .. (username or "User") .. [[!</p>
-                </div>
-                <div class="dashboard-content" id="dashboard-content">
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h5><i class="bi bi-person-check"></i> User Controls</h5>
-                                </div>
-                                <div class="card-body">
-                                    <button class="btn btn-primary me-2" onclick="window.location.href='/chat'">
-                                        <i class="bi bi-chat-dots"></i> Start Chat
-                                    </button>
-                                    <button class="btn btn-info me-2" onclick="exportChats()">
-                                        <i class="bi bi-download"></i> Export History
-                                    </button>
-                                    <button class="btn btn-warning" onclick="clearHistory()">
-                                        <i class="bi bi-trash"></i> Clear History
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        ]]
+    if user_type == "is_admin" then
+        local dashboard_content = template.read_file("/usr/local/openresty/nginx/dynamic_content/dash_admin.html")
+        return dashboard_content
     end
-end
 
 -- =============================================
 -- RENDER NAV FROM FILE
@@ -317,7 +257,7 @@ function M.render_nav(user_type, username, user_data)
     local nav_content = template.read_file("/usr/local/openresty/nginx/dynamic_content/nav.html")
     
     -- Simple variable replacement
-    nav_content = nav_content:gsub("{{%s*username%s*}}", username or "Anonymous")
+    nav_content = nav_content:gsub("{{%s*username%s*}}", username or "guest")
     nav_content = nav_content:gsub("{{%s*user_badge%s*}}", M.get_user_badge(user_type, user_data))
     nav_content = nav_content:gsub("{{%s*dash_buttons%s*}}", M.get_nav_buttons(user_type, username, user_data))
     
@@ -372,9 +312,8 @@ end
 function M.handle_index_page()
     local user_type, username, user_data = auth.check()
     
-    if user_type == "none" then
-        user_type = "public"
-        username = "Anonymous"
+    if user_type == "is_none" then
+        username = "guest"
     end
     
     -- Check if guest session was requested
@@ -579,7 +518,7 @@ function M.handle_dash_page_with_guest_info()
     
     local context = {
         page_title = "Dashboard - ai.junder.uk",
-        nav = M.render_nav("public", "Anonymous", nil),
+        nav = M.render_nav("is_none", "guest", nil),
         dashboard_content = dashboard_content
     }
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }}</title>
-    {{ css_files }}
     <style>
         body, html {
             margin: 0;
@@ -84,10 +83,10 @@
             </div>
         </div>
     </main>
-
-
-    {{ js_files }}
-
+    <script src="/js/lib/jquery.min.js"></script>
+    <script src="/js/lib/bootstrap.min.js"></script>
+    <script src="/js/is_public.js"></script>
+    <script src="is_guest.js"></script>
     <script>
         // Neural net animation
         const canvas = document.getElementById('bg-canvas');
