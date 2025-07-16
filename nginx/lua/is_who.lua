@@ -14,12 +14,9 @@ local M = {}
 function M.set_vars()
     local user_type, username, user_data = auth.check()
     
-    ngx.var.username = username or "anonymous"
-    ngx.var.is_admin = (user_type == "admin") and "true" or "false"
-    ngx.var.is_approved = (user_type == "approved" or user_type == "admin") and "true" or "false"
-    ngx.var.is_guest = (user_type == "guest") and "true" or "false"
-    
-    if user_type == "guest" and user_data and user_data.slot_number then
+    ngx.var.username = username or "guest"
+    ngx.var.user_type = user_type or "is_none"    
+    if user_type == "is_guest" and user_data and user_data.slot_number then
         local ok, err = pcall(function()
             ngx.var.guest_slot_id = tostring(user_data.slot_number)
         end)
@@ -29,26 +26,13 @@ function M.set_vars()
             ngx.var.guest_slot_id = ""
         end)
         if not ok then ngx.log(ngx.DEBUG, "Failed to clear guest_slot_id: " .. err) end
-    end
-    
-    if ngx.var.is_admin == "true" then
-        ngx.var.user_type = "is_admin"
-    elseif ngx.var.is_approved == "true" then
-        ngx.var.user_type = "is_approved"
-    elseif ngx.var.is_guest == "true" then
-        ngx.var.user_type = "is_guest"
-    elseif user_type == "authenticated" then
-        ngx.var.user_type = "is_pending"
-    else
-        ngx.var.user_type = "is_none"
-    end
-    
+    end    
     return user_type, username, user_data
 end
 
 function M.require_admin()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "admin" then
+    if user_type ~= "is_admin" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -57,7 +41,7 @@ end
 
 function M.require_approved()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "admin" and user_type ~= "approved" then
+    if user_type ~= "is_admin" and user_type ~= "is_approved" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -66,7 +50,7 @@ end
 
 function M.require_guest()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "guest" then
+    if user_type ~= "is_guest" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -80,7 +64,7 @@ end
 function M.get_user_info()
     local user_type, username, user_data = auth.check()
     
-    if user_type == "none" then
+    if user_type == "is_none" then
         return { success = false, user_type = "is_none", authenticated = false, message = "Not authenticated" }
     end
     
@@ -91,7 +75,7 @@ function M.get_user_info()
         authenticated = true
     }
     
-    if user_type == "guest" and user_data then
+    if user_type == "is_guest" and user_data then
         response.message_limit = user_data.max_messages or 10
         response.messages_used = user_data.message_count or 0
         response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
@@ -108,7 +92,7 @@ end
 -- =====================================================================
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
-    ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", user: " .. (username or "unknown"))
+    ngx.log(ngx.INFO, "Routing " .. route_type .. " for user_type: " .. ngx.var.user_type .. ", username: " .. (username or "unknown"))
 
     if ngx.var.user_type == "is_admin" then
         -- Admin functionality not implemented yet
@@ -248,6 +232,8 @@ function M.get_dashboard_content(user_type, username)
         local dashboard_content = template.read_file("/usr/local/openresty/nginx/dynamic_content/dash_admin.html")
         return dashboard_content
     end
+    return nil
+end
 
 -- =============================================
 -- RENDER NAV FROM FILE
