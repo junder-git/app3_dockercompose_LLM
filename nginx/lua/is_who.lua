@@ -12,13 +12,13 @@ local JWT_SECRET = os.getenv("JWT_SECRET")
 local M = {}
 
 function M.set_vars()
-    local user_type, username, user_data = auth.check()
-    
+    local user_type, username, guest_slot_number, user_data = auth.check()
     ngx.var.username = username or "guest"
-    ngx.var.user_type = user_type or "is_none"    
-    if user_type == "is_guest" and user_data and user_data.slot_number then
+    ngx.var.user_type = user_type or "is_none"
+    ngx.var.guest_slot_number = guest_slot_number or "1"    
+    if user_type == "is_guest" and user_data and user_data.guest_slot_number then
         local ok, err = pcall(function()
-            ngx.var.guest_slot_id = tostring(user_data.slot_number)
+            ngx.var.guest_slot_number = tostring(user_data.guest_slot_number)
         end)
         if not ok then ngx.log(ngx.WARN, "Failed to set guest_slot_id: " .. err) end
     else
@@ -54,7 +54,7 @@ function M.require_guest()
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
-    if not user_data or not user_data.slot_number then
+    if not user_data or not user_data.guest_slot_number then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
@@ -80,7 +80,7 @@ function M.get_user_info()
         response.messages_used = user_data.message_count or 0
         response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
         response.session_remaining = (user_data.expires_at or 0) - ngx.time()
-        response.slot_number = user_data.slot_number
+        response.guest_slot_number = user_data.guest_slot_number
         response.priority = user_data.priority or 3
     end
     
@@ -177,17 +177,20 @@ end
 -- =============================================
 -- NAVIGATION BUILDERS
 -- =============================================
-
 function M.get_nav_buttons(user_type, username, user_data)
     if user_type == "is_admin" then
         return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Admin Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
-    elseif user_type == "is_approved" then
+    end
+    if user_type == "is_approved" then
         return '<a class="nav-link" href="/chat">Chat</a><a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
-    elseif user_type == "is_guest" then
-        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
-    elseif user_type == "is_pending" then
+    end
+    if user_type == "is_pending" then
         return '<a class="nav-link" href="/pending">Status</a><button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>'
-    else
+    end
+    if user_type == "is_guest" then
+        return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+    end
+    if user_type == "is_none" then
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     end
 end
@@ -202,7 +205,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
-    elseif user_type == "is_approved" then
+    if user_type == "is_approved" then
         return [[
             <div class="user-features approved-features">
                 <div class="alert alert-success">
@@ -211,7 +214,16 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
-    else
+    if user_type == "is_pending" then
+        return [[
+            <div class="user-features approved-features">
+                <div class="alert alert-success">
+                    <h6><i class="bi bi-check-circle text-success"></i> Full Chat Access</h6>
+                    <p class="mb-0">Unlimited messages • Redis storage • Export history</p>
+                </div>
+            </div>
+        ]]
+    if user_type == "is_guest" then
         return [[
             <div class="user-features guest-features">
                 <div class="alert alert-warning">
@@ -221,6 +233,8 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
+    if user_type == "is_none" then
+        return [[ ]]
     end
 end
 

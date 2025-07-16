@@ -25,7 +25,7 @@ local USERNAME_POOLS = {
 local function get_guest_accounts()
     return {
         {
-            slot_number = 1,
+            guest_slot_number = 1,
             guest_active_session = false,
             username = "guest_user_1",
             password = "nkcukfulnckfckufnckdgjvjgv",
@@ -35,14 +35,14 @@ local function get_guest_accounts()
                 payload = {
                     username = "guest_user_1",
                     user_type = "guest",
-                    slot_number = 1,
+                    guest_slot_number = 1,
                     iat = ngx.time(),
                     exp = ngx.time() + GUEST_SESSION_DURATION
                 }
             })
         },
         {
-            slot_number = 2,
+            guest_slot_number = 2,
             guest_active_session = false,
             username = "guest_user_2", 
             password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
@@ -51,7 +51,7 @@ local function get_guest_accounts()
                 payload = {
                     username = "guest_user_2",
                     user_type = "guest",
-                    slot_number = 2,
+                    guest_slot_number = 2,
                     iat = ngx.time(),
                     exp = ngx.time() + GUEST_SESSION_DURATION
                 }
@@ -76,7 +76,7 @@ local function connect_redis()
     return red
 end
 
-local function generate_display_username(slot_number)
+local function generate_display_username()
     local red = connect_redis()
     if not red then
         local pool = USERNAME_POOLS
@@ -160,7 +160,7 @@ local function create_secure_guest_session()
         return ngx.exec("@custom_50x")
     end
 
-    local display_name = generate_display_username(account.slot_number)
+    local display_name = generate_display_username(account.guest_slot_number)
     local now = ngx.time()
     local expires_at = now + GUEST_SESSION_DURATION
 
@@ -168,7 +168,7 @@ local function create_secure_guest_session()
         username = account.username,
         user_type = "is_guest",
         jwt_token = account.token,
-        slot_number = account.slot_number,
+        guest_slot_number = account.guest_slot_number,
         session_id = display_name,
         display_username = display_name,
         created_at = now,
@@ -182,7 +182,7 @@ local function create_secure_guest_session()
         chat_retention_until = now + GUEST_CHAT_RETENTION
     }
 
-    local key = "guest_active_session:" .. account.slot_number
+    local key = "guest_active_session:" .. account.guest_slot_number
     red:set(key, cjson.encode(session))
     red:expire(key, GUEST_SESSION_DURATION)
 
@@ -210,7 +210,7 @@ local function create_secure_guest_session()
     ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
 
     ngx.log(ngx.INFO, "=== GUEST SESSION CREATION SUCCESS ===")
-    ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.slot_number .. "]")
+    ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
 
     return {
         success = true,
@@ -222,7 +222,7 @@ local function create_secure_guest_session()
         message_limit = GUEST_MESSAGE_LIMIT,
         session_duration = GUEST_SESSION_DURATION,
         priority = 3,
-        slot_number = account.slot_number,
+        guest_slot_number = account.guest_slot_number,
         storage_type = "redis",
         chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
     }, nil
@@ -267,7 +267,7 @@ local function validate_guest_session(token)
 
     if ngx.time() >= session.expires_at then
         red:del(key)
-        red:del("guest_active_session:" .. valid_account.slot_number)
+        red:del("guest_active_session:" .. valid_account.guest_slot_number)
         red:close()
         return nil, "Session expired"
     end
@@ -284,7 +284,7 @@ local function get_guest_stats()
     local red = connect_redis()
     if not red then 
         return {
-            guest_active_session = 0,
+            active_sessions = 0,
             max_sessions = MAX_GUEST_SESSIONS,
             available_slots = MAX_GUEST_SESSIONS
         }
@@ -310,25 +310,25 @@ local function get_guest_stats()
     red:close()
     
     return {
-        guest_active_session = active_count,
+        active_sessions = active_count,
         max_sessions = MAX_GUEST_SESSIONS,
         available_slots = MAX_GUEST_SESSIONS - active_count
     }
 end
 
-local function cleanup_guest_session(slot_number)
-    if not slot_number then return false end
+local function cleanup_guest_session(guest_slot_number)
+    if not guest_slot_number then return false end
     
     local red = connect_redis()
     if not red then return false end
     
-    local key = "guest_active_session:" .. slot_number
+    local key = "guest_active_session:" .. guest_slot_number
     red:del(key)
     
     -- Also clean up user session key
     local guest_accounts = get_guest_accounts()
     for _, acc in ipairs(guest_accounts) do
-        if acc.slot_number == slot_number then
+        if acc.guest_slot_number == guest_slot_number then
             red:del("guest_session:" .. acc.username)
             red:del("username:" .. acc.username)
             break
@@ -336,7 +336,7 @@ local function cleanup_guest_session(slot_number)
     end
     
     red:close()
-    ngx.log(ngx.INFO, "Cleaned up guest session for slot: " .. slot_number)
+    ngx.log(ngx.INFO, "Cleaned up guest session for slot: " .. guest_slot_number)
     return true
 end
 
@@ -371,15 +371,26 @@ end
 -- =============================================
 
 local function handle_chat_page()
-    local is_who = require "is_who"
+    -- FIXED: Use proper template system without render_nav dependency
     local template = require "template"
-    local username = is_who.require_guest()    
+    local is_who = require "is_who"
+    
+    -- Get guest user info
+    local username = is_who.require_guest()
+    
+    -- Build navigation using get_nav_buttons
+    local nav_buttons = is_who.get_nav_buttons("is_guest", username, nil)
+    local chat_features = is_who.get_chat_features("is_guest")
+    
     local context = {
         page_title = "Guest Chat",
-        nav = is_who.render_nav("guest", username, nil),
-        chat_features = is_who.get_chat_features("guest"),
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
+        username = username or "guest",  -- Nav context
+        dash_buttons = nav_buttons,  -- Nav context
+        chat_features = chat_features,
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 30 minutes)"
     }
+    
     template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_guest.html", context)
 end
 

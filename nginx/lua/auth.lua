@@ -94,11 +94,11 @@ local function verify_password(password, stored_hash)
 end
 
 -- FIXED: Generate JWT for guest users
-local function generate_guest_jwt(username, slot_number)
+local function generate_guest_jwt(username, guest_slot_number)
     local payload = {
         username = username,
-        user_type = "guest",
-        slot_number = slot_number,
+        user_type = "is_guest",
+        guest_slot_number = guest_slot_number,
         iat = ngx.time(),
         exp = ngx.time() + 1800  -- 30 minutes
     }
@@ -128,7 +128,7 @@ local function check()
     local user_type_claim = jwt_obj.payload.user_type
     
     -- Handle guest users differently
-    if user_type_claim == "guest" then
+    if user_type_claim == "is_guest" then
         -- For guest users, validate against guest session system
         local ok, is_guest = pcall(require, "is_guest")
         if ok and is_guest.validate_guest_session then
@@ -162,12 +162,18 @@ local function check()
     -- Return user type based on Redis data (using is_* format)
     if user_data.user_type == "is_admin" then
         return "is_admin", username, user_data
-    elseif user_data.user_type == "is_approved" then
+    end
+    if user_data.user_type == "is_approved" then
         return "is_approved", username, user_data
-    elseif user_data.user_type == "is_pending" then
+    end
+    if user_data.user_type == "is_pending" then
         return "is_pending", username, user_data
-    else
-        return "is_none", nil, nil
+    end
+    --if user_data.user_type == "is_guest" then
+    --    return "is_guest", username, user_data
+    --end
+    if user_data.user_type == "is_none"
+        return "is_none", "guest", nil
     end
 end
 
@@ -253,12 +259,12 @@ local function handle_logout()
     ngx.header["Set-Cookie"] = cookie_headers
     
     -- Guest session cleanup
-    if user_type == "is_guest" and user_data and user_data.slot_number then
+    if user_type == "is_guest" and user_data and user_data.guest_slot_number then
         local ok, err = pcall(function()
             local is_guest = require "is_guest"
             if is_guest.cleanup_guest_session then
-                is_guest.cleanup_guest_session(user_data.slot_number)
-                ngx.log(ngx.INFO, "Guest session cleaned up for slot: " .. user_data.slot_number)
+                is_guest.cleanup_guest_session(user_data.guest_slot_number)
+                ngx.log(ngx.INFO, "Guest session cleaned up for slot: " .. user_data.guest_slot_number)
             end
         end)
         if not ok then
@@ -309,7 +315,7 @@ local function handle_check_auth()
         response.messages_used = user_data.message_count or 0
         response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
         response.session_remaining = (user_data.expires_at or 0) - ngx.time()
-        response.slot_number = user_data.slot_number
+        response.guest_slot_number = user_data.guest_slot_number
         response.priority = user_data.priority or 3
     end
     
