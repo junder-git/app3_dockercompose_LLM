@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - SIMPLIFIED AUTHENTICATION WITH AUTO-GUEST AND FIXED TOKEN HANDLING
+-- nginx/lua/is_who.lua - SIMPLIFIED WITH DIRECT GUEST SESSION CREATION
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -61,8 +61,6 @@ function M.check()
             ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
         end
     end
-    
-
     
     return "none", nil, nil
 end
@@ -264,7 +262,7 @@ function M.get_user_info()
     return response
 end
 
--- ROUTING CONTROLLER: Determines which handler should process the request
+-- SIMPLIFIED ROUTING WITH DIRECT GUEST SESSION CREATION
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
     
@@ -339,35 +337,16 @@ function M.route_to_handler(route_type)
         end
         
     elseif ngx.var.user_type == "isnone" then
-        -- ANONYMOUS: Special handling for chat vs dash with AUTO-GUEST
+        -- ANONYMOUS: Create guest session for chat, show info for dash
         if route_type == "chat" or route_type == "chat_api" then
-            -- AUTO-GUEST: Try to create guest session automatically
-            ngx.log(ngx.INFO, "Anonymous user accessing " .. route_type .. " - attempting auto-guest session creation")
+            -- DIRECT GUEST CREATION: Much simpler!
+            ngx.log(ngx.INFO, "Anonymous user accessing " .. route_type .. " - creating guest session")
             
             local is_guest = require "is_guest"
-            
-            -- First check if guest slots are available
-            local guest_stats, stats_err = is_guest.get_guest_stats()
-            if not guest_stats or guest_stats.available_slots <= 0 then
-                ngx.log(ngx.WARN, "Auto-guest failed: No slots available (" .. 
-                    (guest_stats and guest_stats.available_slots or "unknown") .. "/" .. 
-                    (guest_stats and guest_stats.max_sessions or "unknown") .. ")")
-                
-                if route_type == "chat" then
-                    -- Redirect to dashboard with guest unavailable message
-                    return ngx.redirect("/dash?guest_unavailable=true")
-                else -- chat_api
-                    ngx.status = 503
-                    ngx.header.content_type = 'application/json'
-                    ngx.say('{"error": "No guest slots available", "suggestion": "Try again later or register"}')
-                    ngx.exit(503)
-                end
-            end
-            
-            -- Try to create guest session
             local session_data, error_msg = is_guest.create_secure_guest_session()
+            
             if session_data then
-                ngx.log(ngx.INFO, "Auto-guest session created successfully: " .. session_data.username .. 
+                ngx.log(ngx.INFO, "Guest session created: " .. session_data.username .. 
                     " [Slot " .. session_data.slot_number .. "] from " .. (ngx.var.remote_addr or "unknown"))
                 
                 if route_type == "chat" then
@@ -376,10 +355,18 @@ function M.route_to_handler(route_type)
                 else -- chat_api
                     -- Re-check auth and continue with API handling
                     user_type, username, user_data = M.set_vars()
-                    is_guest.handle_chat_api()
+                    if ngx.var.is_guest == "true" then
+                        is_guest.handle_chat_api()
+                    else
+                        ngx.log(ngx.ERR, "Guest session created but auth check failed")
+                        ngx.status = 500
+                        ngx.header.content_type = 'application/json'
+                        ngx.say('{"error": "Guest session created but validation failed"}')
+                        ngx.exit(500)
+                    end
                 end
             else
-                ngx.log(ngx.WARN, "Auto-guest session creation failed: " .. (error_msg or "unknown"))
+                ngx.log(ngx.WARN, "Guest session creation failed: " .. (error_msg or "unknown"))
                 
                 if route_type == "chat" then
                     -- Redirect to dashboard with guest unavailable message
@@ -406,33 +393,6 @@ function M.route_to_handler(route_type)
         -- FALLBACK: Something went wrong
         ngx.log(ngx.ERR, "Unknown user state for routing: " .. ngx.var.user_type)
         return ngx.redirect("/login")
-    end
-end
-
--- NEW: Helper function to manually trigger guest session creation (for API endpoints)
-function M.create_auto_guest_session()
-    local user_type, username, user_data = M.check()
-    
-    -- Only create for anonymous users
-    if user_type ~= "none" then
-        return nil, "User already authenticated as: " .. user_type
-    end
-    
-    local is_guest = require "is_guest"
-    
-    -- Check availability first
-    local guest_stats, stats_err = is_guest.get_guest_stats()
-    if not guest_stats or guest_stats.available_slots <= 0 then
-        return nil, "No guest slots available"
-    end
-    
-    -- Create session
-    local session_data, error_msg = is_guest.create_secure_guest_session()
-    if session_data then
-        ngx.log(ngx.INFO, "Manual auto-guest session created: " .. session_data.username)
-        return session_data, nil
-    else
-        return nil, error_msg or "Guest session creation failed"
     end
 end
 
