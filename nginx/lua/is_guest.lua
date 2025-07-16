@@ -28,14 +28,14 @@ local function get_guest_accounts()
             guest_active_session = false,
             username = "guest_user_1",
             password = "nkcukfulnckfckufnckdgjvjgv",
-            token = generate_guest_jwt(nkcukfulnckfckufnckdgjvjgv, 1)
+            token = generate_guest_jwt("nkcukfulnckfckufnckdgjvjgv", 1)
         },
         {
             slot_number = 2,
             guest_active_session = false,
             username = "guest_user_2", 
             password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
-            token = generate_guest_jwt(ymbkclhfpbdfbsdfwdsbwfdsbp, 2)
+            token = generate_guest_jwt("ymbkclhfpbdfbsdfwdsbwfdsbp", 2)
         }
     }
 end

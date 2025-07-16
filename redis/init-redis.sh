@@ -43,7 +43,7 @@ if [ $USER_EXISTS -eq 1 ]; then
   echo "⚠️  Admin user $ADMIN_USERNAME already exists in Redis. Skipping creation."
 else
   echo "✅ Creating admin user $ADMIN_USERNAME in Redis..."
-  redis-cli HMSET username:$ADMIN_USERNAME password_hash:$ADMIN_PASSWORD_HASH user_type:is_admin created_at:$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  redis-cli HMSET username:$ADMIN_USERNAME password_hash: $ADMIN_PASSWORD_HASH user_type: is_admin created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
   echo "🎉 Admin user created successfully in Redis!"
 fi
 
@@ -52,16 +52,16 @@ USER_EXISTS=$(redis-cli EXISTS username:guest_user_1)
 if [ $USER_EXISTS -eq 1 ]; then
   echo "⚠️  Guest_1 user guest_user_1 already exists in Redis. Skipping creation."
 else
-  redis-cli HMSET username:guest_user_1 password_hash:$GUEST_1_PASSWORD_HASH user_type:is_guest created_at:$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  redis-cli HMSET username:guest_user_1 password_hash: $GUEST_1_PASSWORD_HASH user_type: is_guest created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
   echo "🎉 Guest_1 user created successfully in Redis!"
 fi
 
 # Check if GUEST_2 user already exists
 USER_EXISTS=$(redis-cli EXISTS "username:guest_user_2")
-if [ "$USER_EXISTS" -eq 1 ]; then
+if [ $USER_EXISTS -eq 1 ]; then
   echo "⚠️  Guest_1 user guest_user_2 already exists in Redis. Skipping creation."
 else
-  redis-cli HMSET username:guest_user_2 password_hash:$GUEST_2_PASSWORD_HASH user_type:is_guest created_at:$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  redis-cli HMSET username:guest_user_2 password_hash: $GUEST_2_PASSWORD_HASH user_type: is_guest created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
   echo "🎉 Guest_2 user created successfully in Redis!"
 fi
 
