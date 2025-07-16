@@ -192,16 +192,25 @@ class PublicInterface {
     async startGuestSession() {
         console.log('🎮 Starting guest session...');
         
+        // Show loading state
+        const button = document.querySelector('button[onclick*="handleChatStart"], button[onclick*="startGuestSession"]');
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
+        }
+        
         try {
             const response = await fetch('/api/guest/create-session', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 credentials: 'include'
             });
 
             const data = await response.json();
             
             if (data.success) {
-                this.showSuccess('Guest session created! Redirecting...');
+                console.log('✅ Guest session created:', data.username);
+                this.showSuccess(`Guest session created as ${data.username}! Redirecting...`);
                 
                 // Update navigation if provided
                 if (data.nav_html) {
@@ -212,6 +221,7 @@ class PublicInterface {
                     window.location.href = '/chat';
                 }, 1000);
             } else {
+                console.error('❌ Guest session failed:', data);
                 this.showError(data.message || 'Failed to start guest session');
                 
                 // If guest sessions are full, redirect to main page with info
@@ -224,6 +234,12 @@ class PublicInterface {
         } catch (error) {
             console.error('Guest session error:', error);
             this.showError('Guest session error: ' + error.message);
+        } finally {
+            // Reset button state
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-chat-dots"></i> Start Chat';
+            }
         }
     }
 

@@ -233,23 +233,23 @@ end
 local function validate_guest_session(token)
     if not token then return nil, "No token provided" end
 
-    local guest_accounts = get_guest_accounts()
-    local valid_account
-    for _, acc in ipairs(guest_accounts) do
-        if acc.token == token then
-            valid_account = acc
-            break
-        end
-    end
-    if not valid_account then return nil, "Invalid guest token" end
-
+    -- First try to decode the JWT to get username
     local jwt_obj = jwt:verify(JWT_SECRET, token)
     if not jwt_obj.verified then return nil, "JWT verification failed" end
 
     local payload = jwt_obj.payload
-    if payload.username ~= valid_account.username or payload.user_type ~= "guest" then
-        return nil, "JWT payload mismatch"
+    if payload.user_type ~= "guest" then return nil, "Not a guest token" end
+
+    -- Validate against hardcoded guest accounts
+    local guest_accounts = get_guest_accounts()
+    local valid_account
+    for _, acc in ipairs(guest_accounts) do
+        if acc.username == payload.username then
+            valid_account = acc
+            break
+        end
     end
+    if not valid_account then return nil, "Invalid guest account" end
 
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
@@ -268,6 +268,8 @@ local function validate_guest_session(token)
     end
 
     if ngx.time() >= session.expires_at then
+        red:del(key)
+        red:del("guest_active_session:" .. valid_account.slot_number)
         red:close()
         return nil, "Session expired"
     end

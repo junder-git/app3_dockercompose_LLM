@@ -75,15 +75,15 @@ function M.set_vars()
     end
     
     if ngx.var.is_admin == "true" then
-        ngx.var.user_type = "isadmin"
+        ngx.var.user_type = "is_admin"
     elseif ngx.var.is_approved == "true" then
-        ngx.var.user_type = "isapproved"
+        ngx.var.user_type = "is_approved"
     elseif ngx.var.is_guest == "true" then
-        ngx.var.user_type = "isguest"
+        ngx.var.user_type = "is_guest"
     elseif user_type == "authenticated" then
-        ngx.var.user_type = "ispending"
+        ngx.var.user_type = "is_pending"
     else
-        ngx.var.user_type = "isnone"
+        ngx.var.user_type = "is_none"
     end
     
     return user_type, username, user_data
@@ -172,6 +172,8 @@ function M.route_to_handler(route_type)
             is_admin.handle_dash_page()
         elseif route_type == "chat_api" then
             is_admin.handle_chat_api()
+        elseif uri == "/api/chat/stream" and method == "POST" then
+            is_admin.handle_chat_stream() -- Admin-specific implementation
         else
             ngx.status = 404
             return ngx.exec("@custom_50x")
@@ -204,7 +206,7 @@ function M.route_to_handler(route_type)
             return ngx.exec("@custom_50x")
         end
 
-    elseif ngx.var.user_type == "ispending" then
+    elseif ngx.var.user_type == "is_pending" then
         -- Pending users
         local is_pending = require "is_pending"
         if route_type == "dash" then
@@ -214,12 +216,20 @@ function M.route_to_handler(route_type)
             return ngx.redirect("/pending")
         end
 
-    elseif ngx.var.user_type == "isnone" then
+    elseif ngx.var.user_type == "is_none" then
         -- Anonymous users
         if route_type == "chat" then
-            -- FIXED: Don't auto-create guest session here - redirect to home page with guest option
-            ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
-            return ngx.redirect("/?start_guest_chat=1")
+            -- FIXED: Check if user is explicitly requesting guest chat
+            local start_guest_chat = ngx.var.arg_start_guest_chat
+            if start_guest_chat == "1" then
+                -- Redirect to guest session creation
+                ngx.log(ngx.INFO, "Anonymous user requesting guest chat - redirecting to guest session creation")
+                return ngx.redirect("/?guest_session_requested=1")
+            else
+                -- Regular chat access without guest session - redirect to home
+                ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
+                return ngx.redirect("/?start_guest_chat=1")
+            end
             
         elseif route_type == "dash" then
             -- Show public dashboard with guest session option

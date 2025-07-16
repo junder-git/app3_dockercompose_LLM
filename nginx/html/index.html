@@ -175,7 +175,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             const autoStartGuest = '{{ auto_start_guest }}' === 'true';
             if (autoStartGuest) {
-                console.log('🎯 Auto-starting chat from URL parameter');
+                console.log('🎯 Auto-starting guest session from URL parameter');
                 setTimeout(() => handleChatStart(), 500);
             }
         });

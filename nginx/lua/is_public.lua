@@ -235,13 +235,21 @@ function M.handle_index_page()
         username = "Anonymous"
     end
     
+    -- Check if guest session was requested
+    local guest_session_requested = ngx.var.arg_guest_session_requested
+    local auto_start_guest = "false"
+    if guest_session_requested == "1" then
+        auto_start_guest = "true"
+    end
+    
     local context = {
         page_title = "ai.junder.uk",
         hero_title = "ai.junder.uk",
         hero_subtitle = "Advanced coding model, powered by Devstral.",
         css_files = M.common_css,
         js_files = M.public_js,
-        nav = M.render_nav(user_type, username, user_data)
+        nav = M.render_nav(user_type, username, user_data),
+        auto_start_guest = auto_start_guest
     }
     
     template.render_template("/usr/local/openresty/nginx/html/index.html", context)

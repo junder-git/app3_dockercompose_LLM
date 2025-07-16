@@ -82,9 +82,7 @@ local function handle_chat_api()
         end
         
     elseif uri == "/api/chat/stream" and method == "POST" then
-        -- Handle streaming chat (placeholder)
-        send_json(501, { error = "Streaming chat not implemented yet" })
-        
+        handle_chat_stream()
     else
         send_json(404, { 
             error = "Chat API endpoint not found",
