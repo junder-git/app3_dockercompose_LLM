@@ -205,6 +205,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
+    end
     if user_type == "is_approved" then
         return [[
             <div class="user-features approved-features">
@@ -214,6 +215,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
+    end
     if user_type == "is_pending" then
         return [[
             <div class="user-features approved-features">
@@ -223,6 +225,7 @@ function M.get_chat_features(user_type)
                 </div>
             </div>
         ]]
+    end
     if user_type == "is_guest" then
         return [[
             <div class="user-features guest-features">
