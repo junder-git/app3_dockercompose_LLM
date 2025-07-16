@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - WITH RESTORED ROUTE_TO_HANDLER FUNCTION
+-- nginx/lua/is_who.lua - WITH RESTORED ROUTE_TO_HANDLER FUNCTION AND 50X HOOK
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -93,15 +93,11 @@ function M.require_admin()
     local user_type, username, user_data = M.check()
     if user_type ~= "admin" then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Admin access required"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     if not user_data or user_data.is_admin ~= "true" then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Insufficient permissions"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     return username, user_data
 end
@@ -110,15 +106,11 @@ function M.require_approved()
     local user_type, username, user_data = M.check()
     if user_type ~= "admin" and user_type ~= "approved" then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Approved access required"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     if user_type == "approved" and (not user_data or user_data.is_approved ~= "true") then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Insufficient permissions"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     return username, user_data
 end
@@ -127,15 +119,11 @@ function M.require_guest()
     local user_type, username, user_data = M.check()
     if user_type ~= "guest" then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Guest access required"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     if not user_data or not user_data.slot_number then
         ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"error": "Invalid guest session"}')
-        ngx.exit(403)
+        return ngx.exec("@custom_50x")
     end
     return username, user_data
 end
@@ -170,7 +158,7 @@ function M.get_user_info()
 end
 
 -- =====================================================================
--- Restored route_to_handler function for nginx.conf compatibility
+-- Restored route_to_handler function
 -- =====================================================================
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
@@ -186,8 +174,7 @@ function M.route_to_handler(route_type)
             is_admin.handle_chat_api()
         else
             ngx.status = 404
-            ngx.say("Unknown admin route: " .. route_type)
-            ngx.exit(404)
+            return ngx.exec("@custom_50x")
         end
 
     elseif ngx.var.is_approved == "true" then
@@ -200,8 +187,7 @@ function M.route_to_handler(route_type)
             is_approved.handle_chat_api()
         else
             ngx.status = 404
-            ngx.say("Unknown approved route: " .. route_type)
-            ngx.exit(404)
+            return ngx.exec("@custom_50x")
         end
 
     elseif ngx.var.is_guest == "true" then
@@ -214,13 +200,11 @@ function M.route_to_handler(route_type)
             is_guest.handle_chat_api()
         else
             ngx.status = 404
-            ngx.say("Unknown guest route: " .. route_type)
-            ngx.exit(404)
+            return ngx.exec("@custom_50x")
         end
 
     elseif ngx.var.user_type == "isnone" then
         ngx.log(ngx.INFO, "Anonymous user accessing " .. route_type .. " - creating guest session")
-
         local is_guest = require "is_guest"
         local session_data, err = is_guest.create_secure_guest_session()
         if session_data then
@@ -233,23 +217,19 @@ function M.route_to_handler(route_type)
                     is_guest.handle_chat_api()
                 else
                     ngx.status = 500
-                    ngx.say('{"error": "Guest session created but validation failed"}')
-                    ngx.exit(500)
+                    return ngx.exec("@custom_50x")
                 end
             else
                 ngx.status = 404
-                ngx.say("Unknown route after guest creation: " .. route_type)
-                ngx.exit(404)
+                return ngx.exec("@custom_50x")
             end
-        else
-            ngx.log(ngx.WARN, "Guest session creation failed: " .. (err or "unknown"))
-            ngx.status = 503
-            ngx.say("Guest session creation failed: " .. (err or "unknown"))
-            ngx.exit(503)
-        end
-
+            else
+                ngx.log(ngx.WARN, "Guest session creation failed: " .. (err or "unknown"))
+                ngx.status = 429
+                return ngx.exec("@custom_429")
+            end
     else
-        ngx.redirect("/login")
+        return ngx.redirect("/login")
     end
 end
 

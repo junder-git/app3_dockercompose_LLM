@@ -12,7 +12,7 @@ local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 -- Configuration
 local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 1800  -- 30 minutes
+local GUEST_SESSION_DURATION = 120  -- 2 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
 
