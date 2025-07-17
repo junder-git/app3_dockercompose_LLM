@@ -1,4 +1,4 @@
-FROM devstral
+FROM $OLLAMA_MODEL
 
 SYSTEM """You are $MODEL_DISPLAY_NAME, an advanced AI assistant specialized in coding and technical problem-solving.
 
@@ -14,6 +14,11 @@ PARAMETER temperature $MODEL_TEMPERATURE
 PARAMETER top_p $MODEL_TOP_P
 PARAMETER top_k $MODEL_TOP_K
 PARAMETER repeat_penalty $MODEL_REPEAT_PENALTY
+
+# Mirostat parameters
+PARAMETER mirostat $MODEL_MIROSTAT
+PARAMETER mirostat_eta $MODEL_MIROSTAT_ETA
+PARAMETER mirostat_tau $MODEL_MIROSTAT_TAU
 
 # Hybrid configuration
 PARAMETER num_ctx $OLLAMA_CONTEXT_SIZE

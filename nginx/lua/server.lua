@@ -755,7 +755,7 @@ function M.call_ollama_streaming(messages, options, callback)
 
     local safe_options = {
         temperature = options.temperature or 0.7,
-        num_predict = options.max_tokens or 512),
+        num_predict = options.max_tokens or 256,
         num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 1024,
         num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 12,
         num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 8,
