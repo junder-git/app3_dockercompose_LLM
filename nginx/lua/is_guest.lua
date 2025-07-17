@@ -393,7 +393,7 @@ local function create_secure_guest_session_with_challenge()
             return ngx.exec("@custom_50x")
         end
     end
-    ngx.sleep(10)
+    -- ngx.sleep(10)
     -- Normal session creation
     local red = connect_redis()
     if not red then
