@@ -370,7 +370,6 @@ local function create_secure_guest_session_with_challenge()
             red:expire(cooldown_key, CHALLENGE_COOLDOWN)
             red:close()
         end
-        
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
         if success then
             ngx.header.content_type = 'application/json'
@@ -392,12 +391,13 @@ local function create_secure_guest_session_with_challenge()
             force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
             cleanup_inactive_sessions_on_demand()
             return ngx.exit(202)
-        end
         else
             ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
             ngx.status = 503
             return ngx.exec("@custom_50x")
         end
+    end
+    
     -- Normal session creation
     local red = connect_redis()
     if not red then
@@ -425,6 +425,7 @@ local function create_secure_guest_session_with_challenge()
         chat_storage = "redis",
         chat_retention_until = now + GUEST_CHAT_RETENTION
     }
+
     local key = "guest_active_session:" .. account.guest_slot_number
     red:set(key, cjson.encode(session))
     red:expire(key, GUEST_SESSION_DURATION)
@@ -435,7 +436,7 @@ local function create_secure_guest_session_with_challenge()
 
     local user_key = "username:" .. account.username
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
-                                account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
+                                   account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local hashed = handle:read("*a"):gsub("\n", "")
     handle:close()
