@@ -1,3 +1,5 @@
+FROM devstral
+
 SYSTEM """You are $MODEL_DISPLAY_NAME, an advanced AI assistant specialized in coding and technical problem-solving.
 
 $MODEL_DESCRIPTION

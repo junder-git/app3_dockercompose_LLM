@@ -76,12 +76,6 @@ local function connect_redis()
     return red
 end
 
--- [keeping all your existing session management functions unchanged...]
--- cleanup_inactive_sessions_on_demand, generate_display_username, 
--- find_available_guest_slot, create_secure_guest_session, 
--- validate_guest_session, get_guest_stats, cleanup_guest_session, 
--- clear_all_guest_sessions...
-
 -- SIMPLE: Only cleanup when someone clicks "Start Chat"
 local function cleanup_inactive_sessions_on_demand()
     local red = connect_redis()
@@ -557,9 +551,9 @@ local function handle_chat_stream()
         -- Guest AI options (basic limits)
         default_options = {
             temperature = 0.7,
-            max_tokens = 1024,       -- Lower limit for guests
-            num_predict = 1024,
-            num_ctx = 512,           -- Smaller context window
+            max_tokens = 512,       -- Lower limit for guests
+            num_predict = 1,
+            num_ctx = 64,           -- Smaller context window
             priority = 3             -- Lowest priority
         },
         
@@ -600,7 +594,7 @@ local function handle_chat_api()
         send_json(200, {
             success = true,
             messages = {},
-            user_type = "guest",
+            user_type = "is_uest",
             storage_type = "none",
             note = "Guest users don't have persistent chat history"
         })

@@ -754,12 +754,12 @@ function M.call_ollama_streaming(messages, options, callback)
     httpc:set_timeout(60000)  -- 60 second timeout
 
     local safe_options = {
-        temperature = math.min(math.max(options.temperature or 0.7, 0), 1),
-        num_predict = math.min(options.max_tokens or 2048, 2048),
+        temperature = options.temperature or 0.7,
+        num_predict = options.max_tokens or 512),
         num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 1024,
-        num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 8,
-        num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 6,
-        num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 64,
+        num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 12,
+        num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 8,
+        num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 128,
         use_mmap = false
     }
 
