@@ -117,7 +117,7 @@
                 {{ hero_subtitle }}<br>
                 Transform your ideas into code. <br> <br>
                 No login chat: <br> <br>
-                <button class="btn btn-primary btn-lg me-3" onclick="handleChatStart()">
+                <button class="btn btn-primary btn-lg me-3" onclick="startGuestSession()">
                     <i class="bi bi-chat-dots"></i> Start chat
                 </button> <br>
                 <small class="text-muted">
@@ -196,33 +196,6 @@
 
         createPoints();
         animate();
-
-        // SUPER SIMPLE: Just handle the button click
-        async function handleChatStart() {
-            try {
-                const authData = await window.appInterface.checkAuth();
-                
-                if (authData.user_type === 'is_none') {
-                    // Anonymous user - start guest session
-                    window.startGuestSession();
-                } else {
-                    // Any authenticated user - go to chat
-                    window.location.href = '/chat';
-                }
-            } catch (error) {
-                console.error('Auth check failed, defaulting to guest session:', error);
-                window.startGuestSession();
-            }
-        }
-
-        // Handle auto-start parameter if present
-        document.addEventListener('DOMContentLoaded', function() {
-            const autoStartGuest = '{{ auto_start_guest }}' === 'true';
-            if (autoStartGuest) {
-                console.log('🎯 Auto-starting guest session from URL parameter');
-                setTimeout(() => handleChatStart(), 500);
-            }
-        });
     </script>
 </body>
 </html>

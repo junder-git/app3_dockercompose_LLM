@@ -191,9 +191,6 @@ class PublicInterface {
 
     async startGuestSession() {
         console.log('🎮 Starting guest session...');
-        
-        // Show loading state
-        const button = document.querySelector('button[onclick*="handleChatStart"], button[onclick*="startGuestSession"]');
         if (button) {
             button.disabled = true;
             button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
