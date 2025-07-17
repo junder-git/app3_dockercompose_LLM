@@ -26,13 +26,11 @@ RUN useradd -m -s /bin/bash ollama && \
     chown -R ollama:ollama /home/ollama
 
 # Copy install script and startup script
-COPY scripts/install.sh /scripts/install-ollama.sh
 COPY scripts/init-ollama.sh /scripts/init-ollama.sh
 COPY scripts/check-install.sh /scripts/check-install.sh
 
 # Make scripts executable
-RUN chmod +x /scripts/install-ollama.sh && \
-    chmod +x /scripts/init-ollama.sh && \
+RUN chmod +x /scripts/init-ollama.sh && \
     chmod +x /scripts/check-install.sh
 
 # Copy application files
