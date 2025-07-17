@@ -373,9 +373,6 @@ local function create_secure_guest_session_with_challenge()
         
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
         if success then
-            slot_status="un-challengeable"
-            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-            cleanup_inactive_sessions_on_demand()
             ngx.status = 202
             ngx.header.content_type = 'application/json'
             ngx.say(cjson.encode({
@@ -386,6 +383,9 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
+            slot_status="un-challengeable"
+            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
+            cleanup_inactive_sessions_on_demand()
             return ngx.exit(202)
         else
             ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
