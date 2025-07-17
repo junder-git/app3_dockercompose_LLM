@@ -352,6 +352,7 @@ local function find_available_guest_slot_with_challenge()
     
     -- red:close()
     -- return nil, "All guest slots occupied"
+    local guest_accounts = get_guest_accounts()
     return guest_accounts[1], "challengeable"
 end
 
