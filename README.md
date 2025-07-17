@@ -1,3 +1,8 @@
+docker stop $(docker ps -aq)
+docker rmi $(docker images -q)
+
+=====
+
 This is much cleaner and follows the DRY principle perfectly. All the complex logic lives in one place (is_who.lua), and nginx just delegates to it.
 
 =====
