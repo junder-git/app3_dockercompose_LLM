@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - COMPLETE GUEST SYSTEM WITH ALL REQUIRED FUNCTIONS
+-- nginx/lua/is_guest.lua - SIMPLE CLEANUP ONLY ON START CHAT CLICK
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -11,7 +11,7 @@ local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 -- Configuration
-local MAX_GUEST_SESSIONS = 2
+local MAX_GUEST_SESSIONS = 2  -- Keep your original 2 slots
 local GUEST_SESSION_DURATION = 1800  -- 30 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
@@ -21,7 +21,7 @@ local USERNAME_POOLS = {
     animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 }
 
--- FIXED: Remove generate_guest_jwt dependency
+-- KEEP EXACTLY AS YOU HAVE IT: Original guest accounts function
 local function get_guest_accounts()
     return {
         {
@@ -76,6 +76,48 @@ local function connect_redis()
     return red
 end
 
+-- SIMPLE: Only cleanup when someone clicks "Start Chat"
+local function cleanup_inactive_sessions_on_demand()
+    local red = connect_redis()
+    if not red then return 0 end
+    
+    local current_time = ngx.time()
+    local cleaned = 0
+    
+    ngx.log(ngx.INFO, "🧹 Just-in-time cleanup triggered by Start Chat click")
+    
+    for i = 1, MAX_GUEST_SESSIONS do
+        local key = "guest_active_session:" .. i
+        local data = redis_to_lua(red:get(key))
+        
+        if data then
+            local ok, session = pcall(cjson.decode, data)
+            if ok and session.expires_at then
+                -- Simple check: is session expired?
+                if current_time >= session.expires_at then
+                    -- Clean up expired session
+                    red:del(key)
+                    red:del("guest_session:" .. session.username)
+                    red:del("username:" .. session.username)
+                    
+                    cleaned = cleaned + 1
+                    ngx.log(ngx.INFO, "🗑️  Cleaned expired guest session " .. i .. ": " .. (session.display_username or session.username))
+                end
+            end
+        end
+    end
+    
+    red:close()
+    
+    if cleaned > 0 then
+        ngx.log(ngx.INFO, "✅ Just-in-time cleanup: removed " .. cleaned .. " expired sessions")
+    else
+        ngx.log(ngx.INFO, "ℹ️  Just-in-time cleanup: no expired sessions found")
+    end
+    
+    return cleaned
+end
+
 local function generate_display_username()
     local red = connect_redis()
     if not red then
@@ -117,10 +159,14 @@ local function generate_display_username()
     return fallback
 end
 
+-- ENHANCED: Find slot with just-in-time cleanup ONLY
 local function find_available_guest_slot()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
 
+    -- ONLY cleanup when someone clicks "Start Chat" - not automatically
+    local cleaned = cleanup_inactive_sessions_on_demand()
+    
     local guest_accounts = get_guest_accounts()
     
     for i = 1, MAX_GUEST_SESSIONS do
@@ -133,7 +179,10 @@ local function find_available_guest_slot()
         else
             local ok, session = pcall(cjson.decode, data)
             if ok and session.expires_at and ngx.time() >= session.expires_at then
+                -- Double-check: clean up if expired
                 red:del(key)
+                red:del("guest_session:" .. session.username)
+                red:del("username:" .. session.username)
                 red:close()
                 return guest_accounts[i], nil
             end
@@ -357,7 +406,7 @@ local function clear_all_guest_sessions()
     local guest_accounts = get_guest_accounts()
     for _, acc in ipairs(guest_accounts) do
         red:del("guest_session:" .. acc.username)
-        red:del("user:" .. acc.username)
+        red:del("username:" .. acc.username)
     end
     
     red:close()
@@ -371,22 +420,18 @@ end
 -- =============================================
 
 local function handle_chat_page()
-    -- FIXED: Use proper template system without render_nav dependency
     local template = require "template"
     local is_who = require "is_who"
     
-    -- Get guest user info
     local username = is_who.require_guest()
-    
-    -- Build navigation using get_nav_buttons
     local nav_buttons = is_who.get_nav_buttons("is_guest", username, nil)
     local chat_features = is_who.get_chat_features("is_guest")
     
     local context = {
         page_title = "Guest Chat",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",  -- Smart partial
-        username = username or "guest",  -- Nav context
-        dash_buttons = nav_buttons,  -- Nav context
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = username or "guest",
+        dash_buttons = nav_buttons,
         chat_features = chat_features,
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 30 minutes)"
     }
@@ -409,7 +454,7 @@ local function handle_guest_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     if uri == "/api/guest/create-session" and method == "POST" then
-        -- Create new guest session
+        -- Create new guest session with just-in-time cleanup
         local session_data, err = create_secure_guest_session()
         if session_data then
             send_json(200, session_data)
@@ -432,52 +477,6 @@ local function handle_guest_api()
     else
         send_json(404, { 
             error = "Guest API endpoint not found",
-            requested = method .. " " .. uri
-        })
-    end
-end
-
-local function handle_chat_api()
-    local cjson = require "cjson"
-    local server = require "server"
-    
-    local function send_json(status, tbl)
-        ngx.status = status
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode(tbl))
-        ngx.exit(status)
-    end
-    
-    -- Require guest access for chat API
-    local is_who = require "is_who"
-    local username = is_who.require_guest()
-    
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/chat/history" and method == "GET" then
-        -- Guests don't have persistent history
-        send_json(200, {
-            success = true,
-            messages = {},
-            user_type = "guest",
-            storage_type = "none",
-            note = "Guest users don't have persistent chat history"
-        })
-        
-    elseif uri == "/api/chat/clear" and method == "POST" then
-        -- Nothing to clear for guests
-        send_json(200, { 
-            success = true, 
-            message = "Guest chat uses localStorage only - clear from browser"
-        })
-        
-    elseif uri == "/api/chat/stream" and method == "POST" then
-        handle_chat_stream() -- Guest-specific implementation
-        
-    else
-        send_json(404, { 
-            error = "Guest Chat API endpoint not found",
             requested = method .. " " .. uri
         })
     end
@@ -530,6 +529,52 @@ local function handle_chat_stream()
     
     -- Call common streaming function
     server.handle_chat_stream_common(stream_context)
+end
+
+local function handle_chat_api()
+    local cjson = require "cjson"
+    local server = require "server"
+    
+    local function send_json(status, tbl)
+        ngx.status = status
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(tbl))
+        ngx.exit(status)
+    end
+    
+    -- Require guest access for chat API
+    local is_who = require "is_who"
+    local username = is_who.require_guest()
+    
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/chat/history" and method == "GET" then
+        -- Guests don't have persistent history
+        send_json(200, {
+            success = true,
+            messages = {},
+            user_type = "guest",
+            storage_type = "none",
+            note = "Guest users don't have persistent chat history"
+        })
+        
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        -- Nothing to clear for guests
+        send_json(200, { 
+            success = true, 
+            message = "Guest chat uses localStorage only - clear from browser"
+        })
+        
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        handle_chat_stream()
+        
+    else
+        send_json(404, { 
+            error = "Guest Chat API endpoint not found",
+            requested = method .. " " .. uri
+        })
+    end
 end
 
 return {

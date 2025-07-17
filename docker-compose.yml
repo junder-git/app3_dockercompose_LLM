@@ -108,6 +108,8 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
       - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
