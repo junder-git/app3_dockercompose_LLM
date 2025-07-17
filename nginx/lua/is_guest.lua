@@ -383,6 +383,7 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
+            ngx.sleep(10)
             slot_status="un-challengeable"
             force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
             cleanup_inactive_sessions_on_demand()
@@ -393,7 +394,6 @@ local function create_secure_guest_session_with_challenge()
             return ngx.exec("@custom_50x")
         end
     end
-    -- ngx.sleep(10)
     -- Normal session creation
     local red = connect_redis()
     if not red then
