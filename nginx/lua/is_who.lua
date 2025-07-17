@@ -446,7 +446,7 @@ function M.handle_dash_page_with_guest_info()
                                         <p><strong>Available Slots:</strong> ]] .. guest_stats.available_slots .. [[</p>
                                     </div>
                                     <div class="col-md-6">
-                                        <p><strong>Session Duration:</strong> 30 minutes</p>
+                                        <p><strong>Session Duration:</strong> 10 minutes</p>
                                         <p><strong>Message Limit:</strong> 10 messages</p>
                                     </div>
                                 </div>
