@@ -15,7 +15,7 @@ local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
-local CHALLENGE_TIMEOUT = 12  -- 12 seconds for challenge response in client
+local CHALLENGE_TIMEOUT = 10  -- 10 seconds for challenge response in client
 local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
 local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
 
@@ -311,36 +311,28 @@ end
 local function find_available_guest_slot_with_challenge()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
-
-    cleanup_inactive_sessions_on_demand()
     local guest_accounts = get_guest_accounts()
-    
     -- First pass: Check for truly available slots
     for i = 1, MAX_GUEST_SESSIONS do
         local key = "guest_active_session:" .. i
         local data = redis_to_lua(red:get(key))
-
         if not data then
             red:close()
             return guest_accounts[i], nil
          end
      end
-    
     -- -- Second pass: Check for challengeable slots (inactive users)
     -- for i = 1, MAX_GUEST_SESSIONS do
     --     local key = "guest_active_session:" .. i
-    --     local data = redis_to_lua(red:get(key))
-        
+    --     local data = redis_to_lua(red:get(key)) 
     --     if data then
     --         local ok, session = pcall(cjson.decode, data)
     --         if ok then
-    --             local time_since_activity = ngx.time() - (session.last_activity or session.created_at)
-                
+    --             local time_since_activity = ngx.time() - (session.last_activity or session.created_at)          
     --             if time_since_activity > INACTIVE_THRESHOLD then
     --                 -- Check cooldown period
     --                 local cooldown_key = "challenge_cooldown:" .. i
-    --                 local last_challenge = redis_to_lua(red:get(cooldown_key))
-                    
+    --                 local last_challenge = redis_to_lua(red:get(cooldown_key))              
     --                 if not last_challenge or (ngx.time() - tonumber(last_challenge)) > CHALLENGE_COOLDOWN then
     --                     red:close()
     --                     return guest_accounts[i], "challengeable"
@@ -349,11 +341,10 @@ local function find_available_guest_slot_with_challenge()
     --         end
     --     end
     -- end
-    
     -- red:close()
     -- return nil, "All guest slots occupied"
 
-    --Challege guest 1 always for now
+    --Challenge guest 1 always for now
     return guest_accounts[1], "challengeable"
 end
 
@@ -372,7 +363,6 @@ local function create_secure_guest_session_with_challenge()
     -- If slot is challengeable, create challenge
     if slot_status == "challengeable" then
         ngx.log(ngx.INFO, "🚨 Creating challenge for slot " .. account.guest_slot_number)
-        
         local red = connect_redis()
         if red then
             local cooldown_key = "challenge_cooldown:" .. account.guest_slot_number
@@ -384,6 +374,8 @@ local function create_secure_guest_session_with_challenge()
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
         if success then
             slot_status="un-challengeable"
+            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
+            cleanup_inactive_sessions_on_demand()
             ngx.status = 202
             ngx.header.content_type = 'application/json'
             ngx.say(cjson.encode({
@@ -397,20 +389,17 @@ local function create_secure_guest_session_with_challenge()
             return ngx.exit(202)
         else
             ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
-            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-            cleanup_inactive_sessions_on_demand()
-            -- ngx.status = 503
-            -- return ngx.exec("@custom_50x")
+            ngx.status = 503
+            return ngx.exec("@custom_50x")
         end
     end
-    
+    os.execute("sleep 10"
     -- Normal session creation
     local red = connect_redis()
     if not red then
         ngx.status = 503
         return ngx.exec("@custom_50x")
     end
-
     local display_name = generate_display_username()
     local now = ngx.time()
     local expires_at = now + GUEST_SESSION_DURATION
