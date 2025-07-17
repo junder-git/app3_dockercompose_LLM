@@ -191,6 +191,7 @@ class PublicInterface {
 
     async startGuestSession() {
         console.log('🎮 Starting guest session...');
+        var button=document.getElementById("chatters")
         if (button) {
             button.disabled = true;
             button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
