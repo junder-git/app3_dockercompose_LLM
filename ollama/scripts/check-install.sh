@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/check-install.sh - Simple binary-only installation with caching
+# scripts/check-install.sh - Optimized binary-only installation with caching
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ BINARY_PATH="/usr/local/bin/ollama"
 
 log "🔍 Checking Ollama installation..."
 
-# Function to download Ollama directly
+# Function to download Ollama binary directly
 download_ollama() {
     local version="$1"
     local temp_dir=$(mktemp -d)
@@ -29,7 +29,6 @@ download_ollama() {
     
     log "📥 Downloading Ollama ${version_tag}..."
     
-    # Download and extract directly
     local download_url="https://github.com/ollama/ollama/releases/download/${version_tag}/ollama-linux-amd64.tgz"
     
     if curl -fsSL "$download_url" | tar -xzf - -C "$temp_dir"; then
@@ -63,26 +62,24 @@ if [[ -f "$VERSION_FILE" && -f "$CACHE_DIR/ollama" ]]; then
         
         # Copy from cache to system location
         if [[ ! -f "$BINARY_PATH" ]] || ! timeout 5 ollama --version >/dev/null 2>&1; then
-            log "📋 Copying Ollama from cache to system location..."
+            log "📋 Copying Ollama from cache..."
             cp "$CACHE_DIR/ollama" "$BINARY_PATH"
             chmod +x "$BINARY_PATH"
             log "✅ Ollama binary restored from cache"
         else
-            log "✅ Ollama binary already in place and working"
+            log "✅ Ollama binary already ready"
         fi
         
         # Verify it works
         if timeout 10 ollama --version >/dev/null 2>&1; then
             log "✅ Ollama is ready (cached)"
-            # Skip installation, go straight to init
             exec /scripts/init-ollama.sh
         else
-            log "⚠️  Cached binary seems broken, will reinstall"
+            log "⚠️  Cached binary broken, reinstalling..."
             rm -f "$VERSION_FILE" "$CACHE_DIR/ollama"
         fi
     else
         log "🔄 Version mismatch: cached=$cached_version, required=$OLLAMA_VERSION"
-        log "🗑️  Clearing cache..."
         rm -f "$VERSION_FILE" "$CACHE_DIR/ollama"
     fi
 fi
@@ -91,7 +88,6 @@ fi
 if [[ ! -f "$VERSION_FILE" || ! -f "$CACHE_DIR/ollama" ]]; then
     log "📥 Installing Ollama version $OLLAMA_VERSION..."
     
-    # Try direct download first
     if download_ollama "$OLLAMA_VERSION"; then
         log "✅ Installation completed"
         
@@ -107,7 +103,7 @@ if [[ ! -f "$VERSION_FILE" || ! -f "$CACHE_DIR/ollama" ]]; then
     fi
 fi
 
-# Final verification with timeout
+# Final verification
 if timeout 10 ollama --version >/dev/null 2>&1; then
     version_output=$(ollama --version 2>/dev/null || echo "unknown")
     log "🎯 Ollama ready! Version: $version_output"
@@ -115,5 +111,5 @@ else
     error "Ollama installation verification failed"
 fi
 
-# Start the main initialization script
+# Start the main service
 exec /scripts/init-ollama.sh
