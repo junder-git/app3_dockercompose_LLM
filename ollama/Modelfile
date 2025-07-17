@@ -1,4 +1,4 @@
-FROM ${OLLAMA_MODEL}
+FROM devstral
 
 SYSTEM """You are ${MODEL_DISPLAY_NAME}, an advanced AI assistant specialized in coding and technical problem-solving.
 
@@ -6,36 +6,21 @@ ${MODEL_DESCRIPTION}
 
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."""
 
-# Memory settings
-PARAMETER use_mmap ${MODEL_USE_MMAP}
-PARAMETER use_mlock ${MODEL_USE_MLOCK}
-
-# Core model parameters
+# Core model parameters (using documentation defaults)
 PARAMETER temperature ${MODEL_TEMPERATURE}
 PARAMETER top_p ${MODEL_TOP_P}
 PARAMETER top_k ${MODEL_TOP_K}
+PARAMETER min_p ${MODEL_MIN_P}
 PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
+PARAMETER repeat_last_n ${MODEL_REPEAT_LAST_N}
 
-# Mirostat parameters
-PARAMETER mirostat ${MODEL_MIROSTAT}
-PARAMETER mirostat_eta ${MODEL_MIROSTAT_ETA}
-PARAMETER mirostat_tau ${MODEL_MIROSTAT_TAU}
+# Context and prediction settings
+PARAMETER num_ctx ${MODEL_NUM_CTX}
+PARAMETER num_predict ${MODEL_NUM_PREDICT}
+PARAMETER seed ${MODEL_SEED}
 
-# Hybrid configuration
-PARAMETER num_ctx ${OLLAMA_CONTEXT_SIZE}
-PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
-PARAMETER num_thread ${OLLAMA_NUM_THREAD}
-PARAMETER num_batch ${OLLAMA_BATCH_SIZE}
-
-# Response settings
-PARAMETER num_predict ${MODEL_MAX_TOKENS}
-PARAMETER repeat_last_n 64
-
-# Keep alive setting
-PARAMETER keep_alive ${KEEP_ALIVE}
-
-# Stop sequences (handle comma-separated values)
-PARAMETER stop "<|endoftext|>"
-PARAMETER stop "<|im_end|>"
-PARAMETER stop "[DONE]"
-PARAMETER stop "<|end|>"
+# Stop sequences
+PARAMETER stop "${MODEL_STOP_1}"
+PARAMETER stop "${MODEL_STOP_2}"
+PARAMETER stop "${MODEL_STOP_3}"
+PARAMETER stop "${MODEL_STOP_4}"

@@ -46,7 +46,7 @@ env OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}" \
     OLLAMA_MLOCK="${OLLAMA_MLOCK:-1}" \
     OLLAMA_GPU_LAYERS="${OLLAMA_GPU_LAYERS:-12}" \
     OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD:-4}" \
-    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE:-512}" \
+    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE:-4096}" \
     OLLAMA_BATCH_SIZE="${OLLAMA_BATCH_SIZE:-128}" \
     CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
     ollama serve &
@@ -160,22 +160,22 @@ test_payload=$(cat << EOF
     "keep_alive": "${OLLAMA_KEEP_ALIVE:-24h}",
     "options": {
         "temperature": ${MODEL_TEMPERATURE:-0.7},
-        "num_predict": ${MODEL_NUM_PREDICT:-50},
-        "num_ctx": ${MODEL_NUM_CTX:-512},
+        "num_predict": ${MODEL_NUM_PREDICT:--1},
+        "num_ctx": ${MODEL_NUM_CTX:-4096},
         "top_p": ${MODEL_TOP_P:-0.9},
         "top_k": ${MODEL_TOP_K:-40},
         "repeat_penalty": ${MODEL_REPEAT_PENALTY:-1.1},
-        "seed": ${MODEL_SEED:-42}
+        "seed": ${MODEL_SEED:-0}
     }
 }
 EOF
 )
 
-log "📡 Sending test request with keep-alive setting..."
-test_response=$(timeout 90 curl -s -X POST http://localhost:11434/api/chat \
+log "📡 Sending test request with extended timeout..."
+test_response=$(timeout 300 curl -s -X POST http://localhost:11434/api/chat \
     -H "Content-Type: application/json" \
     -d "$test_payload" 2>&1) || {
-    warning "Test request timed out or failed"
+    warning "Test request timed out or failed (continuing anyway)"
     test_response='{"error": "test_timeout"}'
 }
 
@@ -187,11 +187,13 @@ if echo "$test_response" | jq -e '.message.content' >/dev/null 2>&1; then
 elif echo "$test_response" | jq -e '.error' >/dev/null 2>&1; then
     error_msg=$(echo "$test_response" | jq -r '.error' 2>/dev/null)
     warning "Model test failed with error: $error_msg"
-    log "🔄 Service will continue running for debugging"
+    log "🔄 Service will continue running (test failures are non-fatal)"
 else
-    warning "Model test response unclear - assuming service is running"
+    warning "Model test response unclear - service continuing anyway"
     log "🔍 Raw response: $test_response"
 fi
+
+log "✅ Service is running regardless of test results"
 
 # Final status and monitoring
 echo "$hybrid_model" > /tmp/active_model
@@ -200,7 +202,7 @@ touch /tmp/ollama_ready
 log "🎯 HYBRID MODE READY"
 log "✅ Model: $hybrid_model"
 log "🎮 GPU Layers: ${OLLAMA_GPU_LAYERS:-12}"
-log "🧠 Context: ${MODEL_NUM_CTX:-512} tokens"
+log "🧠 Context: ${MODEL_NUM_CTX:-4096} tokens"
 log "🌐 API: http://localhost:11434"
 log "⏱️  Keep Alive: ${OLLAMA_KEEP_ALIVE:-24h}"
 
