@@ -11,39 +11,40 @@ services:
     ports:
       - "11434:11434"
     environment:
+      # Ollama server configuration
       - OLLAMA_VERSION=${OLLAMA_VERSION}
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_MODELS=/home/ollama/.ollama/models
       - OLLAMA_MLOCK=${OLLAMA_MLOCK}
       - OLLAMA_MMAP=${OLLAMA_MMAP}
-      - KEEP_ALIVE=${KEEP_ALIVE}
-      - NOPRUNE=${NOPRUNE}
-      - MAX_LOADED_MODELS=${MAX_LOADED_MODELS}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
+      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
       - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS}
       - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD}
       - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
       - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
+      # Model configuration
       - OLLAMA_MODEL=${OLLAMA_MODEL}
       - MODEL_DISPLAY_NAME=${MODEL_DISPLAY_NAME}
       - MODEL_DESCRIPTION=${MODEL_DESCRIPTION}
+      # Model parameters (for Modelfile)
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
       - MODEL_TOP_P=${MODEL_TOP_P}
       - MODEL_TOP_K=${MODEL_TOP_K}
+      - MODEL_MIN_P=${MODEL_MIN_P}
       - MODEL_REPEAT_PENALTY=${MODEL_REPEAT_PENALTY}
-      - MODEL_MIROSTAT=${MODEL_MIROSTAT}
-      - MODEL_MIROSTAT_ETA=${MODEL_MIROSTAT_ETA}
-      - MODEL_MIROSTAT_TAU=${MODEL_MIROSTAT_TAU}
-      - MODEL_USE_MMAP=${MODEL_USE_MMAP}
-      - MODEL_USE_MLOCK=${MODEL_USE_MLOCK}
-      - MODEL_STOP_SEQUENCES=${MODEL_STOP_SEQUENCES}
-      - MODEL_MAX_TOKENS=${MODEL_MAX_TOKENS}
-      - MODEL_TIMEOUT=${MODEL_TIMEOUT}
-      - CHAT_HISTORY_LIMIT=${CHAT_HISTORY_LIMIT}
-      - UNLIMITED_TIMEOUT=${UNLIMITED_TIMEOUT}
-      - STREAMING_TIMEOUT=${STREAMING_TIMEOUT}
+      - MODEL_REPEAT_LAST_N=${MODEL_REPEAT_LAST_N}
+      - MODEL_NUM_CTX=${MODEL_NUM_CTX}
+      - MODEL_NUM_PREDICT=${MODEL_NUM_PREDICT}
+      - MODEL_SEED=${MODEL_SEED}
+      - MODEL_STOP_1=${MODEL_STOP_1}
+      - MODEL_STOP_2=${MODEL_STOP_2}
+      - MODEL_STOP_3=${MODEL_STOP_3}
+      - MODEL_STOP_4=${MODEL_STOP_4}
     volumes:
       - ./volumes/ollama:/home/ollama/.ollama
-      - ./volumes/ollama-cache:/ollama-cache  # Add binary cache volume
+      - ./volumes/ollama-cache:/ollama-cache
     deploy:
       resources:
         limits:
