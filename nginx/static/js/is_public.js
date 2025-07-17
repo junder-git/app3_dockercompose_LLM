@@ -16,7 +16,6 @@ class PublicInterface {
     setupGlobalMethods() {
         // Only expose methods that need to be called from HTML onclick attributes
         window.logout = this.logout.bind(this);
-        window.startGuestSession = this.startGuestSession.bind(this);
         
         // These are also exposed for backward compatibility but could be removed
         window.updateNavigation = this.updateNavigation.bind(this);
@@ -25,7 +24,6 @@ class PublicInterface {
 
     setupPublicFeatures() {
         this.setupAuthForms();
-        this.setupGuestSessionButtons();
         this.setupPasswordToggle();
         this.setupEventDelegation();
     }
@@ -62,16 +60,6 @@ class PublicInterface {
         }
     }
 
-    setupGuestSessionButtons() {
-        // Handle existing onclick attributes
-        const guestButtons = document.querySelectorAll('[onclick*="startGuestSession"]');
-        guestButtons.forEach(button => {
-            // Remove onclick and add event listener instead
-            button.removeAttribute('onclick');
-            button.addEventListener('click', this.startGuestSession.bind(this));
-        });
-    }
-
     setupEventDelegation() {
         // Modern event delegation for data attributes (optional upgrade path)
         document.addEventListener('click', (e) => {
@@ -81,10 +69,6 @@ class PublicInterface {
                 case 'logout':
                     e.preventDefault();
                     this.logout();
-                    break;
-                case 'start-guest-session':
-                    e.preventDefault();
-                    this.startGuestSession();
                     break;
                 case 'update-nav':
                     e.preventDefault();
@@ -189,58 +173,6 @@ class PublicInterface {
         }
     }
 
-    async startGuestSession() {
-        console.log('🎮 Starting guest session...');
-        var button=document.getElementById("chatters")
-        if (button) {
-            button.disabled = true;
-            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
-        }
-        
-        try {
-            const response = await fetch('/api/guest/create-session', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include'
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                console.log('✅ Guest session created:', data.username);
-                this.showSuccess(`Guest session created as ${data.username}! Redirecting...`);
-                
-                // Update navigation if provided
-                if (data.nav_html) {
-                    this.updateNavigation(data.nav_html);
-                }
-                
-                setTimeout(() => {
-                    window.location.href = '/chat';
-                }, 1000);
-            } else {
-                console.error('❌ Guest session failed:', data);
-                this.showError(data.message || 'Failed to start guest session');
-                
-                // If guest sessions are full, redirect to main page with info
-                if (data.error === 'no_slots_available') {
-                    setTimeout(() => {
-                        window.location.href = '/dash?guest_unavailable=1';
-                    }, 2000);
-                }
-            }
-        } catch (error) {
-            console.error('Guest session error:', error);
-            this.showError('Guest session error: ' + error.message);
-        } finally {
-            // Reset button state
-            if (button) {
-                button.disabled = false;
-                button.innerHTML = '<i class="bi bi-chat-dots"></i> Start Chat';
-            }
-        }
-    }
-
     clearClientData() {
         console.log('🧹 Clearing client data...');
         
@@ -337,7 +269,6 @@ class PublicInterface {
                 console.log('🔄 Navigation updated directly');
                 
                 // Re-setup event listeners for new nav elements
-                this.setupGuestSessionButtons();
             }
             return Promise.resolve();
         }
@@ -351,9 +282,6 @@ class PublicInterface {
                     if (navElement) {
                         navElement.outerHTML = data.nav_html;
                         console.log('🔄 Navigation updated from server');
-                        
-                        // Re-setup event listeners for new nav elements
-                        this.setupGuestSessionButtons();
                     }
                 }
                 return data;

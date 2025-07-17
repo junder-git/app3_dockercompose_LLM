@@ -632,7 +632,7 @@ class GuestChallengeManager {
 
     startChallengeCountdown() {
         const startTime = Date.now();
-        const totalTime = 20000; // 20 seconds
+        const totalTime = 15000; // 15 seconds
         
         this.countdownInterval = setInterval(() => {
             const now = Date.now();
@@ -1120,7 +1120,7 @@ class EnhancedGuestSessionManager {
 // Initialize the systems when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize enhanced guest session manager for home page
-    if (document.getElementById('chatters') || window.location.pathname === '/') {
+    if (window.location.pathname === '/') {
         window.enhancedGuestManager = new EnhancedGuestSessionManager();
         console.log('🚀 Enhanced Guest Session Manager loaded');
     }
@@ -1128,7 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetch('/api/auth/check', { credentials: 'include' })
         .then(response => response.json())
         .then(data => {
-            if (data.success && data.user_type === 'is_guest') {
+            if (data.success && (data.user_type === 'is_guest' || data.user_type === 'is_none')) {
                 if (!window.guestChallengeManager) {
                     window.guestChallengeManager = new GuestChallengeManager();
                     console.log('🎯 Challenge manager initialized for existing guest');

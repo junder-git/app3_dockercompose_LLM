@@ -15,9 +15,9 @@ local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 1800  -- 30 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
-local CHALLENGE_TIMEOUT = 20  -- 20 seconds for challenge response
+local CHALLENGE_TIMEOUT = 15  -- 15 seconds for challenge response in client
 local CHALLENGE_COOLDOWN = 30  -- 30 seconds between challenges
-local INACTIVE_THRESHOLD = 300  -- 5 minutes to be considered inactive
+local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
 
 local USERNAME_POOLS = {
     adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
@@ -309,22 +309,22 @@ local function cleanup_inactive_sessions_on_demand()
 end
 
 local function find_available_guest_slot_with_challenge()
-    -- local red = connect_redis()
-    -- if not red then return nil, "Service unavailable" end
+    local red = connect_redis()
+    if not red then return nil, "Service unavailable" end
 
-    -- cleanup_inactive_sessions_on_demand()
-    -- local guest_accounts = get_guest_accounts()
+    cleanup_inactive_sessions_on_demand()
+    local guest_accounts = get_guest_accounts()
     
-    -- -- First pass: Check for truly available slots
-    -- for i = 1, MAX_GUEST_SESSIONS do
-    --     local key = "guest_active_session:" .. i
-    --     local data = redis_to_lua(red:get(key))
+    -- First pass: Check for truly available slots
+    for i = 1, MAX_GUEST_SESSIONS do
+        local key = "guest_active_session:" .. i
+        local data = redis_to_lua(red:get(key))
 
-    --     if not data then
-    --         red:close()
-    --         return guest_accounts[i], nil
-    --     end
-    -- end
+        if not data then
+            red:close()
+            return guest_accounts[i], nil
+         end
+     end
     
     -- -- Second pass: Check for challengeable slots (inactive users)
     -- for i = 1, MAX_GUEST_SESSIONS do
@@ -352,7 +352,8 @@ local function find_available_guest_slot_with_challenge()
     
     -- red:close()
     -- return nil, "All guest slots occupied"
-    local guest_accounts = get_guest_accounts()
+
+    --Challege guest 1 always for now
     return guest_accounts[1], "challengeable"
 end
 
