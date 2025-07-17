@@ -36,17 +36,17 @@ nvidia-smi --gpu-reset 2>/dev/null || true
 mkdir -p "${OLLAMA_MODELS:-/home/ollama/.ollama/models}"
 
 # Start Ollama service with proper environment variables
-log "🔧 Starting Ollama service with keep-alive=${OLLAMA_KEEP_ALIVE:-99999}..."
+log "🔧 Starting Ollama service with keep-alive=${OLLAMA_KEEP_ALIVE:-24h}..."
 env OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}" \
     OLLAMA_MODELS="${OLLAMA_MODELS:-/home/ollama/.ollama/models}" \
-    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-99999}" \
+    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-24h}" \
     OLLAMA_NOPRUNE="${OLLAMA_NOPRUNE:-0}" \
     OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}" \
     OLLAMA_MMAP="${OLLAMA_MMAP:-0}" \
     OLLAMA_MLOCK="${OLLAMA_MLOCK:-1}" \
     OLLAMA_GPU_LAYERS="${OLLAMA_GPU_LAYERS:-12}" \
     OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD:-4}" \
-    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE:-1024}" \
+    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE:-512}" \
     OLLAMA_BATCH_SIZE="${OLLAMA_BATCH_SIZE:-128}" \
     CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
     ollama serve &
@@ -157,7 +157,7 @@ test_payload=$(cat << EOF
     "model": "$hybrid_model",
     "messages": [{"role": "user", "content": "Hello! Respond briefly that you are ready."}],
     "stream": false,
-    "keep_alive": "${OLLAMA_KEEP_ALIVE:-99999}",
+    "keep_alive": "${OLLAMA_KEEP_ALIVE:-24h}",
     "options": {
         "temperature": ${MODEL_TEMPERATURE:-0.7},
         "num_predict": ${MODEL_NUM_PREDICT:-50},
@@ -202,7 +202,7 @@ log "✅ Model: $hybrid_model"
 log "🎮 GPU Layers: ${OLLAMA_GPU_LAYERS:-12}"
 log "🧠 Context: ${MODEL_NUM_CTX:-512} tokens"
 log "🌐 API: http://localhost:11434"
-log "⏱️  Keep Alive: ${OLLAMA_KEEP_ALIVE:-99999}"
+log "⏱️  Keep Alive: ${OLLAMA_KEEP_ALIVE:-24h}"
 
 # Enhanced monitoring with health checks
 cleanup() {
