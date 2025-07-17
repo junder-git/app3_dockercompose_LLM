@@ -309,49 +309,50 @@ local function cleanup_inactive_sessions_on_demand()
 end
 
 local function find_available_guest_slot_with_challenge()
-    local red = connect_redis()
-    if not red then return nil, "Service unavailable" end
+    -- local red = connect_redis()
+    -- if not red then return nil, "Service unavailable" end
 
-    cleanup_inactive_sessions_on_demand()
-    local guest_accounts = get_guest_accounts()
+    -- cleanup_inactive_sessions_on_demand()
+    -- local guest_accounts = get_guest_accounts()
     
-    -- First pass: Check for truly available slots
-    for i = 1, MAX_GUEST_SESSIONS do
-        local key = "guest_active_session:" .. i
-        local data = redis_to_lua(red:get(key))
+    -- -- First pass: Check for truly available slots
+    -- for i = 1, MAX_GUEST_SESSIONS do
+    --     local key = "guest_active_session:" .. i
+    --     local data = redis_to_lua(red:get(key))
 
-        if not data then
-            red:close()
-            return guest_accounts[i], nil
-        end
-    end
+    --     if not data then
+    --         red:close()
+    --         return guest_accounts[i], nil
+    --     end
+    -- end
     
-    -- Second pass: Check for challengeable slots (inactive users)
-    for i = 1, MAX_GUEST_SESSIONS do
-        local key = "guest_active_session:" .. i
-        local data = redis_to_lua(red:get(key))
+    -- -- Second pass: Check for challengeable slots (inactive users)
+    -- for i = 1, MAX_GUEST_SESSIONS do
+    --     local key = "guest_active_session:" .. i
+    --     local data = redis_to_lua(red:get(key))
         
-        if data then
-            local ok, session = pcall(cjson.decode, data)
-            if ok then
-                local time_since_activity = ngx.time() - (session.last_activity or session.created_at)
+    --     if data then
+    --         local ok, session = pcall(cjson.decode, data)
+    --         if ok then
+    --             local time_since_activity = ngx.time() - (session.last_activity or session.created_at)
                 
-                if time_since_activity > INACTIVE_THRESHOLD then
-                    -- Check cooldown period
-                    local cooldown_key = "challenge_cooldown:" .. i
-                    local last_challenge = redis_to_lua(red:get(cooldown_key))
+    --             if time_since_activity > INACTIVE_THRESHOLD then
+    --                 -- Check cooldown period
+    --                 local cooldown_key = "challenge_cooldown:" .. i
+    --                 local last_challenge = redis_to_lua(red:get(cooldown_key))
                     
-                    if not last_challenge or (ngx.time() - tonumber(last_challenge)) > CHALLENGE_COOLDOWN then
-                        red:close()
-                        return guest_accounts[i], "challengeable"
-                    end
-                end
-            end
-        end
-    end
+    --                 if not last_challenge or (ngx.time() - tonumber(last_challenge)) > CHALLENGE_COOLDOWN then
+    --                     red:close()
+    --                     return guest_accounts[i], "challengeable"
+    --                 end
+    --             end
+    --         end
+    --     end
+    -- end
     
-    red:close()
-    return nil, "All guest slots occupied"
+    -- red:close()
+    -- return nil, "All guest slots occupied"
+    return guest_accounts[1], "challengeable"
 end
 
 local function create_secure_guest_session_with_challenge()
