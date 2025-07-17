@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - SIMPLE CLEANUP ONLY ON START CHAT CLICK
+-- nginx/lua/is_guest.lua - FIXED STREAMING INTEGRATION
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -11,7 +11,7 @@ local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 -- Configuration
-local MAX_GUEST_SESSIONS = 2  -- Keep your original 2 slots
+local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 1800  -- 30 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
@@ -21,7 +21,8 @@ local USERNAME_POOLS = {
     animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 }
 
--- KEEP EXACTLY AS YOU HAVE IT: Original guest accounts function
+-- [keeping all your existing helper functions unchanged...]
+
 local function get_guest_accounts()
     return {
         {
@@ -29,7 +30,6 @@ local function get_guest_accounts()
             guest_active_session = false,
             username = "guest_user_1",
             password = "nkcukfulnckfckufnckdgjvjgv",
-            -- Generate token on-demand instead of pre-generating
             token = jwt:sign(JWT_SECRET, {
                 header = { typ = "JWT", alg = "HS256" },
                 payload = {
@@ -76,6 +76,12 @@ local function connect_redis()
     return red
 end
 
+-- [keeping all your existing session management functions unchanged...]
+-- cleanup_inactive_sessions_on_demand, generate_display_username, 
+-- find_available_guest_slot, create_secure_guest_session, 
+-- validate_guest_session, get_guest_stats, cleanup_guest_session, 
+-- clear_all_guest_sessions...
+
 -- SIMPLE: Only cleanup when someone clicks "Start Chat"
 local function cleanup_inactive_sessions_on_demand()
     local red = connect_redis()
@@ -93,13 +99,10 @@ local function cleanup_inactive_sessions_on_demand()
         if data then
             local ok, session = pcall(cjson.decode, data)
             if ok and session.expires_at then
-                -- Simple check: is session expired?
                 if current_time >= session.expires_at then
-                    -- Clean up expired session
                     red:del(key)
                     red:del("guest_session:" .. session.username)
                     red:del("username:" .. session.username)
-                    
                     cleaned = cleaned + 1
                     ngx.log(ngx.INFO, "🗑️  Cleaned expired guest session " .. i .. ": " .. (session.display_username or session.username))
                 end
@@ -159,14 +162,11 @@ local function generate_display_username()
     return fallback
 end
 
--- ENHANCED: Find slot with just-in-time cleanup ONLY
 local function find_available_guest_slot()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
 
-    -- ONLY cleanup when someone clicks "Start Chat" - not automatically
     local cleaned = cleanup_inactive_sessions_on_demand()
-    
     local guest_accounts = get_guest_accounts()
     
     for i = 1, MAX_GUEST_SESSIONS do
@@ -179,7 +179,6 @@ local function find_available_guest_slot()
         else
             local ok, session = pcall(cjson.decode, data)
             if ok and session.expires_at and ngx.time() >= session.expires_at then
-                -- Double-check: clean up if expired
                 red:del(key)
                 red:del("guest_session:" .. session.username)
                 red:del("username:" .. session.username)
@@ -241,7 +240,6 @@ local function create_secure_guest_session()
 
     local user_key = "username:" .. account.username
 
-    -- Hash password for user hash
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
                                    account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
@@ -280,14 +278,12 @@ end
 local function validate_guest_session(token)
     if not token then return nil, "No token provided" end
 
-    -- First try to decode the JWT to get username
     local jwt_obj = jwt:verify(JWT_SECRET, token)
     if not jwt_obj.verified then return nil, "JWT verification failed" end
 
     local payload = jwt_obj.payload
     if payload.user_type ~= "guest" then return nil, "Not a guest token" end
 
-    -- Validate against hardcoded guest accounts
     local guest_accounts = get_guest_accounts()
     local valid_account
     for _, acc in ipairs(guest_accounts) do
@@ -350,7 +346,6 @@ local function get_guest_stats()
             if ok and session.expires_at and ngx.time() < session.expires_at then
                 active_count = active_count + 1
             else
-                -- Clean up expired session
                 red:del(key)
             end
         end
@@ -374,7 +369,6 @@ local function cleanup_guest_session(guest_slot_number)
     local key = "guest_active_session:" .. guest_slot_number
     red:del(key)
     
-    -- Also clean up user session key
     local guest_accounts = get_guest_accounts()
     for _, acc in ipairs(guest_accounts) do
         if acc.guest_slot_number == guest_slot_number then
@@ -402,7 +396,6 @@ local function clear_all_guest_sessions()
         end
     end
     
-    -- Clean up all guest user sessions
     local guest_accounts = get_guest_accounts()
     for _, acc in ipairs(guest_accounts) do
         red:del("guest_session:" .. acc.username)
@@ -451,10 +444,11 @@ local function handle_guest_api()
         ngx.say(cjson.encode(tbl))
         ngx.exit(status)
     end
+    
     local uri = ngx.var.uri
     local method = ngx.var.request_method
+    
     if uri == "/api/guest/create-session" and method == "POST" then
-        -- Create new guest session with just-in-time cleanup
         local session_data, err = create_secure_guest_session()
         if session_data then
             send_json(200, session_data)
@@ -467,7 +461,6 @@ local function handle_guest_api()
         end
         
     elseif uri == "/api/guest/stats" and method == "GET" then
-        -- Get guest statistics
         local stats = get_guest_stats()
         send_json(200, {
             success = true,
@@ -482,25 +475,66 @@ local function handle_guest_api()
     end
 end
 
+-- =============================================
+-- FIXED: PROPER STREAMING INTEGRATION
+-- =============================================
+
 local function handle_chat_stream()
     local server = require "server"
     local is_who = require "is_who"
-    local cjson = require "cjson"
     
     -- Get guest user info
     local username, user_data = is_who.require_guest()
     
-    -- Guest rate limiting (strict)
+    ngx.log(ngx.INFO, "🎮 Guest streaming for: " .. (username or "unknown"))
+    
+    -- FIXED: Update message count function
+    local function update_guest_message_count()
+        if not user_data or not user_data.guest_slot_number then
+            return false
+        end
+        
+        local red = connect_redis()
+        if not red then return false end
+        
+        -- Update the session with incremented message count
+        user_data.message_count = (user_data.message_count or 0) + 1
+        user_data.last_activity = ngx.time()
+        
+        local session_key = "guest_active_session:" .. user_data.guest_slot_number
+        local user_session_key = "guest_session:" .. user_data.username
+        
+        red:set(session_key, cjson.encode(user_data))
+        red:expire(session_key, GUEST_SESSION_DURATION)
+        
+        red:set(user_session_key, cjson.encode(user_data))
+        red:expire(user_session_key, GUEST_SESSION_DURATION)
+        
+        red:close()
+        
+        ngx.log(ngx.INFO, "Updated guest message count: " .. user_data.message_count .. "/" .. user_data.max_messages)
+        return true
+    end
+    
+    -- Guest rate limiting with message count update
     local function pre_stream_check(message, request_data)
-        -- Check message count
-        if user_data.message_count >= user_data.max_messages then
-            return false, "Guest message limit reached (10 messages). Register for unlimited access."
+        ngx.log(ngx.INFO, "🔍 Guest pre-stream check for: " .. (username or "unknown"))
+        
+        -- Check message count BEFORE incrementing
+        local current_count = user_data.message_count or 0
+        ngx.log(ngx.INFO, "Current message count: " .. current_count .. "/" .. user_data.max_messages)
+        
+        if current_count >= user_data.max_messages then
+            return false, "Guest message limit reached (" .. user_data.max_messages .. " messages). Register for unlimited access."
         end
         
         -- Check session expiry
         if ngx.time() >= user_data.expires_at then
             return false, "Guest session expired. Please start a new session."
         end
+        
+        -- If checks pass, increment message count
+        update_guest_message_count()
         
         return true, nil
     end
@@ -510,30 +544,40 @@ local function handle_chat_stream()
         user_type = "is_guest",
         username = username,
         
-        -- Guest limitations
-        include_history = false,  -- No history for guests
+        -- Guest limitations - NO persistent storage
+        include_history = false,
         history_limit = 0,
+        get_history = nil,           -- No history for guests
+        save_user_message = nil,     -- No persistent storage for guests
+        save_ai_response = nil,      -- No persistent storage for guests
         
-        -- Guest-specific checks
+        -- Guest-specific validation
         pre_stream_check = pre_stream_check,
         
-        -- Guest AI options (basic)
+        -- Guest AI options (basic limits)
         default_options = {
             temperature = 0.7,
-            max_tokens = 1024,      -- Lower limit for guests
+            max_tokens = 1024,       -- Lower limit for guests
             num_predict = 1024,
-            num_ctx = 512,          -- Smaller context
-            priority = 3            -- Lowest priority
-        }
+            num_ctx = 512,           -- Smaller context window
+            priority = 3             -- Lowest priority
+        },
+        
+        -- Post-stream cleanup
+        post_stream_cleanup = function(response)
+            ngx.log(ngx.INFO, "🏁 Guest stream completed for: " .. (username or "unknown") .. 
+                    " (length: " .. #(response or "") .. ")")
+        end
     }
     
-    -- Call common streaming function
+    ngx.log(ngx.INFO, "🚀 Starting guest stream with context")
+    
+    -- Call the fixed common streaming function
     server.handle_chat_stream_common(stream_context)
 end
 
 local function handle_chat_api()
     local cjson = require "cjson"
-    local server = require "server"
     
     local function send_json(status, tbl)
         ngx.status = status
@@ -548,6 +592,8 @@ local function handle_chat_api()
     
     local uri = ngx.var.uri
     local method = ngx.var.request_method
+    
+    ngx.log(ngx.INFO, "🎯 Guest chat API: " .. method .. " " .. uri)
     
     if uri == "/api/chat/history" and method == "GET" then
         -- Guests don't have persistent history
@@ -567,6 +613,7 @@ local function handle_chat_api()
         })
         
     elseif uri == "/api/chat/stream" and method == "POST" then
+        ngx.log(ngx.INFO, "🌊 Guest requesting stream")
         handle_chat_stream()
         
     else
