@@ -382,8 +382,10 @@ local function create_secure_guest_session_with_challenge()
         end
         
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
-        
         if success then
+            slot_status="unchallengeable"
+            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
+            cleanup_inactive_sessions_on_demand()
             ngx.status = 202
             ngx.header.content_type = 'application/json'
             ngx.say(cjson.encode({
@@ -402,8 +404,6 @@ local function create_secure_guest_session_with_challenge()
         end
     end
     
-    force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-    cleanup_inactive_sessions_on_demand()
     -- Normal session creation
     local red = connect_redis()
     if not red then
