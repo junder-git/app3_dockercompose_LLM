@@ -12,11 +12,11 @@ local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 -- Configuration
 local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 1800  -- 30 minutes
+local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
-local CHALLENGE_TIMEOUT = 15  -- 15 seconds for challenge response in client
-local CHALLENGE_COOLDOWN = 30  -- 30 seconds between challenges
+local CHALLENGE_TIMEOUT = 12  -- 12 seconds for challenge response in client
+local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
 local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
 
 local USERNAME_POOLS = {
@@ -402,6 +402,7 @@ local function create_secure_guest_session_with_challenge()
         end
     end
     
+    force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
     -- Normal session creation
     local red = connect_redis()
     if not red then
