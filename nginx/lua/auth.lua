@@ -172,7 +172,7 @@ local function check()
     --if user_data.user_type == "is_guest" then
     --    return "is_guest", username, user_data
     --end
-    if user_data.user_type == "is_none"
+    if user_data.user_type == "is_none" then
         return "is_none", "guest", nil
     end
 end

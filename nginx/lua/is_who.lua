@@ -142,15 +142,11 @@ function M.route_to_handler(route_type)
         -- Handle anonymous users
         if route_type == "chat" then
             -- Check if user is explicitly requesting guest chat
-            local start_guest_chat = ngx.var.arg_start_guest_chat
-            if start_guest_chat == "1" then
+            local start_guest_chat = ngx.var.guest_slot_requested
+            if start_guest_chat == "true" then
                 -- Redirect to guest session creation
                 ngx.log(ngx.INFO, "Anonymous user requesting guest chat - redirecting to guest session creation")
-                return ngx.redirect("/?guest_session_requested=1")
-            else
-                -- Regular chat access without guest session - redirect to home
-                ngx.log(ngx.INFO, "Anonymous user trying to access chat - redirecting to home")
-                return ngx.redirect("/?start_guest_chat=1")
+                return ngx.redirect("/?guest_slot_requested=true")
             end
             
         elseif route_type == "dash" then
@@ -299,9 +295,9 @@ function M.handle_index_page()
     local user_type, username, user_data = auth.check()
     
     -- Check if guest session was requested
-    local guest_session_requested = ngx.var.arg_guest_session_requested
+    local guest_slot_requested = ngx.var.arg_guest_slot_requested
     local auto_start_guest = "false"
-    if guest_session_requested == "1" then
+    if guest_slot_requested == "1" then
         auto_start_guest = "true"
     end
     
@@ -326,18 +322,14 @@ function M.handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     if uri == "/api/auth/login" and method == "POST" then
-        return auth.handle_login()
+        auth.handle_login()
     end
     if uri == "/api/auth/logout" and method == "POST" then
-        return auth.handle_logout()
+        auth.handle_logout()
     end
     if uri == "/api/auth/check" and method == "GET" then
-        return auth.handle_check_auth()
+        auth.handle_check_auth()
     end
-    ngx.status = 404
-    ngx.header.content_type = 'application/json'
-    ngx.say('{"error":"Auth endpoint not found"}')
-    ngx.exit(404)
 end
 
 function M.handle_register_api()
