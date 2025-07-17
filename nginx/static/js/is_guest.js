@@ -572,7 +572,7 @@ class GuestChallengeManager {
         if (!lastActivity) return true;
         
         const timeSinceActivity = Date.now() - parseInt(lastActivity);
-        return timeSinceActivity < 300000; // 5 minutes
+        return timeSinceActivity < 10; // 10secs
     }
 
     updateLastActivity() {
@@ -632,7 +632,7 @@ class GuestChallengeManager {
 
     startChallengeCountdown() {
         const startTime = Date.now();
-        const totalTime = 10000; // 10 seconds
+        const totalTime = 20000; // 20 seconds
         
         this.countdownInterval = setInterval(() => {
             const now = Date.now();
@@ -1119,11 +1119,6 @@ class EnhancedGuestSessionManager {
 
 // Initialize the systems when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-        // Only initialize if we're on a chat page
-    if (document.getElementById('chat-messages') || document.getElementById('chat-form')) {
-        console.log('🎯 Initializing chat system');
-        window.chatSystem = new GuestChat();
-    }
     // Initialize enhanced guest session manager for home page
     if (document.getElementById('chatters') || window.location.pathname === '/') {
         window.enhancedGuestManager = new EnhancedGuestSessionManager();
