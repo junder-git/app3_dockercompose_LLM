@@ -373,8 +373,8 @@ local function create_secure_guest_session_with_challenge()
         
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
         if success then
-            ngx.status = 202
             ngx.header.content_type = 'application/json'
+            ngx.status = 202
             ngx.say(cjson.encode({
                 success = false,
                 challenge_required = true,
@@ -383,23 +383,26 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
-            return ngx.exit(202)
-        else
-            ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
+
+            ngx.flush(true)  -- 🔥 FLUSH OUTPUT IMMEDIATELY TO CLIENT
+
             ngx.sleep(10)
-            slot_status="un-challengeable"
+
+            slot_status = "un-challengeable"
             force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
             cleanup_inactive_sessions_on_demand()
-            --ngx.status = 503
-            --return ngx.exec("@custom_50x")
+            return ngx.exit(202)
         end
-    end
+        else
+            ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
+            ngx.status = 503
+            return ngx.exec("@custom_50x")
+        end
     -- Normal session creation
     local red = connect_redis()
     if not red then
         ngx.status = 503
         return ngx.exec("@custom_50x")
-    end
     local display_name = generate_display_username()
     local now = ngx.time()
     local expires_at = now + GUEST_SESSION_DURATION
@@ -421,7 +424,6 @@ local function create_secure_guest_session_with_challenge()
         chat_storage = "redis",
         chat_retention_until = now + GUEST_CHAT_RETENTION
     }
-
     local key = "guest_active_session:" .. account.guest_slot_number
     red:set(key, cjson.encode(session))
     red:expire(key, GUEST_SESSION_DURATION)
@@ -432,7 +434,7 @@ local function create_secure_guest_session_with_challenge()
 
     local user_key = "username:" .. account.username
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
-                                   account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
+                                account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local hashed = handle:read("*a"):gsub("\n", "")
     handle:close()
