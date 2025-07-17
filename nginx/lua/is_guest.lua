@@ -383,7 +383,7 @@ local function create_secure_guest_session_with_challenge()
         
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
         if success then
-            slot_status="unchallengeable"
+            slot_status="un-challengeable"
             force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
             cleanup_inactive_sessions_on_demand()
             ngx.status = 202
