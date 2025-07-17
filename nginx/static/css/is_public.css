@@ -846,5 +846,515 @@ a:hover {
     body.index-page .hero-subtitle button {
         padding: 12px 28px !important;
         min-width: 160px !important;
+    }    
+}
+
+/* =============================================================================
+   Guest Challenge System CSS - Add to nginx/static/css/is_public.css
+   ============================================================================= */
+
+/* Challenge Modal Styles */
+
+/* Challenge Progress Ring */
+.challenge-progress-ring {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1rem;
+}
+
+.challenge-progress-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.challenge-progress-ring .progress-ring-circle {
+    fill: transparent;
+    stroke: #ffc107;
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 251.2;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.1s ease;
+}
+
+.challenge-progress-ring .progress-ring-bg {
+    fill: transparent;
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 4;
+}
+
+/* Challenge notification styles */
+.challenge-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    max-width: 400px;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    border: 2px solid #ffc107;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 20px 40px rgba(255, 193, 7, 0.3);
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Challenge button states */
+.challenge-button-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.challenge-button-success {
+    background: linear-gradient(135deg, #28a745, #20c997) !important;
+    border-color: #28a745 !important;
+}
+
+.challenge-button-danger {
+    background: linear-gradient(135deg, #dc3545, #c82333) !important;
+    border-color: #dc3545 !important;
+}
+
+/* Challenge modal backdrop */
+.challenge-modal-backdrop {
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+}
+
+/* Challenge timeout warning */
+.challenge-timeout-warning {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    animation: challengeWarningPulse 0.5s infinite alternate;
+}
+
+@keyframes challengeWarningPulse {
+    from { opacity: 0.8; }
+    to { opacity: 1; }
+}
+
+/* Challenge success state */
+.challenge-success {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    border: 2px solid #28a745;
+}
+
+/* Challenge expired state */
+.challenge-expired {
+    background: linear-gradient(135deg, #6c757d, #5a6268);
+    color: white;
+    border: 2px solid #6c757d;
+    opacity: 0.7;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .challenge-modal .modal-dialog {
+        margin: 1rem;
+        max-width: calc(100vw - 2rem);
+    }
+    
+    .challenge-modal .modal-body {
+        padding: 1.5rem;
+    }
+    
+    .challenge-countdown {
+        padding: 1rem;
+    }
+    
+    #challenge-timer, #challenger-timer {
+        font-size: 1.25rem;
+    }
+    
+    .challenge-notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: calc(100vw - 20px);
+    }
+    
+    .challenge-alert {
+        left: 10px;
+        right: 10px;
+        transform: none;
+        max-width: calc(100vw - 20px);
+    }
+}
+.challenge-modal .modal-content {
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    border: 2px solid #ffc107;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(255, 193, 7, 0.3);
+}
+
+.challenge-modal .modal-header {
+    background: linear-gradient(135deg, #ffc107 0%, #ff8c00 100%);
+    color: #000;
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+}
+
+.challenge-modal .modal-title {
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.challenge-modal .modal-body {
+    padding: 2rem;
+}
+
+.challenge-modal .modal-footer {
+    border-top: 1px solid #444;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0 0 14px 14px;
+}
+
+/* Challenge Status Modal (for challenger) */
+.challenge-status-modal .modal-content {
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    border: 2px solid #0dcaf0;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(13, 202, 240, 0.3);
+}
+
+.challenge-status-modal .modal-header {
+    background: linear-gradient(135deg, #0dcaf0 0%, #0a58ca 100%);
+    color: #fff;
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
+}
+
+/* Challenge Countdown */
+.challenge-countdown {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.challenge-countdown .progress {
+    height: 12px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.challenge-countdown .progress-bar {
+    transition: width 0.1s ease-out;
+    background: linear-gradient(45deg, #ffc107, #ff8c00);
+    box-shadow: 0 2px 4px rgba(255, 193, 7, 0.3);
+}
+
+.challenge-countdown .progress-bar.bg-danger {
+    background: linear-gradient(45deg, #dc3545, #c82333) !important;
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+.challenge-countdown .progress-bar.bg-success {
+    background: linear-gradient(45deg, #28a745, #1e7e34) !important;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+}
+
+/* Challenge Timer */
+#challenge-timer, #challenger-timer {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #ffc107;
+    text-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+    font-family: 'Courier New', monospace;
+}
+
+/* Challenge Buttons */
+.challenge-modal .btn,
+.challenge-status-modal .btn {
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.challenge-modal .btn:hover,
+.challenge-status-modal .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.challenge-modal .btn-success {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    border: none;
+}
+
+.challenge-modal .btn-success:hover {
+    background: linear-gradient(135deg, #1e7e34, #17a2b8);
+}
+
+.challenge-modal .btn-secondary {
+    background: linear-gradient(135deg, #6c757d, #5a6268);
+    border: none;
+}
+
+.challenge-modal .btn-secondary:hover {
+    background: linear-gradient(135deg, #5a6268, #495057);
+}
+
+/* Challenge Alert Styles */
+.challenge-alert {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    max-width: 500px;
+    min-width: 300px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.challenge-alert.alert-warning {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.9), rgba(255, 140, 0, 0.9));
+    color: #000;
+}
+
+.challenge-alert.alert-success {
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.9), rgba(32, 201, 151, 0.9));
+    color: #fff;
+}
+
+.challenge-alert.alert-info {
+    background: linear-gradient(135deg, rgba(13, 202, 240, 0.9), rgba(10, 88, 202, 0.9));
+    color: #fff;
+}
+
+.challenge-alert.alert-danger {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.9), rgba(200, 35, 51, 0.9));
+    color: #fff;
+}
+
+/* Challenge Icon Animations */
+.challenge-icon {
+    animation: challengePulse 2s infinite;
+}
+
+@keyframes challengePulse {
+    0%, 100% { 
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% { 
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+}
+
+/* Challenge Status Indicators */
+.challenge-status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    animation: challengeBlink 1s infinite;
+}
+
+.challenge-status-indicator.active {
+    background: #ffc107;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+}
+
+.challenge-status-indicator.expired {
+    background: #dc3545;
+    box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+}
+
+.challenge-status-indicator.accepted {
+    background: #28a745;
+    box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+    animation: none;
+}
+
+@keyframes challengeBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Challenge Progress Ring */
+.challenge-progress-ring {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1rem;
+}
+
+.challenge-progress-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.challenge-progress-ring .progress-ring-circle {
+    fill: transparent;
+    stroke: #ffc107;
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 251.2;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.1s ease;
+}
+
+.challenge-progress-ring .progress-ring-bg {
+    fill: transparent;
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 4;
+}
+
+/* Challenge notification styles */
+.challenge-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    max-width: 400px;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    border: 2px solid #ffc107;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 20px 40px rgba(255, 193, 7, 0.3);
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Challenge button states */
+.challenge-button-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.challenge-button-success {
+    background: linear-gradient(135deg, #28a745, #20c997) !important;
+    border-color: #28a745 !important;
+}
+
+.challenge-button-danger {
+    background: linear-gradient(135deg, #dc3545, #c82333) !important;
+    border-color: #dc3545 !important;
+}
+
+/* Challenge modal backdrop */
+.challenge-modal-backdrop {
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
+}
+
+/* Challenge timeout warning */
+.challenge-timeout-warning {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    animation: challengeWarningPulse 0.5s infinite alternate;
+}
+
+@keyframes challengeWarningPulse {
+    from { opacity: 0.8; }
+    to { opacity: 1; }
+}
+
+/* Challenge success state */
+.challenge-success {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    border: 2px solid #28a745;
+}
+
+/* Challenge expired state */
+.challenge-expired {
+    background: linear-gradient(135deg, #6c757d, #5a6268);
+    color: white;
+    border: 2px solid #6c757d;
+    opacity: 0.7;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .challenge-modal .modal-dialog {
+        margin: 1rem;
+        max-width: calc(100vw - 2rem);
+    }
+    
+    .challenge-modal .modal-body {
+        padding: 1.5rem;
+    }
+    
+    .challenge-countdown {
+        padding: 1rem;
+    }
+    
+    #challenge-timer, #challenger-timer {
+        font-size: 1.25rem;
+    }
+    
+    .challenge-notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        max-width: calc(100vw - 20px);
+    }
+    
+    .challenge-alert {
+        left: 10px;
+        right: 10px;
+        transform: none;
+        max-width: calc(100vw - 20px);
+    }
+}
+
+/* Dark theme compatibility */
+@media (prefers-color-scheme: dark) {
+    .challenge-modal .modal-content {
+        background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+        border-color: #f0c040;
+    }
+    
+    .challenge-notification {
+        background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+        border-color: #f0c040;
     }
 }
