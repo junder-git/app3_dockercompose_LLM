@@ -403,6 +403,7 @@ local function create_secure_guest_session_with_challenge()
     if not red then
         ngx.status = 503
         return ngx.exec("@custom_50x")
+    end
     local display_name = generate_display_username()
     local now = ngx.time()
     local expires_at = now + GUEST_SESSION_DURATION
