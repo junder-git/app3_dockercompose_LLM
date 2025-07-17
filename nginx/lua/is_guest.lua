@@ -383,15 +383,15 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
+            return ngx.exit(202)
+        else
+            ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
             ngx.sleep(10)
             slot_status="un-challengeable"
             force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
             cleanup_inactive_sessions_on_demand()
-            return ngx.exit(202)
-        else
-            ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
-            ngx.status = 503
-            return ngx.exec("@custom_50x")
+            --ngx.status = 503
+            --return ngx.exec("@custom_50x")
         end
     end
     -- Normal session creation
