@@ -194,125 +194,127 @@ class GuestChat {
 
     async sendMessage() {
         console.log('🚀 sendMessage called');
-        
         const input = document.getElementById('chat-input');
         if (!input) {
             console.error('Chat input not found');
             return;
         }
-
-        const message = input.value.trim();
-        
-        if (!message) {
-            console.warn('Empty message');
-            return;
-        }
-
-        if (this.isTyping) {
-            console.warn('Already typing');
-            return;
-        }
-
-        console.log('📤 Sending message:', message);
-
-        // Check guest message limits
-        const guestMessages = GuestChatStorage.getMessages();
-        if (guestMessages.length >= 10) {
-            alert('Guest message limit reached! Register for unlimited access.');
-            return;
-        }
-
-        const welcomePrompt = document.getElementById('welcome-prompt');
-        if (welcomePrompt) welcomePrompt.style.display = 'none';
-        
-        // Add user message to UI
-        this.addMessage('user', message);
-        
-        // Clear input
-        input.value = '';
-        this.updateCharCount();
-        
-        // Set typing state
-        this.isTyping = true;
-        this.updateButtons(true);
-
-        this.abortController = new AbortController();
-        const aiMessage = this.addMessage('ai', '', true);
-        let accumulated = '';
-
-        try {
-            // FIXED: Simplified fetch for testing
-            const response = await fetch('/api/chat/stream', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'text/event-stream'
-                },
-                credentials: 'include',
-                signal: this.abortController.signal,
-                body: JSON.stringify({
-                    message: message,
-                    options: {
-                        temperature: 0.7,
-                        max_tokens: 1024
-                    }
-                })
-            });
-
-            console.log('📡 Response status:', response.status);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    pass
+                }else{
+                    e.preventDefault(); // Prevent newline
+                }
+            }})
+            const message = input.value.trim();
+            
+            if (!message) {
+                console.warn('Empty message');
+                return;
             }
 
-            // FIXED: Handle streaming response
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
+            if (this.isTyping) {
+                console.warn('Already typing');
+                return;
+            }
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
+            console.log('📤 Sending message:', message);
 
-                const chunk = decoder.decode(value, { stream: true });
-                console.log('📦 Chunk received:', chunk);
-                
-                const lines = chunk.split('\n');
+            // Check guest message limits
+            const guestMessages = GuestChatStorage.getMessages();
+            if (guestMessages.length >= 10) {
+                alert('Guest message limit reached! Register for unlimited access.');
+                return;
+            }
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const jsonStr = line.slice(6);
-                        if (jsonStr === '[DONE]') {
-                            console.log('✅ Stream completed');
-                            this.finishStreaming(aiMessage, accumulated);
-                            return;
-                        }
+            const welcomePrompt = document.getElementById('welcome-prompt');
+            if (welcomePrompt) welcomePrompt.style.display = 'none';
+            
+            // Add user message to UI
+            this.addMessage('user', message);
+            
+            // Clear input
+            input.value = '';
+            this.updateCharCount();
+            
+            // Set typing state
+            this.isTyping = true;
+            this.updateButtons(true);
 
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.content) {
-                                accumulated += data.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
+            this.abortController = new AbortController();
+            const aiMessage = this.addMessage('ai', '', true);
+            let accumulated = '';
+
+            try {
+                // FIXED: Simplified fetch for testing
+                const response = await fetch('/api/chat/stream', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    credentials: 'include',
+                    signal: this.abortController.signal,
+                    body: JSON.stringify({
+                        message: message
+                    })
+                });
+
+                console.log('📡 Response status:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                // FIXED: Handle streaming response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    console.log('📦 Chunk received:', chunk);
+                    
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.slice(6);
+                            if (jsonStr === '[DONE]') {
+                                console.log('✅ Stream completed');
+                                this.finishStreaming(aiMessage, accumulated);
+                                return;
                             }
-                        } catch (e) {
-                            console.warn('JSON parse error:', e);
+
+                            try {
+                                const data = JSON.parse(jsonStr);
+                                if (data.content) {
+                                    accumulated += data.content;
+                                    this.updateStreamingMessage(aiMessage, accumulated);
+                                }
+                            } catch (e) {
+                                console.warn('JSON parse error:', e);
+                            }
                         }
                     }
                 }
-            }
 
-            // If we get here, stream ended without [DONE]
-            this.finishStreaming(aiMessage, accumulated);
+                // If we get here, stream ended without [DONE]
+                this.finishStreaming(aiMessage, accumulated);
 
-        } catch (error) {
-            console.error('❌ Chat error:', error);
-            
-            if (error.name !== 'AbortError') {
-                const errorMessage = `*Error: ${error.message}*`;
-                this.updateStreamingMessage(aiMessage, errorMessage);
+            } catch (error) {
+                console.error('❌ Chat error:', error);
+                
+                if (error.name !== 'AbortError') {
+                    const errorMessage = `*Error: ${error.message}*`;
+                    this.updateStreamingMessage(aiMessage, errorMessage);
+                }
+                
+                this.finishStreaming(aiMessage, accumulated || `Error: ${error.message}`);
             }
-            
-            this.finishStreaming(aiMessage, accumulated || `Error: ${error.message}`);
-        }
     }
 
     addMessage(sender, content, isStreaming = false, skipStorage = false) {
