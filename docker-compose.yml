@@ -22,6 +22,8 @@ services:
           cpus: ${VLLM_CPU_LIMIT}
           memory: ${VLLM_MEMORY_LIMIT}
         reservations:
+          cpus: ${VLLM_CPU_LIMIT}
+          memory: ${VLLM_MEMORY_LIMIT}
           devices:
             - capabilities: [gpu]
     restart: unless-stopped
