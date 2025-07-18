@@ -329,18 +329,27 @@ local function find_available_guest_slot_or_challenge()
     return guest_accounts[j], "challengeable"
 end
 
-local function create_secure_guest_session_with_challenge() 
+local function create_secure_guest_session_with_challenge()
     local account, slot_status = find_available_guest_slot_or_challenge()
+    
     if not slot_status then
         -- Normal session creation
         local red = connect_redis()
         if not red then
             ngx.status = 503
-            return ngx.exec("@custom_50x")
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "redis_connection_failed",
+                message = "Database connection failed"
+            }))
+            return
         end
+        
         local display_name = generate_display_username()
         local now = ngx.time()
         local expires_at = now + GUEST_SESSION_DURATION
+        
         local session = {
             username = account.username,
             user_type = "is_guest",
@@ -357,28 +366,38 @@ local function create_secure_guest_session_with_challenge()
             chat_storage = "redis",
             chat_retention_until = now + GUEST_CHAT_RETENTION
         }
+        
         local key = "guest_active_session:" .. account.guest_slot_number
         red:set(key, cjson.encode(session))
         red:expire(key, GUEST_SESSION_DURATION)
+        
         local user_session_key = "guest_session:" .. account.username
         red:set(user_session_key, cjson.encode(session))
         red:expire(user_session_key, GUEST_SESSION_DURATION)
+        
         local user_key = "username:" .. account.username
         local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
                                     account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
         local handle = io.popen(hash_cmd)
         local hashed = handle:read("*a"):gsub("\n", "")
         handle:close()
+        
         red:hset(user_key, "username:", account.username)
         red:hset(user_key, "password_hash:", hashed)
         red:hset(user_key, "user_type:", "is_guest")
         red:hset(user_key, "created_at:", os.date("!%Y-%m-%dT%H:%M:%SZ"))
         red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
         red:close()
+        
         ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
+        
         ngx.log(ngx.INFO, "=== GUEST SESSION CREATION SUCCESS ===")
         ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
-        return {
+        
+        -- Return success response
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
             success = true,
             username = display_name,
             internal_username = account.username,
@@ -391,13 +410,18 @@ local function create_secure_guest_session_with_challenge()
             guest_slot_number = account.guest_slot_number,
             storage_type = "redis",
             chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
-        }, nil
+        }))
+        return
+        
     else
-        -- First call - create challenge and send response to client
+        -- Challenge required - slot is occupied
         local success, challenge_id = create_guest_challenge(account.guest_slot_number)
+        
         if success then
+            -- Set headers BEFORE calling ngx.say()
             ngx.status = 202
             ngx.header.content_type = 'application/json'
+            
             -- Send challenge response to client
             ngx.say(cjson.encode({
                 success = false,
@@ -407,11 +431,22 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
+            
+            -- End the request here - no further processing
+            return
+        else
+            -- Challenge creation failed
+            ngx.status = 500
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "challenge_creation_failed",
+                message = "Unable to challenge inactive user. Please try again."
+            }))
             return
         end
     end
 end
-
 -- =============================================================================
 -- EXISTING FUNCTIONS
 -- =============================================================================
@@ -575,16 +610,10 @@ local function handle_guest_api()
     local method = ngx.var.request_method
     
     if uri == "/api/guest/create-session" and method == "POST" then
-        local session_data, err = create_secure_guest_session_with_challenge()
-        if session_data then
-            send_json(200, session_data)
-        else
-            send_json(429, { 
-                success = false, 
-                error = "no_slots_available",
-                message = "All guest slots are occupied. Please try again later."
-            })
-        end
+        -- create_secure_guest_session_with_challenge() already handles the complete response
+        -- It sends either 200 (success), 202 (challenge), or 500 (error) and returns
+        create_secure_guest_session_with_challenge()
+        -- No further processing needed - function already sent response and returned
         
     elseif uri == "/api/guest/challenge-status" and method == "GET" then
         local slot_number = tonumber(ngx.var.arg_slot)
@@ -671,20 +700,9 @@ local function handle_guest_api()
         local kick_success, kicked_user = force_kick_guest_session(slot_number, "Challenge timeout - inactive user")
         
         if kick_success then
-            local session_data, err = create_secure_guest_session_with_challenge()
-            if session_data then
-                send_json(200, {
-                    success = true,
-                    session = session_data,
-                    kicked_user = kicked_user,
-                    message = "Inactive user removed, session created"
-                })
-            else
-                send_json(500, {
-                    success = false,
-                    error = "Failed to create session after kick"
-                })
-            end
+            -- Call create session but it handles its own response
+            create_secure_guest_session_with_challenge()
+            -- Don't send additional response - the function already did
         else
             send_json(500, {
                 success = false,
