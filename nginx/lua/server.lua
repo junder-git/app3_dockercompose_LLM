@@ -1,4 +1,4 @@
--- nginx/lua/server.lua - CORE SERVER FUNCTIONS (NO DUPLICATION)
+-- nginx/lua/server.lua - COMPLETE FIXED VERSION
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local http = require "resty.http"
@@ -164,7 +164,6 @@ end
 -- ENHANCED USER MANAGEMENT WITH APPROVAL SYSTEM
 -- =============================================
 
--- Get user counts by status (for admin dashboard)
 function M.get_user_counts()
     local red = connect_redis()
     if not red then return { total = 0, pending = 0, approved = 0, admin = 0 } end
@@ -204,7 +203,6 @@ function M.get_user_counts()
     return counts
 end
 
--- Get pending users (for admin approval)
 function M.get_pending_users()
     local red = connect_redis()
     if not red then return {} end
@@ -221,9 +219,8 @@ function M.get_pending_users()
                     user[user_data[i]] = user_data[i + 1]
                 end
                 
-                -- Only pending users (not approved, not admin)
                 if user.username and user.user_type == "is_pending" then
-                    user.password_hash = nil -- Don't return password hash
+                    user.password_hash = nil
                     table.insert(pending_users, user)
                 end
             end
@@ -232,7 +229,6 @@ function M.get_pending_users()
     
     red:close()
     
-    -- Sort by creation date (newest first)
     table.sort(pending_users, function(a, b)
         return (a.created_at or "") > (b.created_at or "")
     end)
@@ -240,7 +236,6 @@ function M.get_pending_users()
     return pending_users
 end
 
--- Approve a user (admin function)
 function M.approve_user(username, approved_by)
     if not username or not approved_by then
         return false, "Missing required parameters"
@@ -251,20 +246,11 @@ function M.approve_user(username, approved_by)
     
     local user_key = "username:" .. username
     
-    -- Check if user exists
     if red:exists(user_key) ~= 1 then
         red:close()
         return false, "User not found"
     end
     
-    -- Get current user data
-    local user_data = red:hgetall(user_key)
-    if not user_data or #user_data == 0 then
-        red:close()
-        return false, "User data not found"
-    end
-    
-    -- Update user status
     red:hset(user_key, "user_type:", "is_approved")
     red:hset(user_key, "approved_at:", os.date("!%Y-%m-%dT%TZ"))
     red:hset(user_key, "approved_by:", approved_by)
@@ -276,7 +262,6 @@ function M.approve_user(username, approved_by)
     return true, "User approved successfully"
 end
 
--- Reject a user (admin function)
 function M.reject_user(username, rejected_by, reason)
     if not username or not rejected_by then
         return false, "Missing required parameters"
@@ -287,20 +272,15 @@ function M.reject_user(username, rejected_by, reason)
     
     local user_key = "username:" .. username
     
-    -- Check if user exists
     if red:exists(user_key) ~= 1 then
         red:close()
         return false, "User not found"
     end
     
-    -- Log rejection before deletion
     ngx.log(ngx.INFO, "User rejected and deleted: " .. username .. " by " .. rejected_by .. 
             (reason and (" - Reason: " .. reason) or ""))
     
-    -- Delete user account
     red:del(user_key)
-    
-    -- Also clear any related data
     red:del("chat:" .. username)
     red:del("user_messages:" .. username)
     
@@ -309,7 +289,6 @@ function M.reject_user(username, rejected_by, reason)
     return true, "User rejected and account deleted"
 end
 
--- Get registration statistics
 function M.get_registration_stats()
     local user_counts = M.get_user_counts()
     return {
@@ -742,25 +721,26 @@ function M.handle_chat_stream_common(stream_context)
 end
 
 -- =============================================
--- OLLAMA INTEGRATION
+-- OLLAMA INTEGRATION - FIXED FOR REAL-TIME STREAMING
 -- =============================================
--- FIXED: Ollama streaming with immediate response
 function M.call_ollama_streaming(messages, options, callback)
     if not messages or #messages == 0 then
-        return nil, "No messages provided"
+        return false, "No messages provided"
     end
     
     local httpc = http.new()
-    httpc:set_timeout(60000)  -- 60 second timeout
-
+    httpc:set_timeout(600000)  -- 10 minute timeout for large models
+    
+    -- Optimized options for your VRAM constraints
     local safe_options = {
         temperature = options.temperature or 0.7,
-        num_predict = options.max_tokens or 256,
+        num_predict = options.max_tokens or 512,
         num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 1024,
-        num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 12,
+        num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 8,  -- Reduced for stability
         num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 8,
-        num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 128,
-        use_mmap = false
+        num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 64,
+        use_mmap = true,  -- Enable for large models
+        use_mlock = false  -- Disable to save RAM
     }
 
     local payload = {
@@ -770,77 +750,135 @@ function M.call_ollama_streaming(messages, options, callback)
         options = safe_options
     }
 
-    ngx.log(ngx.INFO, "🚀 Starting Ollama streaming request...")
-    
-    local res, err = httpc:request_uri(OLLAMA_URL .. "/api/chat", {
+    ngx.log(ngx.INFO, "🚀 Starting real-time Ollama streaming...")
+
+    -- CRITICAL FIX: Use connect() + request() instead of request_uri() for real streaming
+    local ok, err = httpc:connect("ollama", 11434)
+    if not ok then
+        ngx.log(ngx.ERR, "❌ Failed to connect to Ollama: " .. (err or "unknown"))
+        return false, "Failed to connect to AI service: " .. (err or "unknown")
+    end
+
+    -- Send the request
+    local res, err = httpc:request({
         method = "POST",
-        body = cjson.encode(payload),
-        headers = { 
+        path = "/api/chat",
+        headers = {
             ["Content-Type"] = "application/json",
             ["Accept"] = "text/event-stream",
-            ["User-Agent"] = "nginx-lua-client"
-        }
+            ["User-Agent"] = "nginx-lua-streaming-client",
+            ["Connection"] = "keep-alive"
+        },
+        body = cjson.encode(payload)
     })
 
     if not res then
-        ngx.log(ngx.ERR, "❌ Failed to connect to Ollama: " .. (err or "unknown"))
-        return nil, "Failed to connect to AI service: " .. (err or "unknown")
+        httpc:close()
+        ngx.log(ngx.ERR, "❌ Failed to send request to Ollama: " .. (err or "unknown"))
+        return false, "Failed to send request to AI service"
     end
 
     if res.status ~= 200 then
+        httpc:close()
         ngx.log(ngx.ERR, "❌ Ollama returned HTTP " .. res.status)
-        return nil, "AI service error: HTTP " .. res.status
+        return false, "AI service error: HTTP " .. res.status
     end
 
-    ngx.log(ngx.INFO, "✅ Connected to Ollama, processing stream...")
+    ngx.log(ngx.INFO, "✅ Connected to Ollama, starting real-time stream processing...")
 
     local accumulated = ""
     local chunk_count = 0
     local first_chunk_received = false
-    
-    for line in res.body:gmatch("[^\r\n]+") do
-        if line and line ~= "" then
-            chunk_count = chunk_count + 1
-            
-            if not first_chunk_received then
-                ngx.log(ngx.INFO, "🎯 First chunk received!")
-                first_chunk_received = true
-            end
-            
-            if chunk_count > 1000 then
-                ngx.log(ngx.WARN, "⚠️ Too many chunks, stopping at 1000")
+    local buffer = ""
+
+    -- CRITICAL: Real-time streaming loop using receive()
+    while true do
+        -- Read data in small chunks for immediate processing
+        local chunk, err, partial = httpc:receive(1024)  -- 1KB chunks
+        
+        if err then
+            if err == "closed" then
+                ngx.log(ngx.INFO, "🏁 Stream closed normally")
+                break
+            elseif err == "timeout" then
+                ngx.log(ngx.WARN, "⏰ Stream timeout, continuing...")
+                chunk = partial or ""
+            else
+                ngx.log(ngx.ERR, "❌ Stream error: " .. err)
                 break
             end
+        end
+
+        if chunk and chunk ~= "" then
+            buffer = buffer .. chunk
             
-            local ok, data = pcall(cjson.decode, line)
-            if ok and data.message and data.message.content then
-                accumulated = accumulated .. data.message.content
+            -- Process complete lines immediately
+            while true do
+                local line_end = buffer:find("\n")
+                if not line_end then break end
                 
-                if #accumulated > 10000 then
-                    callback({
-                        content = "\n\n[Response truncated - too long]",
-                        accumulated = accumulated .. "\n\n[Response truncated - too long]",
-                        done = true
-                    })
-                    break
+                local line = buffer:sub(1, line_end - 1)
+                buffer = buffer:sub(line_end + 1)
+                
+                -- Skip empty lines
+                if line:match("%S") then
+                    chunk_count = chunk_count + 1
+                    
+                    if not first_chunk_received then
+                        ngx.log(ngx.INFO, "🎯 First chunk received and processing immediately!")
+                        first_chunk_received = true
+                    end
+                    
+                    -- Prevent infinite loops
+                    if chunk_count > 1000 then
+                        ngx.log(ngx.WARN, "⚠️ Too many chunks, stopping at 1000")
+                        httpc:close()
+                        return accumulated, nil
+                    end
+                    
+                    -- Parse JSON line
+                    local ok, data = pcall(cjson.decode, line)
+                    if ok and data.message and data.message.content then
+                        local content = data.message.content
+                        accumulated = accumulated .. content
+                        
+                        -- Truncate if too long
+                        if #accumulated > 10000 then
+                            callback({
+                                content = "\n\n[Response truncated - too long]",
+                                accumulated = accumulated .. "\n\n[Response truncated - too long]",
+                                done = true
+                            })
+                            httpc:close()
+                            return accumulated, nil
+                        end
+                        
+                        -- IMMEDIATE callback for real-time streaming
+                        callback({
+                            content = content,
+                            accumulated = accumulated,
+                            done = data.done or false
+                        })
+                        
+                        -- Check if done
+                        if data.done then
+                            ngx.log(ngx.INFO, "✅ Stream completed normally after " .. chunk_count .. " chunks")
+                            httpc:close()
+                            return accumulated, nil
+                        end
+                        
+                    elseif ok and data.error then
+                        ngx.log(ngx.ERR, "❌ Ollama error: " .. tostring(data.error))
+                        httpc:close()
+                        return false, "AI model error: " .. tostring(data.error)
+                    end
+                    -- If JSON parse fails, just continue to next line
                 end
-                
-                -- IMMEDIATE callback - no delays
-                callback({
-                    content = data.message.content,
-                    accumulated = accumulated,
-                    done = data.done or false
-                })
-                
-                if data.done then
-                    ngx.log(ngx.INFO, "✅ Stream completed normally")
-                    break
-                end
-            elseif ok and data.error then
-                ngx.log(ngx.ERR, "❌ Ollama error: " .. tostring(data.error))
-                return nil, "AI model error: " .. tostring(data.error)
             end
         end
+        
+        -- Small yield to prevent blocking
+        ngx.sleep(0.001)  -- 1ms yield
     end
 
     httpc:close()
