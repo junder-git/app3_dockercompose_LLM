@@ -15,7 +15,7 @@ local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local GUEST_CHAT_RETENTION = 259200  -- 3 days
-local CHALLENGE_TIMEOUT = 5  -- 12 seconds for challenge response in client
+local CHALLENGE_TIMEOUT = 8  -- 8 seconds for challenge response in client
 local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
 local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
 
@@ -308,11 +308,10 @@ local function cleanup_inactive_sessions_on_demand()
     return cleaned
 end
 
-local function find_available_guest_slot_with_challenge()
+local function find_available_guest_slot_or_challenge()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
     local guest_accounts = get_guest_accounts()
-
     -- First pass: look for fully available slots
     for i = 1, MAX_GUEST_SESSIONS do
         local key = "guest_active_session:" .. i
@@ -321,45 +320,91 @@ local function find_available_guest_slot_with_challenge()
             red:close()
             return guest_accounts[i], nil
         end
-    end    
-
+    end
     -- Toggle between j = 1 and j = 2
     local toggle_dict = ngx.shared.guest_toggle
     local last = toggle_dict:get("last_slot") or 1
     local j = (last == 1) and 2 or 1
     toggle_dict:set("last_slot", j)
-
     red:close()
     return guest_accounts[j], "challengeable"
 end
 
-local function create_secure_guest_session_with_challenge()
-    ngx.log(ngx.INFO, "=== GUEST SESSION CREATION WITH CHALLENGE START ===")
-
-    local account, slot_status = find_available_guest_slot_with_challenge()
-    local challenger_ip = ngx.var.remote_addr or "unknown"
-    
-    if not account then
-        ngx.log(ngx.WARN, "Guest session creation failed: All guest slots occupied")
-        ngx.status = 429
-        return ngx.exec("@custom_429")
+local function create_secure_guest_session_with_challenge(slot_status_hold) 
+    if slot_status_hold != nil then
+        ngx.sleep(8)
+        create_secure_guest_session_with_challenge()
     end
-    
-    -- If slot is challengeable, create challenge
-    if slot_status == "challengeable" then
-        ngx.log(ngx.INFO, "🚨 Creating challenge for slot " .. account.guest_slot_number)
+    local account, slot_status = find_available_guest_slot_or_challenge()
+    if slot_status == nil then
+        -- Normal session creation
         local red = connect_redis()
-        if red then
-            local cooldown_key = "challenge_cooldown:" .. account.guest_slot_number
-            red:set(cooldown_key, ngx.time())
-            red:expire(cooldown_key, CHALLENGE_COOLDOWN)
-            red:close()
+        if not red then
+            ngx.status = 503
+            return ngx.exec("@custom_50x")
         end
-        
+        local display_name = generate_display_username()
+        local now = ngx.time()
+        local expires_at = now + GUEST_SESSION_DURATION
+        local session = {
+            username = account.username,
+            user_type = "is_guest",
+            jwt_token = account.token,
+            guest_slot_number = account.guest_slot_number,
+            session_id = display_name,
+            display_username = display_name,
+            created_at = now,
+            expires_at = expires_at,
+            message_count = 0,
+            max_messages = GUEST_MESSAGE_LIMIT,
+            created_ip = challenger_ip,
+            last_activity = now,
+            priority = 3,
+            chat_storage = "redis",
+            chat_retention_until = now + GUEST_CHAT_RETENTION
+        }
+        local key = "guest_active_session:" .. account.guest_slot_number
+        red:set(key, cjson.encode(session))
+        red:expire(key, GUEST_SESSION_DURATION)
+        local user_session_key = "guest_session:" .. account.username
+        red:set(user_session_key, cjson.encode(session))
+        red:expire(user_session_key, GUEST_SESSION_DURATION)
+        local user_key = "username:" .. account.username
+        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
+                                    account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
+        local handle = io.popen(hash_cmd)
+        local hashed = handle:read("*a"):gsub("\n", "")
+        handle:close()
+        red:hset(user_key, "username:", account.username)
+        red:hset(user_key, "password_hash:", hashed)
+        red:hset(user_key, "user_type:", "is_guest")
+        red:hset(user_key, "created_at:", os.date("!%Y-%m-%dT%H:%M:%SZ"))
+        red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
+        red:close()
+        ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
+        ngx.log(ngx.INFO, "=== GUEST SESSION CREATION SUCCESS ===")
+        ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
+        return {
+            success = true,
+            username = display_name,
+            internal_username = account.username,
+            session_id = display_name,
+            token = account.token,
+            expires_at = expires_at,
+            message_limit = GUEST_MESSAGE_LIMIT,
+            session_duration = GUEST_SESSION_DURATION,
+            priority = 3,
+            guest_slot_number = account.guest_slot_number,
+            storage_type = "redis",
+            chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
+        }, nil
+    else
         local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
+        local red = connect_redis()
         if success then
             ngx.status = 202
             ngx.header.content_type = 'application/json'
+            slot_status="pending"
             ngx.say(cjson.encode({
                 success = false,
                 challenge_required = true,
@@ -368,86 +413,12 @@ local function create_secure_guest_session_with_challenge()
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
-            slot_status="un-challengeable"
-            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-            cleanup_inactive_sessions_on_demand()
-            return ngx.exit(202)
-        else
-            ngx.log(ngx.WARN, "Failed to create first challenge: " .. (challenge_id or "unknown"))
-            ngx.status = 503
-            return ngx.exec("@custom_50x")
         end
+        force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
+        cleanup_inactive_sessions_on_demand()
+        ngx.exit(status)
+        return create_secure_guest_session_with_challenge("clearing")
     end
-    -- Normal session creation
-    ngx.sleep(6)
-    local red = connect_redis()
-    if not red then
-        ngx.status = 503
-        return ngx.exec("@custom_50x")
-    end
-    local display_name = generate_display_username()
-    local now = ngx.time()
-    local expires_at = now + GUEST_SESSION_DURATION
-
-    local session = {
-        username = account.username,
-        user_type = "is_guest",
-        jwt_token = account.token,
-        guest_slot_number = account.guest_slot_number,
-        session_id = display_name,
-        display_username = display_name,
-        created_at = now,
-        expires_at = expires_at,
-        message_count = 0,
-        max_messages = GUEST_MESSAGE_LIMIT,
-        created_ip = challenger_ip,
-        last_activity = now,
-        priority = 3,
-        chat_storage = "redis",
-        chat_retention_until = now + GUEST_CHAT_RETENTION
-    }
-
-    local key = "guest_active_session:" .. account.guest_slot_number
-    red:set(key, cjson.encode(session))
-    red:expire(key, GUEST_SESSION_DURATION)
-
-    local user_session_key = "guest_session:" .. account.username
-    red:set(user_session_key, cjson.encode(session))
-    red:expire(user_session_key, GUEST_SESSION_DURATION)
-
-    local user_key = "username:" .. account.username
-    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
-                                   account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
-    local handle = io.popen(hash_cmd)
-    local hashed = handle:read("*a"):gsub("\n", "")
-    handle:close()
-
-    red:hset(user_key, "username:", account.username)
-    red:hset(user_key, "password_hash:", hashed)
-    red:hset(user_key, "user_type:", "is_guest")
-    red:hset(user_key, "created_at:", os.date("!%Y-%m-%dT%H:%M:%SZ"))
-    red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
-    red:close()
-
-    ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
-
-    ngx.log(ngx.INFO, "=== GUEST SESSION CREATION SUCCESS ===")
-    ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
-
-    return {
-        success = true,
-        username = display_name,
-        internal_username = account.username,
-        session_id = display_name,
-        token = account.token,
-        expires_at = expires_at,
-        message_limit = GUEST_MESSAGE_LIMIT,
-        session_duration = GUEST_SESSION_DURATION,
-        priority = 3,
-        guest_slot_number = account.guest_slot_number,
-        storage_type = "redis",
-        chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
-    }, nil
 end
 
 -- =============================================================================
