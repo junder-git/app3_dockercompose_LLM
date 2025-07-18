@@ -734,7 +734,7 @@ local function handle_chat_page()
         username = username or "guest",
         dash_buttons = nav_buttons,
         chat_features = chat_features,
-        chat_placeholder = "Ask me anything... (Guest: 10 messages, 30 minutes)"
+        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_guest.html", context)
