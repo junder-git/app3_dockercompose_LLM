@@ -864,13 +864,6 @@ local function handle_chat_stream()
         save_user_message = nil,
         save_ai_response = nil,
         pre_stream_check = pre_stream_check,
-        default_options = {
-            temperature = 0.7,
-            max_tokens = 512,
-            num_predict = 1,
-            num_ctx = 64,
-            priority = 3
-        },
         post_stream_cleanup = function(response)
             ngx.log(ngx.INFO, "Guest stream completed for: " .. (username or "unknown"))
         end

@@ -157,15 +157,15 @@ test_payload=$(cat << EOF
     "model": "$hybrid_model",
     "messages": [{"role": "user", "content": "Hello! Respond briefly that you are ready."}],
     "stream": false,
-    "keep_alive": "${OLLAMA_KEEP_ALIVE:-24h}",
+    "keep_alive": "${OLLAMA_KEEP_ALIVE}",
     "options": {
-        "temperature": ${MODEL_TEMPERATURE:-0.7},
-        "num_predict": ${MODEL_NUM_PREDICT:--1},
-        "num_ctx": ${MODEL_NUM_CTX:-4096},
-        "top_p": ${MODEL_TOP_P:-0.9},
-        "top_k": ${MODEL_TOP_K:-40},
-        "repeat_penalty": ${MODEL_REPEAT_PENALTY:-1.1},
-        "seed": ${MODEL_SEED:-0}
+        "temperature": ${MODEL_TEMPERATURE},
+        "num_predict": ${MODEL_NUM_PREDICT},
+        "num_ctx": ${MODEL_NUM_CTX},
+        "top_p": ${MODEL_TOP_P},
+        "top_k": ${MODEL_TOP_K},
+        "repeat_penalty": ${MODEL_REPEAT_PENALTY},
+        "seed": ${MODEL_SEED}
     }
 }
 EOF

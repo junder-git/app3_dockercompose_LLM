@@ -734,10 +734,10 @@ function M.call_ollama_streaming(messages, options, callback)
     -- Optimized options for your VRAM constraints
     local safe_options = {
         temperature = options.temperature or 0.7,
-        num_predict = options.max_tokens or 512,
-        num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 1024,
+        num_predict = options.max_tokens or 128,
+        num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 256,
         num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 8,  -- Reduced for stability
-        num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 8,
+        num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 4,
         num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 64,
         use_mmap = true,  -- Enable for large models
         use_mlock = false  -- Disable to save RAM
