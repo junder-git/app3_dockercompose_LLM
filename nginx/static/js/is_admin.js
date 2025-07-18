@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/admin.js - ADMIN EXTENSIONS (only admins get this)
+// nginx/static/js/admin.js - ADMIN EXTENSIONS WITH VLLM INTEGRATION
 // =============================================================================
 
 // Admin Chat System - extends ApprovedChat with admin features
@@ -546,7 +546,8 @@ function displaySystemStats(stats) {
         
         <div class="mt-3">
             <small class="text-muted">
-                Last updated: ${new Date().toLocaleString()}
+                Last updated: ${new Date().toLocaleString()}<br>
+                <strong>AI Engine:</strong> vLLM (OpenAI Compatible API)
             </small>
         </div>
     `;
@@ -588,4 +589,3 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshSystemStats();
     }
 });
-

@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_admin.lua - FIXED ADMIN SYSTEM WITH PROPER EXPORTS
+-- nginx/lua/is_admin.lua - FIXED ADMIN SYSTEM WITH VLLM INTEGRATION
 -- =============================================================================
 
 local function handle_chat_page()
@@ -47,7 +47,7 @@ local function handle_dash_page()
         nav = is_who.render_nav("admin", username, nil),
         username = username,
         redis_status = "Connected",
-        ollama_status = "Connected", 
+        vllm_status = "Connected", 
         uptime = "idunno yet...",
         version = "OpenResty 1.21.4.1",
         recent_activity = recent_activity
@@ -314,10 +314,10 @@ local function handle_admin_api()
                 host = os.getenv("REDIS_HOST") or "redis",
                 port = tonumber(os.getenv("REDIS_PORT")) or 6379
             },
-            ollama_info = {
+            vllm_info = {
                 status = "Connected",
-                url = os.getenv("OLLAMA_URL") or "http://ollama:11434",
-                model = os.getenv("OLLAMA_MODEL") or "devstral"
+                url = os.getenv("VLLM_URL") or os.getenv("OLLAMA_URL") or "http://vllm:8000",
+                model = os.getenv("VLLM_MODEL") or os.getenv("OLLAMA_MODEL") or "devstral"
             }
         }
         
