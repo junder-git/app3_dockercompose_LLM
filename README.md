@@ -1,5 +1,7 @@
 git lfs install
 git clone https://huggingface.co/mistralai/Devstral-Small-2507 ./volumes/models/devstral
+pip install huggingface-cli
+huggingface-cli download mistralai/Devstral-Small-2507
 
 
 =====
