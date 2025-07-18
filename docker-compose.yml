@@ -1,14 +1,10 @@
 services:
   vllm:
-    image: ghcr.io/mistralai/mistral-vllm:latest
+    image: vllm/vllm-openai:latest
     container_name: devstral-vllm
     command: >
-      vllm serve /models/devstral
+      --model /models/devstral
       --tokenizer-mode mistral
-      --config-format mistral
-      --load-format mistral
-      --tool-call-parser mistral
-      --enable-auto-tool-choice
       --host 0.0.0.0
       --port 8000
       --tensor-parallel-size 1
@@ -16,13 +12,13 @@ services:
       - "8000:8000"
     volumes:
       - ./volumes/huggingface/hub/models--mistralai--Devstral-Small-2507:/models/devstral
-    environment:
-      - MODEL_NAME=${VLLM_MODEL}
+    #environment:
+    #  - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
     deploy:
       resources:
         limits:
-          cpus: "${VLLM_CPU_LIMIT}"
-          memory: "${VLLM_MEMORY_LIMIT}"
+          cpus: ${VLLM_CPU_LIMIT}
+          memory: ${VLLM_MEMORY_LIMIT}
         reservations:
           devices:
             - capabilities: [gpu]
