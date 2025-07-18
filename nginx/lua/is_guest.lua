@@ -393,24 +393,21 @@ local function create_secure_guest_session_with_challenge()
             chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
         }, nil
     else
-        -- Challenge required - slot is occupied
-        if slot_status=="challengeable" then
-            -- First call - create challenge and send response to client
-            local success, challenge_id = create_guest_challenge(account.guest_slot_number)
-            if success then
-                ngx.status = 202
-                ngx.header.content_type = 'application/json'
-                -- Send challenge response to client
-                ngx.say(cjson.encode({
-                    success = false,
-                    challenge_required = true,
-                    challenge_id = challenge_id,
-                    slot_number = account.guest_slot_number,
-                    message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
-                    timeout = CHALLENGE_TIMEOUT
-                }))
-                return
-            end
+        -- First call - create challenge and send response to client
+        local success, challenge_id = create_guest_challenge(account.guest_slot_number)
+        if success then
+            ngx.status = 202
+            ngx.header.content_type = 'application/json'
+            -- Send challenge response to client
+            ngx.say(cjson.encode({
+                success = false,
+                challenge_required = true,
+                challenge_id = challenge_id,
+                slot_number = account.guest_slot_number,
+                message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
+                timeout = CHALLENGE_TIMEOUT
+            }))
+            return
         end
     end
 end
