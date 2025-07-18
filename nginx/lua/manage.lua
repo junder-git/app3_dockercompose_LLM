@@ -27,4 +27,21 @@ M.reject_user = user_manager.reject_user
 M.get_registration_stats = user_manager.get_registration_stats
 M.save_message = user_manager.save_message
 M.get_chat_history = user_manager.get_chat_history
-M.clear_chat_history = user_manager.clear_chat
+M.clear_chat_history = user_manager.clear_chat_history
+M.check_rate_limit = user_manager.check_rate_limit
+
+-- SSE Manager Functions
+M.can_start_sse_session = sse_manager.can_start_sse_session
+M.start_sse_session = sse_manager.start_sse_session
+M.update_sse_activity = sse_manager.update_sse_activity
+M.end_sse_session = sse_manager.end_sse_session
+M.get_sse_stats = sse_manager.get_sse_stats
+M.sse_send = sse_manager.sse_send
+M.setup_sse_response = sse_manager.setup_sse_response
+
+-- vLLM Streaming Functions
+M.handle_chat_stream_common = vllm_streaming.handle_chat_stream_common
+M.call_ollama_streaming = vllm_streaming.call_vllm_streaming  -- For backward compatibility
+M.call_vllm_streaming = vllm_streaming.call_vllm_streaming
+
+return M
