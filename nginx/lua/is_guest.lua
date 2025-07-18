@@ -414,6 +414,7 @@ local function create_secure_guest_session_with_challenge(slot_status_hold)
         end
         force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
         cleanup_inactive_sessions_on_demand()
+        -- ngx.exit(status)
         return create_secure_guest_session_with_challenge("clearing")
     end
 end

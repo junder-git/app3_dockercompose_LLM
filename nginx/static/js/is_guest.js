@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/guest.js - BASE FUNCTIONALITY (always loaded) - COMPLETE VERSION
+// nginx/static/js/is_guest.js - COMPLETE FIXED VERSION
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -108,43 +108,51 @@ class GuestChat {
             });
         }
         
-        // FIXED: Better Enter key handling
+        // FIXED: Proper Enter key handling for textarea
         const textarea = document.getElementById('chat-input');
         if (textarea) {
-            textarea.addEventListener('input', (e) => this.updateCharCount());
+            // Handle input changes for character count and auto-resize
+            textarea.addEventListener('input', (e) => {
+                this.updateCharCount();
+                this.autoResizeTextarea();
+            });
             
-            // FIXED: Proper Enter key handling
+            // CRITICAL FIX: Only keydown event for Enter handling
             textarea.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     if (e.shiftKey) {
                         // Shift+Enter: Allow new line (don't prevent default)
                         return;
                     } else {
-                        // Enter only: Send message
+                        // Enter only: Send message and prevent new line
                         e.preventDefault();
                         e.stopPropagation();
-                        this.sendMessage();
+                        
+                        // Only send if there's content
+                        if (textarea.value.trim()) {
+                            this.sendMessage();
+                        }
                         return false;
                     }
                 }
             });
 
-            // FIXED: Prevent form submission on Enter
-            textarea.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    return false;
-                }
-            });
+            // Auto-resize on load
+            this.autoResizeTextarea();
         }
 
-        // FIXED: Prevent any button clicks from submitting forms
+        // FIXED: Send button click handler
         const sendButton = document.getElementById('send-button');
         if (sendButton) {
             sendButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.sendMessage();
+                
+                // Only send if there's content
+                const textarea = document.getElementById('chat-input');
+                if (textarea && textarea.value.trim()) {
+                    this.sendMessage();
+                }
                 return false;
             });
         }
@@ -159,17 +167,39 @@ class GuestChat {
                     input.value = chip.dataset.prompt;
                     input.focus();
                     this.updateCharCount();
+                    this.autoResizeTextarea();
                 }
             });
         });
     }
 
+    // =============================================================================
+    // ENHANCED: Auto-resize textarea and character count
+    // =============================================================================
+
     updateCharCount() {
         const textarea = document.getElementById('chat-input');
         const countEl = document.getElementById('char-count');
+        
         if (textarea && countEl) {
             const count = textarea.value.length;
             countEl.textContent = count;
+        }
+    }
+
+    autoResizeTextarea() {
+        const textarea = document.getElementById('chat-input');
+        if (textarea) {
+            // Reset height to auto to get the correct scrollHeight
+            textarea.style.height = 'auto';
+            
+            // Set height to scrollHeight with max height limit
+            const maxHeight = 120; // 120px max height
+            const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+            textarea.style.height = newHeight + 'px';
+            
+            // Add scrollbar if content exceeds max height
+            textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
     }
 
@@ -199,15 +229,16 @@ class GuestChat {
             console.error('Chat input not found');
             return;
         }
+        
         const message = input.value.trim();
         
         if (!message) {
-            console.warn('Empty message');
+            console.warn('Empty message - not sending');
             return;
         }
 
         if (this.isTyping) {
-            console.warn('Already typing');
+            console.warn('Already typing - ignoring send request');
             return;
         }
 
@@ -220,87 +251,154 @@ class GuestChat {
             return;
         }
 
+        // Hide welcome prompt
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt) welcomePrompt.style.display = 'none';
         
-        // Add user message to UI
+        // Add user message to UI immediately
         this.addMessage('user', message);
         
-        // Clear input
+        // Clear input immediately and reset height
         input.value = '';
+        input.style.height = 'auto'; // Reset textarea height
         this.updateCharCount();
+        this.autoResizeTextarea();
         
         // Set typing state
         this.isTyping = true;
         this.updateButtons(true);
 
+        // Create abort controller for this request
         this.abortController = new AbortController();
-        const aiMessage = this.addMessage('ai', '', true);
+        
+        // Add AI message container for streaming
+        const aiMessage = this.addMessage('ai', '', true); // true = isStreaming
         let accumulated = '';
 
         try {
-            // FIXED: Simplified fetch for testing
+            console.log('🌐 Making streaming request to /api/chat/stream');
+            
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Accept': 'text/event-stream'
+                    'Accept': 'text/event-stream',
+                    'Cache-Control': 'no-cache'
                 },
                 credentials: 'include',
                 signal: this.abortController.signal,
                 body: JSON.stringify({
-                    message: message
+                    message: message,
+                    stream: true
                 })
             });
 
             console.log('📡 Response status:', response.status);
+            console.log('📡 Response headers:', Object.fromEntries(response.headers));
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // FIXED: Handle streaming response
+            // Check if response is actually SSE
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('text/event-stream')) {
+                console.warn('⚠️ Response is not SSE, content-type:', contentType);
+                
+                // Fallback: treat as regular JSON response
+                const text = await response.text();
+                console.log('📄 Non-streaming response:', text);
+                
+                try {
+                    const data = JSON.parse(text);
+                    if (data.content || data.response) {
+                        const content = data.content || data.response;
+                        this.updateStreamingMessage(aiMessage, content);
+                        this.finishStreaming(aiMessage, content);
+                    } else {
+                        throw new Error('No content in response');
+                    }
+                } catch (parseError) {
+                    throw new Error('Invalid response format');
+                }
+                return;
+            }
+
+            // Handle SSE streaming
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
+
+            console.log('📺 Starting SSE stream processing');
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                console.log('📦 Chunk received:', chunk);
                 
-                const lines = chunk.split('\n');
+                if (done) {
+                    console.log('✅ Stream reader finished');
+                    break;
+                }
+
+                // Decode chunk and add to buffer
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+                
+                // Process complete lines
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
                 for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    
+                    console.log('📦 Processing line:', line);
+                    
                     if (line.startsWith('data: ')) {
-                        const jsonStr = line.slice(6);
+                        const jsonStr = line.slice(6).trim();
+                        
                         if (jsonStr === '[DONE]') {
-                            console.log('✅ Stream completed');
+                            console.log('✅ Stream completed with [DONE]');
                             this.finishStreaming(aiMessage, accumulated);
                             return;
                         }
 
                         try {
                             const data = JSON.parse(jsonStr);
+                            console.log('📊 Parsed SSE data:', data);
+                            
                             if (data.content) {
                                 accumulated += data.content;
                                 this.updateStreamingMessage(aiMessage, accumulated);
+                            } else if (data.delta && data.delta.content) {
+                                accumulated += data.delta.content;
+                                this.updateStreamingMessage(aiMessage, accumulated);
+                            } else if (data.response) {
+                                accumulated += data.response;
+                                this.updateStreamingMessage(aiMessage, accumulated);
                             }
-                        } catch (e) {
-                            console.warn('JSON parse error:', e);
+                            
+                            if (data.done === true) {
+                                console.log('✅ Stream completed with done flag');
+                                this.finishStreaming(aiMessage, accumulated);
+                                return;
+                            }
+                        } catch (parseError) {
+                            console.warn('⚠️ JSON parse error:', parseError, 'for:', jsonStr);
                         }
                     }
                 }
             }
 
-            // If we get here, stream ended without [DONE]
+            // If we exit the loop without [DONE], finish anyway
+            console.log('🏁 Stream ended without [DONE], finishing with accumulated content');
             this.finishStreaming(aiMessage, accumulated);
 
         } catch (error) {
             console.error('❌ Chat error:', error);
             
-            if (error.name !== 'AbortError') {
+            if (error.name === 'AbortError') {
+                console.log('🛑 Request was aborted by user');
+                this.updateStreamingMessage(aiMessage, '*Request cancelled*');
+            } else {
                 const errorMessage = `*Error: ${error.message}*`;
                 this.updateStreamingMessage(aiMessage, errorMessage);
             }
@@ -354,41 +452,63 @@ class GuestChat {
         return messageDiv;
     }
 
+    // =============================================================================
+    // ENHANCED: Better streaming message updates
+    // =============================================================================
+
     updateStreamingMessage(messageDiv, content) {
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
+            // Parse markdown if available
             const parsedContent = window.marked ? marked.parse(content) : content;
-            streamingEl.innerHTML = parsedContent + '<span class="cursor">▋</span>';
             
-            // Auto-scroll
+            // Add typing cursor
+            streamingEl.innerHTML = parsedContent + '<span class="cursor blink">▋</span>';
+            
+            // Auto-scroll to bottom
             const messagesContainer = document.getElementById('chat-messages');
             if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                // Smooth scroll to bottom
+                messagesContainer.scrollTo({
+                    top: messagesContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         }
     }
 
     finishStreaming(messageDiv, finalContent) {
-        console.log('🏁 Finishing stream with content:', finalContent.substring(0, 50) + '...');
+        console.log('🏁 Finishing stream with content length:', finalContent.length);
         
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
+            // Remove cursor and set final content
             const parsedContent = window.marked ? marked.parse(finalContent) : finalContent;
             streamingEl.innerHTML = parsedContent;
             
-            // Only save if content exists and we're not loading from storage
+            // Save to storage if content exists
             if (finalContent.trim()) {
                 GuestChatStorage.saveMessage('assistant', finalContent);
             }
         }
         
+        // Reset typing state
         this.isTyping = false;
         this.updateButtons(false);
         
-        // Final scroll
+        // Final scroll to bottom
         const messagesContainer = document.getElementById('chat-messages');
         if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            messagesContainer.scrollTo({
+                top: messagesContainer.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+        
+        // Focus back to input
+        const input = document.getElementById('chat-input');
+        if (input) {
+            input.focus();
         }
     }
 
@@ -1118,6 +1238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.enhancedGuestManager = new EnhancedGuestSessionManager();
         console.log('🚀 Enhanced Guest Session Manager loaded');
     }
+    
     // Initialize challenge manager for existing guests
     fetch('/api/auth/check', { credentials: 'include' })
         .then(response => response.json())
@@ -1132,4 +1253,10 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => {
             console.warn('Could not check auth status:', error);
         });
+    
+    // Initialize main guest chat if on chat page
+    if (window.location.pathname === '/chat') {
+        window.guestChat = new GuestChat();
+        console.log('💬 Guest chat initialized');
+    }
 });
