@@ -8,9 +8,8 @@ services:
       --host 0.0.0.0
       --port 8000
       --tensor-parallel-size 1
-      --max-model-len 8192
+      --max-model-len 4096
       --gpu-memory-utilization 0.85
-      --swap-space 4
     ports:
       - "8000:8000"
     volumes:
@@ -58,10 +57,7 @@ services:
           memory: ${REDIS_MEMORY}
     restart: unless-stopped
     healthcheck:
-      test: [
-        "CMD-SHELL",
-        "redis-cli EXISTS user:${ADMIN_USERNAME} || exit 1"
-      ]
+      test: ["CMD-SHELL", "redis-cli EXISTS user:${ADMIN_USERNAME} || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
