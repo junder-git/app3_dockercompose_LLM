@@ -565,84 +565,75 @@ end
 -- =============================================
 function M.handle_chat_stream_common(stream_context)
     local cjson = require "cjson"
-    
+
     local function send_json(status, tbl)
         ngx.status = status
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode(tbl))
         ngx.exit(status)
     end
-    
-    -- Read request body
+
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
-    
     if not body then
         send_json(400, { error = "No request body" })
     end
-    
+
     local ok, request_data = pcall(cjson.decode, body)
-    if not ok then
+    if not ok or type(request_data) ~= "table" then
         send_json(400, { error = "Invalid JSON" })
     end
-    
+
     local message = request_data.message
     if not message or message == "" then
         send_json(400, { error = "Message is required" })
     end
-    
-    -- Execute pre-stream validation
+
+    -- Optional pre-check
     if stream_context.pre_stream_check then
         local check_ok, check_error = stream_context.pre_stream_check(message, request_data)
         if not check_ok then
             send_json(429, { error = check_error })
         end
     end
-    
-    -- CRITICAL: Set streaming headers IMMEDIATELY
+
+    -- Set SSE headers
     ngx.header.content_type = 'text/event-stream; charset=utf-8'
     ngx.header.cache_control = 'no-cache'
     ngx.header.connection = 'keep-alive'
     ngx.header.access_control_allow_origin = '*'
-    ngx.header["X-Accel-Buffering"] = "no"  -- Disable nginx buffering
-    
-    -- CRITICAL: Flush headers immediately
+    ngx.header["X-Accel-Buffering"] = "no"
+
     ngx.flush(true)
-    
-    -- Send immediate acknowledgment
-    ngx.say("data: " .. cjson.encode({
+
+    local function sse_send(data)
+        ngx.print("data: " .. cjson.encode(data) .. "\n\n")
+        ngx.flush(true)
+    end
+
+    -- Initial SSE signal
+    sse_send({
         type = "start",
         message = "Stream started",
         timestamp = ngx.time()
-    }))
-    ngx.flush(true)
-    
-    -- Prepare messages for AI
+    })
+
+    -- Prepare messages
     local messages = {}
-    
-    -- Add chat history if enabled
+
     if stream_context.include_history and request_data.include_history then
         local history = stream_context.get_history(stream_context.history_limit or 10)
         for _, msg in ipairs(history) do
-            table.insert(messages, {
-                role = msg.role,
-                content = msg.content
-            })
+            table.insert(messages, { role = msg.role, content = msg.content })
         end
     end
-    
-    -- Add current user message
-    table.insert(messages, {
-        role = "user", 
-        content = message
-    })
-    
-    -- Save user message if enabled
+
+    table.insert(messages, { role = "user", content = message })
+
     if stream_context.save_user_message then
         stream_context.save_user_message(message)
     end
-    
-    -- Merge options with context defaults
+
     local options = request_data.options or {}
     if stream_context.default_options then
         for k, v in pairs(stream_context.default_options) do
@@ -651,74 +642,65 @@ function M.handle_chat_stream_common(stream_context)
             end
         end
     end
-    
-    -- Send status update
-    ngx.say("data: " .. cjson.encode({
+
+    -- Announce connection
+    sse_send({
         type = "connecting",
         message = "Connecting to AI model...",
         model = OLLAMA_MODEL or "devstral"
-    }))
-    ngx.flush(true)
-    
-    -- Stream response from Ollama
+    })
+
     local accumulated_response = ""
     local chunk_count = 0
-    
+
     local success, error_msg = M.call_ollama_streaming(messages, options, function(chunk)
         chunk_count = chunk_count + 1
-        
         if chunk.content then
             accumulated_response = accumulated_response .. chunk.content
-            
-            -- Send chunk to client IMMEDIATELY
-            ngx.say("data: " .. cjson.encode({
+
+            sse_send({
                 type = "content",
                 content = chunk.content,
                 accumulated = accumulated_response,
                 chunk_number = chunk_count,
                 done = chunk.done or false
-            }))
-            ngx.flush(true)  -- CRITICAL: Flush immediately
+            })
         end
-        
+
         if chunk.done then
-            -- Send completion signal
-            ngx.say("data: " .. cjson.encode({
+            sse_send({
                 type = "complete",
                 final_content = accumulated_response,
                 total_chunks = chunk_count
-            }))
-            ngx.say("data: [DONE]")
+            })
+            ngx.print("data: [DONE]\n\n")
             ngx.flush(true)
         end
     end)
-    
+
     if not success then
-        local error_response = {
+        sse_send({
             type = "error",
             error = error_msg or "AI service unavailable",
             content = "*Error: " .. (error_msg or "AI service unavailable") .. "*",
             done = true
-        }
-        
-        ngx.say("data: " .. cjson.encode(error_response))
-        ngx.say("data: [DONE]")
+        })
+        ngx.print("data: [DONE]\n\n")
         ngx.flush(true)
         accumulated_response = "Error: " .. (error_msg or "AI service unavailable")
     end
-    
-    -- Save AI response if enabled
+
     if stream_context.save_ai_response and accumulated_response ~= "" then
         stream_context.save_ai_response(accumulated_response)
     end
-    
-    -- Execute post-stream cleanup
+
     if stream_context.post_stream_cleanup then
         stream_context.post_stream_cleanup(accumulated_response)
     end
-    
+
     ngx.exit(200)
 end
+
 
 -- Fix for the Ollama streaming issue
 -- Add this to your server.lua file or replace your existing call_ollama_streaming function
@@ -742,7 +724,6 @@ function M.call_ollama_streaming(messages, options, callback)
     local httpc = http.new()
     httpc:set_timeout(300000) -- 5 minute timeout
 
-    -- Parse host and port from OLLAMA_URL
     local host = ollama_url:match("http://([^:/]+)")
     local port = tonumber(ollama_url:match(":(%d+)")) or 11434
 
@@ -783,7 +764,6 @@ function M.call_ollama_streaming(messages, options, callback)
         end
 
         if not chunk then break end
-
         buffer = buffer .. chunk
 
         while true do
@@ -793,22 +773,30 @@ function M.call_ollama_streaming(messages, options, callback)
             local line = buffer:sub(1, newline_pos - 1)
             buffer = buffer:sub(newline_pos + 1)
 
-            if line:match("%S") then
+            if line and line:match("%S") then
                 local ok, data = pcall(cjson.decode, line)
-                if ok then
+                if ok and type(data) == "table" then
                     local content = data.message and data.message.content or ""
                     local done = data.done or false
 
-                    callback({
+                    -- Safely call the callback
+                    local callback_ok, cb_err = pcall(callback, {
                         content = content,
                         done = done
                     })
 
+                    if not callback_ok then
+                        ngx.log(ngx.ERR, "Callback error: ", cb_err)
+                        return false, "Streaming callback failed"
+                    end
+
                     if done then
-                        break
+                        ngx.log(ngx.INFO, "Ollama streaming complete.")
+                        httpc:close()
+                        return true
                     end
                 else
-                    ngx.log(ngx.WARN, "Failed to decode line: ", line)
+                    ngx.log(ngx.WARN, "⚠️ JSON decode failed: " .. tostring(line))
                 end
             end
         end
@@ -818,3 +806,6 @@ function M.call_ollama_streaming(messages, options, callback)
     ngx.log(ngx.INFO, "Streaming completed successfully")
     return true
 end
+
+
+return M
