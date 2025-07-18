@@ -720,170 +720,101 @@ function M.handle_chat_stream_common(stream_context)
     ngx.exit(200)
 end
 
--- =============================================
--- OLLAMA INTEGRATION - FIXED FOR REAL-TIME STREAMING
--- =============================================
+-- Fix for the Ollama streaming issue
+-- Add this to your server.lua file or replace your existing call_ollama_streaming function
+
 function M.call_ollama_streaming(messages, options, callback)
-    if not messages or #messages == 0 then
-        return false, "No messages provided"
-    end
-    
-    local httpc = http.new()
-    httpc:set_timeout(600000)  -- 10 minute timeout for large models
-    
-    -- Optimized options for your VRAM constraints
-    local safe_options = {
-        temperature = options.temperature or 0.7,
-        num_predict = options.max_tokens or 128,
-        num_ctx = tonumber(os.getenv("OLLAMA_CONTEXT_SIZE")) or 256,
-        num_gpu = tonumber(os.getenv("OLLAMA_GPU_LAYERS")) or 8,  -- Reduced for stability
-        num_thread = tonumber(os.getenv("OLLAMA_NUM_THREAD")) or 4,
-        num_batch = tonumber(os.getenv("OLLAMA_BATCH_SIZE")) or 64,
-        use_mmap = true,  -- Enable for large models
-        use_mlock = false  -- Disable to save RAM
-    }
+    local cjson = require "cjson"
+    local http = require "resty.http"
 
-    local payload = {
-        model = OLLAMA_MODEL or "devstral",
+    local ollama_url = os.getenv("OLLAMA_URL") or "http://ollama:11434"
+    local ollama_model = os.getenv("OLLAMA_MODEL") or "llama3"
+
+    ngx.log(ngx.INFO, "call_ollama_streaming(): 🚀 Starting real-time Ollama streaming...")
+
+    -- Prepare request payload for Ollama
+    local ollama_request = {
+        model = options.model or ollama_model,
         messages = messages,
-        stream = true,
-        options = safe_options
+        stream = true
     }
 
-    ngx.log(ngx.INFO, "🚀 Starting real-time Ollama streaming...")
+    local httpc = http.new()
+    httpc:set_timeout(300000) -- 5 minute timeout
 
-    -- CRITICAL FIX: Use connect() + request() instead of request_uri() for real streaming
-    local ok, err = httpc:connect("ollama", 11434)
+    -- Parse host and port from OLLAMA_URL
+    local host = ollama_url:match("http://([^:/]+)")
+    local port = tonumber(ollama_url:match(":(%d+)")) or 11434
+
+    ngx.log(ngx.INFO, "Connecting to Ollama at host: " .. tostring(host) .. ", port: " .. tostring(port))
+    local ok, err = httpc:connect(host, port)
     if not ok then
-        ngx.log(ngx.ERR, "❌ Failed to connect to Ollama: " .. (err or "unknown"))
-        return false, "Failed to connect to AI service: " .. (err or "unknown")
+        ngx.log(ngx.ERR, "Failed to connect to Ollama: ", err)
+        return false, "Failed to connect to Ollama: " .. err
     end
 
-    -- Send the request
     local res, err = httpc:request({
-        method = "POST",
         path = "/api/chat",
+        method = "POST",
         headers = {
-            ["Content-Type"] = "application/json",
-            ["Accept"] = "text/event-stream",
-            ["User-Agent"] = "nginx-lua-streaming-client",
-            ["Connection"] = "keep-alive"
+            ["Content-Type"] = "application/json"
         },
-        body = cjson.encode(payload)
+        body = cjson.encode(ollama_request)
     })
 
     if not res then
-        httpc:close()
-        ngx.log(ngx.ERR, "❌ Failed to send request to Ollama: " .. (err or "unknown"))
-        return false, "Failed to send request to AI service"
+        ngx.log(ngx.ERR, "Failed to request Ollama: ", err)
+        return false, "Failed to request Ollama: " .. err
     end
 
     if res.status ~= 200 then
-        httpc:close()
-        ngx.log(ngx.ERR, "❌ Ollama returned HTTP " .. res.status)
-        return false, "AI service error: HTTP " .. res.status
+        ngx.log(ngx.ERR, "Ollama returned error status: ", res.status)
+        return false, "Ollama error: HTTP " .. res.status
     end
 
-    ngx.log(ngx.INFO, "✅ Connected to Ollama, starting real-time stream processing...")
-
-    local accumulated = ""
-    local chunk_count = 0
-    local first_chunk_received = false
+    local reader = res.body_reader
     local buffer = ""
 
-    -- CRITICAL: Real-time streaming loop using receive()
     while true do
-        -- Read data in small chunks for immediate processing
-        local chunk, err, partial = httpc:receive(1024)  -- 1KB chunks
-        
-        if err then
-            if err == "closed" then
-                ngx.log(ngx.INFO, "🏁 Stream closed normally")
-                break
-            elseif err == "timeout" then
-                ngx.log(ngx.WARN, "⏰ Stream timeout, continuing...")
-                chunk = partial or ""
-            else
-                ngx.log(ngx.ERR, "❌ Stream error: " .. err)
-                break
-            end
+        local chunk, read_err = reader()
+        if read_err then
+            ngx.log(ngx.ERR, "Error reading chunk: ", read_err)
+            return false, "Error reading response: " .. read_err
         end
 
-        if chunk and chunk ~= "" then
-            buffer = buffer .. chunk
-            
-            -- Process complete lines immediately
-            while true do
-                local line_end = buffer:find("\n")
-                if not line_end then break end
-                
-                local line = buffer:sub(1, line_end - 1)
-                buffer = buffer:sub(line_end + 1)
-                
-                -- Skip empty lines
-                if line:match("%S") then
-                    chunk_count = chunk_count + 1
-                    
-                    if not first_chunk_received then
-                        ngx.log(ngx.INFO, "🎯 First chunk received and processing immediately!")
-                        first_chunk_received = true
+        if not chunk then break end
+
+        buffer = buffer .. chunk
+
+        while true do
+            local newline_pos = buffer:find("\n")
+            if not newline_pos then break end
+
+            local line = buffer:sub(1, newline_pos - 1)
+            buffer = buffer:sub(newline_pos + 1)
+
+            if line:match("%S") then
+                local ok, data = pcall(cjson.decode, line)
+                if ok then
+                    local content = data.message and data.message.content or ""
+                    local done = data.done or false
+
+                    callback({
+                        content = content,
+                        done = done
+                    })
+
+                    if done then
+                        break
                     end
-                    
-                    -- Prevent infinite loops
-                    if chunk_count > 1000 then
-                        ngx.log(ngx.WARN, "⚠️ Too many chunks, stopping at 1000")
-                        httpc:close()
-                        return accumulated, nil
-                    end
-                    
-                    -- Parse JSON line
-                    local ok, data = pcall(cjson.decode, line)
-                    if ok and data.message and data.message.content then
-                        local content = data.message.content
-                        accumulated = accumulated .. content
-                        
-                        -- Truncate if too long
-                        if #accumulated > 10000 then
-                            callback({
-                                content = "\n\n[Response truncated - too long]",
-                                accumulated = accumulated .. "\n\n[Response truncated - too long]",
-                                done = true
-                            })
-                            httpc:close()
-                            return accumulated, nil
-                        end
-                        
-                        -- IMMEDIATE callback for real-time streaming
-                        callback({
-                            content = content,
-                            accumulated = accumulated,
-                            done = data.done or false
-                        })
-                        
-                        -- Check if done
-                        if data.done then
-                            ngx.log(ngx.INFO, "✅ Stream completed normally after " .. chunk_count .. " chunks")
-                            httpc:close()
-                            return accumulated, nil
-                        end
-                        
-                    elseif ok and data.error then
-                        ngx.log(ngx.ERR, "❌ Ollama error: " .. tostring(data.error))
-                        httpc:close()
-                        return false, "AI model error: " .. tostring(data.error)
-                    end
-                    -- If JSON parse fails, just continue to next line
+                else
+                    ngx.log(ngx.WARN, "Failed to decode line: ", line)
                 end
             end
         end
-        
-        -- Small yield to prevent blocking
-        ngx.sleep(0.001)  -- 1ms yield
     end
 
     httpc:close()
-    ngx.log(ngx.INFO, "🏁 Ollama streaming completed, " .. chunk_count .. " chunks processed")
-    return accumulated, nil
+    ngx.log(ngx.INFO, "Streaming completed successfully")
+    return true
 end
-
-return M
