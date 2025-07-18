@@ -1,7 +1,9 @@
 git lfs install
 git clone https://huggingface.co/mistralai/Devstral-Small-2507 ./volumes/models/devstral
 pip install huggingface-cli
-=====
+===== 
+
+### ONLY REQUIRE Devstral-Small-2507-Q4_K_M.gguf for cpu+gpu compute
 
 huggingface-cli download mistralai/Devstral-Small-2507_gguf \
 --include "Devstral-Small-2507-Q4_K_M.gguf" "README.md" "SYSTEM_PROMPT.txt"
