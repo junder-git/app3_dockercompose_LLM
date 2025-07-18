@@ -47,7 +47,7 @@ env OLLAMA_HOST="${OLLAMA_HOST}" \
     OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD}" \
     OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE}" \
     OLLAMA_BATCH_SIZE="${OLLAMA_BATCH_SIZE}" \
-    CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
+    CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
     ollama serve &
 
 ollama_pid=$!
@@ -201,10 +201,10 @@ touch /tmp/ollama_ready
 
 log "🎯 HYBRID MODE READY"
 log "✅ Model: $hybrid_model"
-log "🎮 GPU Layers: ${OLLAMA_GPU_LAYERS:-12}"
-log "🧠 Context: ${MODEL_NUM_CTX:-4096} tokens"
+log "🎮 GPU Layers: ${OLLAMA_GPU_LAYERS:}"
+log "🧠 Context: ${MODEL_NUM_CTX} tokens"
 log "🌐 API: http://localhost:11434"
-log "⏱️  Keep Alive: ${OLLAMA_KEEP_ALIVE:-24h}"
+log "⏱️  Keep Alive: ${OLLAMA_KEEP_ALIVE}"
 
 # Enhanced monitoring with health checks
 cleanup() {
