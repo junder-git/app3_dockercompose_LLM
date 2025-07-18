@@ -260,7 +260,7 @@ class GuestChat {
         
         // Clear input immediately and reset height
         input.value = '';
-        input.style.height = 'auto'; // Reset textarea height
+        input.style.height = 'auto';
         this.updateCharCount();
         this.autoResizeTextarea();
         
@@ -276,8 +276,9 @@ class GuestChat {
         let accumulated = '';
 
         try {
-            console.log('🌐 Making streaming request to /api/chat/stream');
+            console.log('🌐 Making SSE request to /api/chat/stream');
             
+            // FIXED: Use fetch with proper SSE handling
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 
@@ -300,31 +301,7 @@ class GuestChat {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // Check if response is actually SSE
-            const contentType = response.headers.get('content-type') || '';
-            if (!contentType.includes('text/event-stream')) {
-                console.warn('⚠️ Response is not SSE, content-type:', contentType);
-                
-                // Fallback: treat as regular JSON response
-                const text = await response.text();
-                console.log('📄 Non-streaming response:', text);
-                
-                try {
-                    const data = JSON.parse(text);
-                    if (data.content || data.response) {
-                        const content = data.content || data.response;
-                        this.updateStreamingMessage(aiMessage, content);
-                        this.finishStreaming(aiMessage, content);
-                    } else {
-                        throw new Error('No content in response');
-                    }
-                } catch (parseError) {
-                    throw new Error('Invalid response format');
-                }
-                return;
-            }
-
-            // Handle SSE streaming
+            // CRITICAL FIX: Proper SSE stream processing
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -350,7 +327,7 @@ class GuestChat {
                 for (const line of lines) {
                     if (line.trim() === '') continue;
                     
-                    console.log('📦 Processing line:', line);
+                    console.log('📦 Processing SSE line:', line);
                     
                     if (line.startsWith('data: ')) {
                         const jsonStr = line.slice(6).trim();
@@ -365,27 +342,44 @@ class GuestChat {
                             const data = JSON.parse(jsonStr);
                             console.log('📊 Parsed SSE data:', data);
                             
-                            if (data.content) {
-                                accumulated += data.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
-                            } else if (data.delta && data.delta.content) {
-                                accumulated += data.delta.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
-                            } else if (data.response) {
-                                accumulated += data.response;
-                                this.updateStreamingMessage(aiMessage, accumulated);
+                            // Handle different SSE event types
+                            if (data.type === 'start') {
+                                console.log('🎬 Stream started');
+                                continue;
                             }
                             
-                            if (data.done === true) {
-                                console.log('✅ Stream completed with done flag');
+                            if (data.type === 'connecting') {
+                                console.log('🔗 Connecting to AI...');
+                                continue;
+                            }
+                            
+                            if (data.type === 'content' && data.content) {
+                                accumulated += data.content;
+                                this.updateStreamingMessage(aiMessage, accumulated);
+                                console.log('📝 Content received:', data.content);
+                            }
+                            
+                            if (data.type === 'complete' || data.done === true) {
+                                console.log('✅ Stream completed with complete flag');
                                 this.finishStreaming(aiMessage, accumulated);
                                 return;
                             }
+                            
+                            if (data.type === 'error') {
+                                console.error('❌ Stream error:', data.error);
+                                this.updateStreamingMessage(aiMessage, '*Error: ' + data.error + '*');
+                                this.finishStreaming(aiMessage, '*Error: ' + data.error + '*');
+                                return;
+                            }
+                            
                         } catch (parseError) {
                             console.warn('⚠️ JSON parse error:', parseError, 'for:', jsonStr);
                         }
                     }
                 }
+                
+                // Yield control to prevent blocking
+                await new Promise(resolve => setTimeout(resolve, 1));
             }
 
             // If we exit the loop without [DONE], finish anyway
