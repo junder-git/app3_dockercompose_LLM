@@ -1,3 +1,9 @@
+git lfs install
+git clone https://huggingface.co/mistralai/Devstral-Small-2507 ./volumes/models/devstral
+
+
+=====
+
 docker stop $(docker ps -aq)
 docker rmi $(docker images -q)
 

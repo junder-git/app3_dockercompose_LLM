@@ -1,65 +1,39 @@
 services:
-  ollama:
-    build:
-      context: ./ollama
-      dockerfile: Dockerfile
-      args:
-        OLLAMA_VERSION: ${OLLAMA_VERSION}
-    container_name: devstral-ollama
-    privileged: true
-    restart: unless-stopped
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: devstral-vllm
+    command: >
+      python3 -m vllm.entrypoints.openai.api_server
+      --model /models/devstral
+      --tokenizer-mode mistral
+      --config-format mistral
+      --load-format mistral
+      --tool-call-parser mistral
+      --enable-auto-tool-choice
+      --host 0.0.0.0
+      --port 8000
+      --tensor-parallel-size 1
     ports:
-      - "11434:11434"
-    environment:
-      # Ollama server configuration
-      - OLLAMA_VERSION=${OLLAMA_VERSION}
-      - OLLAMA_HOST=${OLLAMA_HOST}
-      - OLLAMA_MODELS=/home/ollama/.ollama/models
-      - OLLAMA_MMAP=${OLLAMA_MMAP}
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
-      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE}
-      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
-      - OLLAMA_GPU_LAYERS=${OLLAMA_GPU_LAYERS}
-      - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD}
-      - OLLAMA_CONTEXT_SIZE=${OLLAMA_CONTEXT_SIZE}
-      - OLLAMA_BATCH_SIZE=${OLLAMA_BATCH_SIZE}
-      # Model configuration
-      - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - MODEL_DISPLAY_NAME=${MODEL_DISPLAY_NAME}
-      - MODEL_DESCRIPTION=${MODEL_DESCRIPTION}
-      # Model parameters (for Modelfile)
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P}
-      - MODEL_TOP_K=${MODEL_TOP_K}
-      - MODEL_REPEAT_PENALTY=${MODEL_REPEAT_PENALTY}
-      - MODEL_REPEAT_LAST_N=${MODEL_REPEAT_LAST_N}
-      - MODEL_NUM_CTX=${MODEL_NUM_CTX}
-      - MODEL_NUM_PREDICT=${MODEL_NUM_PREDICT}
-      - MODEL_SEED=${MODEL_SEED}
+      - "8000:8000"
     volumes:
-      - ./volumes/ollama:/home/ollama/.ollama
-      - ./volumes/ollama-cache:/ollama-cache
+      - ./volumes/models/devstral:/models/devstral
+    environment:
+      - MODEL_NAME=${OLLAMA_MODEL}
     deploy:
       resources:
         limits:
-          cpus: ${OLLAMA_CPU}
-          memory: ${OLLAMA_MEMORY}
+          cpus: "${VLLM_CPU_LIMIT}"
+          memory: "${VLLM_MEMORY_LIMIT}"
         reservations:
-          cpus: ${OLLAMA_CPU}
-          memory: ${OLLAMA_MEMORY}
           devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+            - capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/v1/models || exit 1"]
+      interval: 10s
+      timeout: 5s
       retries: 5
-      start_period: 120s
-    networks:
-      - devstral-network
-
+      start_period: 20s
+    restart: unless-stopped
   redis:
     build: ./redis
     container_name: devstral-redis
@@ -110,7 +84,7 @@ services:
       - ./volumes/nginx_cache:/var/cache/nginx
       - ./volumes/nginx_logs:/var/log/nginx
     depends_on:
-      ollama:
+      vllm:
         condition: service_healthy
       redis:
         condition: service_healthy
