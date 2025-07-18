@@ -121,7 +121,7 @@ end
 -- GUEST CHALLENGE SYSTEM
 -- =============================================================================
 
-local function create_guest_challenge(slot_number, challenger_ip)
+local function create_guest_challenge(slot_number)
     local red = connect_redis()
     if not red then return false, "Redis unavailable" end
     
@@ -141,7 +141,6 @@ local function create_guest_challenge(slot_number, challenger_ip)
     local challenge = {
         challenge_id = challenge_id,
         slot_number = slot_number,
-        challenger_ip = challenger_ip,
         created_at = ngx.time(),
         expires_at = ngx.time() + CHALLENGE_TIMEOUT,
         status = "pending"
@@ -151,7 +150,7 @@ local function create_guest_challenge(slot_number, challenger_ip)
     red:expire(challenge_key, CHALLENGE_TIMEOUT + 5)
     red:close()
     
-    ngx.log(ngx.INFO, "🚨 Guest challenge created for slot " .. slot_number .. " by " .. challenger_ip)
+    ngx.log(ngx.INFO, "🚨 Guest challenge created for slot " .. slot_number .. " . ")
     return true, challenge_id
 end
 
@@ -357,7 +356,6 @@ local function create_secure_guest_session_with_challenge(slot_status_hold)
             expires_at = expires_at,
             message_count = 0,
             max_messages = GUEST_MESSAGE_LIMIT,
-            created_ip = challenger_ip,
             last_activity = now,
             priority = 3,
             chat_storage = "redis",
@@ -399,7 +397,7 @@ local function create_secure_guest_session_with_challenge(slot_status_hold)
             chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
         }, nil
     else
-        local success, challenge_id = create_guest_challenge(account.guest_slot_number, challenger_ip)
+        local success, challenge_id = create_guest_challenge(account.guest_slot_number)
         local red = connect_redis()
         if success then
             ngx.status = 202
