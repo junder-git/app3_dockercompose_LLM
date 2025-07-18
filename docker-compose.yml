@@ -19,11 +19,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: ${VLLM_CPU_LIMIT}
-          memory: ${VLLM_MEMORY_LIMIT}
+          cpus: ${VLLM_CPU}
+          memory: ${VLLM_MEMORY}
         reservations:
-          cpus: ${VLLM_CPU_LIMIT}
-          memory: ${VLLM_MEMORY_LIMIT}
+          cpus: ${VLLM_CPU}
+          memory: ${VLLM_MEMORY}
           devices:
             - capabilities: [gpu]
     restart: unless-stopped
