@@ -8,8 +8,8 @@ error() { echo "❌ $1" >&2; exit 1; }
 warning() { echo "⚠️  $1" >&2; }
 
 # Validate environment
-[[ -z "${OLLAMA_MODEL:-}" ]] && error "OLLAMA_MODEL not set"
-[[ -z "${MODEL_DISPLAY_NAME:-}" ]] && error "MODEL_DISPLAY_NAME not set"
+[[ -z "${OLLAMA_MODEL}" ]] && error "OLLAMA_MODEL not set"
+[[ -z "${MODEL_DISPLAY_NAME}" ]] && error "MODEL_DISPLAY_NAME not set"
 
 log "🚀 Starting hybrid GPU+CPU mode for $MODEL_DISPLAY_NAME"
 
@@ -36,19 +36,18 @@ nvidia-smi --gpu-reset 2>/dev/null || true
 mkdir -p "${OLLAMA_MODELS:-/home/ollama/.ollama/models}"
 
 # Start Ollama service with proper environment variables
-log "🔧 Starting Ollama service with keep-alive=${OLLAMA_KEEP_ALIVE:-24h}..."
-env OLLAMA_HOST="${OLLAMA_HOST:-0.0.0.0:11434}" \
-    OLLAMA_MODELS="${OLLAMA_MODELS:-/home/ollama/.ollama/models}" \
-    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-24h}" \
-    OLLAMA_NOPRUNE="${OLLAMA_NOPRUNE:-0}" \
-    OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}" \
-    OLLAMA_MMAP="${OLLAMA_MMAP:-0}" \
-    OLLAMA_MLOCK="${OLLAMA_MLOCK:-1}" \
-    OLLAMA_GPU_LAYERS="${OLLAMA_GPU_LAYERS:-12}" \
-    OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD:-4}" \
-    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE:-4096}" \
-    OLLAMA_BATCH_SIZE="${OLLAMA_BATCH_SIZE:-128}" \
-    CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
+log "🔧 Starting Ollama service with keep-alive=${OLLAMA_KEEP_ALIVE}..."
+env OLLAMA_HOST="${OLLAMA_HOST}" \
+    OLLAMA_MODELS="${OLLAMA_MODELS}" \
+    OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE}" \
+    OLLAMA_NOPRUNE="${OLLAMA_NOPRUNE}" \
+    OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS}" \
+    OLLAMA_MMAP="${OLLAMA_MMAP}" \
+    OLLAMA_GPU_LAYERS="${OLLAMA_GPU_LAYERS}" \
+    OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD}" \
+    OLLAMA_CONTEXT_SIZE="${OLLAMA_CONTEXT_SIZE}" \
+    OLLAMA_BATCH_SIZE="${OLLAMA_BATCH_SIZE}" \
+    CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES}" \
     ollama serve &
 
 ollama_pid=$!
@@ -158,6 +157,7 @@ test_payload=$(cat << EOF
     "messages": [{"role": "user", "content": "Hello! Respond briefly that you are ready."}],
     "stream": false,
     "keep_alive": "${OLLAMA_KEEP_ALIVE}",
+    "use_mmap": "${OLLAMA_MMAP}",
     "options": {
         "temperature": ${MODEL_TEMPERATURE},
         "num_predict": ${MODEL_NUM_PREDICT},

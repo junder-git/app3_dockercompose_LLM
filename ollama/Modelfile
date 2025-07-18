@@ -7,6 +7,7 @@ $MODEL_DESCRIPTION
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."
 
 # Core model parameters - FIXED: Only valid Ollama parameters
+PARAMETER use_mmap $OLLAMA_MMAP
 PARAMETER temperature $MODEL_TEMPERATURE
 PARAMETER top_p $MODEL_TOP_P
 PARAMETER top_k $MODEL_TOP_K
