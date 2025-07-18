@@ -24,25 +24,47 @@
                     <div class="text-muted">
                         <small>💡 Tip: Use <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new lines</small>
                     </div>
+                    
+                    <!-- OPTIONAL: Suggestion chips for guest users -->
+                    <div class="suggestions mt-4">
+                        <div class="suggestion-card" data-prompt="Help me debug this Python function">
+                            <strong>Debug Code</strong><br>
+                            <small class="text-muted">Get help fixing your code issues</small>
+                        </div>
+                        <div class="suggestion-card" data-prompt="Explain how async/await works in JavaScript">
+                            <strong>Learn Concepts</strong><br>
+                            <small class="text-muted">Understand programming concepts</small>
+                        </div>
+                        <div class="suggestion-card" data-prompt="What are the best practices for API design?">
+                            <strong>Best Practices</strong><br>
+                            <small class="text-muted">Get professional development advice</small>
+                        </div>
+                    </div>
                 </div>
             </div>
             
             <div class="chat-input-container">
                 <form id="chat-form" class="chat-input-form">
-                    <textarea 
-                        class="form-control chat-input" 
-                        id="chat-input" 
-                        placeholder="{{ chat_placeholder }}" 
-                        rows="1"
-                        required
-                        style="resize: none; overflow: hidden;"
-                        onInput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
+                    <div class="chat-input-wrapper" style="flex: 1; position: relative;">
+                        <textarea 
+                            class="form-control chat-input" 
+                            id="chat-input" 
+                            placeholder="{{ chat_placeholder }}" 
+                            rows="1"
+                            required
+                            style="resize: none; overflow-y: hidden; min-height: 44px; max-height: 120px; padding-right: 50px;"></textarea>
+                        
+                        <!-- Character count indicator -->
+                        <div style="position: absolute; bottom: 8px; right: 12px; font-size: 11px; color: #6c757d; pointer-events: none;">
+                            <span id="char-count">0</span>
+                        </div>
+                    </div>
                     
-                    <button type="submit" class="btn btn-primary btn-send" id="send-button">
+                    <button type="submit" class="btn btn-primary btn-send" id="send-button" title="Send message (Enter)">
                         <i class="bi bi-send"></i>
                     </button>
                     
-                    <button type="button" class="btn btn-danger btn-send" id="stop-button" style="display: none;">
+                    <button type="button" class="btn btn-danger btn-send" id="stop-button" style="display: none;" title="Stop generation">
                         <i class="bi bi-stop"></i>
                     </button>
                 </form>
@@ -50,23 +72,67 @@
                 <div class="d-flex justify-content-between align-items-center mt-2">
                     <div class="text-muted">
                         <small>
-                            <span id="char-count">0</span> characters
+                            <i class="bi bi-clock"></i>
+                            <span id="message-count">Guest session</span>
                             <span class="mx-2">•</span>
-                            <span id="message-count">0</span> messages
+                            <span id="session-info">10 messages max</span>
                         </small>
                     </div>
                     <div>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" id="clear-chat">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="clear-chat" title="Clear chat history">
                             <i class="bi bi-trash"></i> Clear
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm ms-1" onclick="downloadGuestHistory()" title="Export chat">
+                            <i class="bi bi-download"></i>
                         </button>
                     </div>
                 </div>
             </div>
         </div>
     </main>
+
+    <!-- Bootstrap JS -->
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/lib/jquery.min.js"></script>
+    
+    <!-- App JS -->
     <script src="/js/is_public.js"></script>
     <script src="/js/is_guest.js"></script>
+    
+    <!-- Enhanced suggestion chip handling -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Handle suggestion card clicks
+        document.querySelectorAll('.suggestion-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const prompt = this.dataset.prompt;
+                const input = document.getElementById('chat-input');
+                if (input && prompt) {
+                    input.value = prompt;
+                    input.focus();
+                    
+                    // Trigger input event to update char count and resize
+                    const event = new Event('input', { bubbles: true });
+                    input.dispatchEvent(event);
+                    
+                    // Hide welcome prompt
+                    const welcomePrompt = document.getElementById('welcome-prompt');
+                    if (welcomePrompt) {
+                        welcomePrompt.style.display = 'none';
+                    }
+                }
+            });
+        });
+        
+        // Auto-focus input on page load
+        const input = document.getElementById('chat-input');
+        if (input) {
+            // Small delay to ensure everything is loaded
+            setTimeout(() => {
+                input.focus();
+            }, 100);
+        }
+    });
+    </script>
 </body>
 </html>
