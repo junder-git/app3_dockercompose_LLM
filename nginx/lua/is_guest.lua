@@ -329,12 +329,7 @@ local function find_available_guest_slot_or_challenge()
     return guest_accounts[j], "challengeable"
 end
 
-local function create_secure_guest_session_with_challenge(slot_status_hold) 
-    if slot_status_hold then
-        ngx.sleep(8)
-        ngx.exit(status)
-        return create_secure_guest_session_with_challenge()
-    end
+local function create_secure_guest_session_with_challenge() 
     local account, slot_status = find_available_guest_slot_or_challenge()
     if not slot_status then
         -- Normal session creation
@@ -398,24 +393,25 @@ local function create_secure_guest_session_with_challenge(slot_status_hold)
             chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400)
         }, nil
     else
-        local success, challenge_id = create_guest_challenge(account.guest_slot_number)
-        local red = connect_redis()
-        if success then
-            ngx.status = 202
-            ngx.header.content_type = 'application/json'
-            slot_status="pending"
-            ngx.say(cjson.encode({
-                success = false,
-                challenge_required = true,
-                challenge_id = challenge_id,
-                slot_number = account.guest_slot_number,
-                message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
-                timeout = CHALLENGE_TIMEOUT
-            }))
-            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-            cleanup_inactive_sessions_on_demand()
+        -- Challenge required - slot is occupied
+        if slot_status=="challengeable" then
+            -- First call - create challenge and send response to client
+            local success, challenge_id = create_guest_challenge(account.guest_slot_number)
+            if success then
+                ngx.status = 202
+                ngx.header.content_type = 'application/json'
+                -- Send challenge response to client
+                ngx.say(cjson.encode({
+                    success = false,
+                    challenge_required = true,
+                    challenge_id = challenge_id,
+                    slot_number = account.guest_slot_number,
+                    message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
+                    timeout = CHALLENGE_TIMEOUT
+                }))
+                return
+            end
         end
-        return create_secure_guest_session_with_challenge("clearing")
     end
 end
 
