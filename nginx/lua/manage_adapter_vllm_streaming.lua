@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/vllm_adapter.lua - Complete adapter for vLLM API
+-- nginx/lua/manage_adapter_vllm_streaming.lua - Complete adapter for vLLM API
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -164,7 +164,7 @@ function M.call_vllm_api(messages, options)
                 success = false,
                 error = "Failed to read vLLM response: " .. tostring(err)
             }
-        }
+        end
         
         local ok, data = pcall(cjson.decode, body)
         if not ok then
@@ -173,7 +173,7 @@ function M.call_vllm_api(messages, options)
                 success = false,
                 error = "Failed to parse vLLM response"
             }
-        }
+        end
         
         -- Extract text from Mistral response format
         if data.choices and data.choices[1] and data.choices[1].message then
@@ -189,7 +189,7 @@ function M.call_vllm_api(messages, options)
                 error = "Unexpected vLLM response format",
                 raw_response = data
             }
-        }
+        end
     else
         -- Return the response object for streaming
         return {

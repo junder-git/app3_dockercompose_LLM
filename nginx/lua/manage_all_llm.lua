@@ -1,11 +1,11 @@
 -- =============================================================================
--- nginx/lua/vllm_streaming.lua - vLLM streaming functions
+-- nginx/lua/manage_all_llm.lua - vLLM streaming functions
 -- =============================================================================
 
 local cjson = require "cjson"
-local vllm_adapter = require "vllm_adapter"
-local sse_manager = require "sse_manager"
-local user_manager = require "user_manager"
+local vllm_adapter = require "manage_adapter_vllm_streaming"
+local sse_manager = require "manage_sse"
+local user_manager = require "manage_users"
 
 local M = {}
 

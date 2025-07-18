@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/sse_manager.lua - SSE (Server-Sent Events) session management
+-- nginx/lua/manage_sse.lua - SSE (Server-Sent Events) session management
 -- =============================================================================
 
 local cjson = require "cjson"

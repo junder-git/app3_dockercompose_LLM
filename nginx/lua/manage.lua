@@ -1,11 +1,12 @@
 -- =============================================================================
--- nginx/lua/server.lua - Main server module (refactored)
+-- nginx/lua/manage.lua - Main server module (refactored)
 -- =============================================================================
 
 -- Load sub-modules
-local user_manager = require "user_manager"
-local sse_manager = require "sse_manager"
-local vllm_streaming = require "vllm_streaming"
+local user_manager = require "manage_users"
+local sse_manager = require "manage_sse"
+local vllm_streaming = require "manage_all_llm"
+local vllm_adapter = require "manage_adapter_vllm_streaming"
 
 -- Create the main module
 local M = {}
@@ -43,5 +44,10 @@ M.setup_sse_response = sse_manager.setup_sse_response
 M.handle_chat_stream_common = vllm_streaming.handle_chat_stream_common
 M.call_ollama_streaming = vllm_streaming.call_vllm_streaming  -- For backward compatibility
 M.call_vllm_streaming = vllm_streaming.call_vllm_streaming
+
+-- vLLM Adapter Functions
+M.call_vllm_api = vllm_adapter.call_vllm_api
+M.stream_to_sse = vllm_adapter.stream_to_sse
+M.format_messages = vllm_adapter.format_messages
 
 return M

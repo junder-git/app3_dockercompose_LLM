@@ -1,10 +1,11 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - COMPLETE GUEST CHALLENGE SYSTEM WITH AUTO-CLEANUP
+-- nginx/lua/is_guest.lua - UPDATED FOR VLLM BACKEND INTEGRATION
 -- =============================================================================
 
 local cjson = require "cjson"
 local redis = require "resty.redis"
 local jwt = require "resty.jwt"
+local manage = require "manage"  -- Use existing manage module
 
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
@@ -117,10 +118,7 @@ local function generate_display_username()
     return fallback
 end
 
--- =============================================================================
--- GUEST CHALLENGE SYSTEM WITH AUTO-CLEANUP
--- =============================================================================
-
+-- [Challenge system functions remain the same - keeping existing implementation]
 local function create_guest_challenge(slot_number)
     local red = connect_redis()
     if not red then return false, "Redis unavailable" end
@@ -128,7 +126,6 @@ local function create_guest_challenge(slot_number)
     local challenge_id = "challenge_" .. slot_number .. "_" .. ngx.time() .. "_" .. math.random(1000, 9999)
     local challenge_key = "guest_challenge:" .. slot_number
     
-    -- Check if there's already an active challenge for this slot
     local existing_challenge = redis_to_lua(red:get(challenge_key))
     if existing_challenge then
         local ok, challenge_data = pcall(cjson.decode, existing_challenge)
@@ -154,7 +151,6 @@ local function create_guest_challenge(slot_number)
     return true, challenge_id
 end
 
--- AUTO-CLEANUP: This function automatically kicks inactive users when their challenge expires
 local function get_guest_challenge(slot_number)
     local red = connect_redis()
     if not red then return nil end
@@ -174,20 +170,16 @@ local function get_guest_challenge(slot_number)
         return nil
     end
     
-    -- AUTO-CLEANUP: If challenge expired, kick the inactive user immediately
     if challenge.expires_at <= ngx.time() then
         ngx.log(ngx.WARN, "🚨 Challenge expired for slot " .. slot_number .. " - auto-kicking inactive user")
         
-        -- Clean up challenge first
         red:del(challenge_key)
         
-        -- Kick the inactive user who didn't respond to challenge
         local session_key = "guest_active_session:" .. slot_number
         local session_data = redis_to_lua(red:get(session_key))
         if session_data then
             local session_ok, session = pcall(cjson.decode, session_data)
             if session_ok then
-                -- Clean up all user data
                 red:del("guest_session:" .. session.username)
                 red:del("username:" .. session.username)
                 ngx.log(ngx.WARN, "👢 Auto-kicked inactive user '" .. (session.display_username or session.username) .. "' (no challenge response)")
@@ -196,7 +188,7 @@ local function get_guest_challenge(slot_number)
         end
         
         red:close()
-        return nil  -- Return nil since challenge is now cleaned up and user kicked
+        return nil
     end
     
     red:close()
@@ -222,21 +214,19 @@ local function respond_to_challenge(slot_number, response, responder_ip)
         return false, "Invalid challenge data"
     end
     
-    -- Check if challenge expired
     if challenge.expires_at <= ngx.time() then
         red:del(challenge_key)
         red:close()
         return false, "Challenge expired"
     end
     
-    -- Update challenge with response
     challenge.response = response
     challenge.responder_ip = responder_ip
     challenge.responded_at = ngx.time()
     challenge.status = response == "accept" and "accepted" or "rejected"
     
     red:set(challenge_key, cjson.encode(challenge))
-    red:expire(challenge_key, 60)  -- Keep for 1 minute for logging
+    red:expire(challenge_key, 60)
     red:close()
     
     ngx.log(ngx.INFO, "✅ Challenge response for slot " .. slot_number .. ": " .. response .. " by " .. responder_ip)
@@ -261,7 +251,6 @@ local function force_kick_guest_session(slot_number, reason)
         return false, "Invalid session data"
     end
     
-    -- Clean up all session data
     red:del(session_key)
     red:del("guest_session:" .. session.username)
     red:del("username:" .. session.username)
@@ -273,10 +262,7 @@ local function force_kick_guest_session(slot_number, reason)
     return true, session.display_username or session.username
 end
 
--- =============================================================================
--- ENHANCED SESSION MANAGEMENT WITH AUTO-CLEANUP
--- =============================================================================
-
+-- [Session management functions remain the same - keeping existing implementation]
 local function cleanup_inactive_sessions_on_demand()
     local red = connect_redis()
     if not red then return 0 end
@@ -300,7 +286,6 @@ local function cleanup_inactive_sessions_on_demand()
             end
         end
         
-        -- Auto-cleanup expired challenges (which kicks inactive users)
         get_guest_challenge(i)
     end
     
@@ -308,27 +293,22 @@ local function cleanup_inactive_sessions_on_demand()
     return cleaned
 end
 
--- Enhanced slot finder with automatic cleanup
 local function find_available_guest_slot_or_challenge()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
     local guest_accounts = get_guest_accounts()
     
-    -- Pass 1: Look for available slots and auto-cleanup expired stuff
     for i = 1, MAX_GUEST_SESSIONS do
         local key = "guest_active_session:" .. i
         local data = redis_to_lua(red:get(key))
         
         if not data then
-            -- Slot is completely free
             red:close()
             return guest_accounts[i], nil
         end
         
-        -- Check if session is expired
         local ok, session = pcall(cjson.decode, data)
         if ok and session.expires_at and ngx.time() >= session.expires_at then
-            -- Session expired - clean it up completely
             red:del(key)
             red:del("guest_session:" .. session.username)
             red:del("username:" .. session.username)
@@ -338,23 +318,17 @@ local function find_available_guest_slot_or_challenge()
             return guest_accounts[i], nil
         end
         
-        -- CRITICAL: Check for expired challenges (this auto-kicks inactive users)
         local challenge = get_guest_challenge(i)
         if not challenge then
-            -- Either no challenge exists, OR challenge just expired and user was kicked
-            -- Check if session still exists after potential auto-kick
             local session_check = redis_to_lua(red:get(key))
             if not session_check then
-                -- Session was cleaned up by expired challenge - slot is now free!
                 ngx.log(ngx.INFO, "🎯 Slot " .. i .. " freed by expired challenge cleanup")
                 red:close()
                 return guest_accounts[i], nil
             end
-            -- Session still exists but no active challenge - can be challenged
         end
     end
     
-    -- All slots occupied with active sessions - pick one to challenge
     local toggle_dict = ngx.shared.guest_toggle
     local last = toggle_dict:get("last_slot") or 1
     local j = (last == 1) and 2 or 1
@@ -369,7 +343,6 @@ local function create_secure_guest_session_with_challenge()
     local account, slot_status = find_available_guest_slot_or_challenge()
     
     if not slot_status then
-        -- Normal session creation - slot is available
         local red = connect_redis()
         if not red then
             ngx.status = 503
@@ -430,7 +403,6 @@ local function create_secure_guest_session_with_challenge()
         ngx.log(ngx.INFO, "✅ GUEST SESSION CREATION SUCCESS")
         ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
         
-        -- Return success response
         ngx.status = 200
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
@@ -450,15 +422,12 @@ local function create_secure_guest_session_with_challenge()
         return
         
     else
-        -- Challenge required - slot is occupied
         local success, challenge_id = create_guest_challenge(account.guest_slot_number)
         
         if success then
-            -- Set headers BEFORE calling ngx.say()
             ngx.status = 202
             ngx.header.content_type = 'application/json'
             
-            -- Send challenge response to client
             ngx.say(cjson.encode({
                 success = false,
                 challenge_required = true,
@@ -470,7 +439,6 @@ local function create_secure_guest_session_with_challenge()
             
             return
         else
-            -- Challenge creation failed
             ngx.status = 500
             ngx.header.content_type = 'application/json'
             ngx.say(cjson.encode({
@@ -483,10 +451,7 @@ local function create_secure_guest_session_with_challenge()
     end
 end
 
--- =============================================================================
--- EXISTING FUNCTIONS
--- =============================================================================
-
+-- [Existing validation and stats functions remain the same]
 local function validate_guest_session(token)
     if not token then return nil, "No token provided" end
 
@@ -630,7 +595,7 @@ local function clear_all_guest_sessions()
 end
 
 -- =============================================================================
--- API HANDLERS WITH FIXED RESPONSE HANDLING
+-- API HANDLERS WITH VLLM INTEGRATION
 -- =============================================================================
 
 local function handle_guest_api()
@@ -646,10 +611,7 @@ local function handle_guest_api()
     local method = ngx.var.request_method
     
     if uri == "/api/guest/create-session" and method == "POST" then
-        -- create_secure_guest_session_with_challenge() already handles the complete response
-        -- It sends either 200 (success), 202 (challenge), or 500 (error) and returns
         create_secure_guest_session_with_challenge()
-        -- No further processing needed - function already sent response and returned
         
     elseif uri == "/api/guest/challenge-status" and method == "GET" then
         local slot_number = tonumber(ngx.var.arg_slot)
@@ -724,7 +686,6 @@ local function handle_guest_api()
             send_json(400, { error = "slot_number required" })
         end
         
-        -- Check if challenge is still active
         local challenge = get_guest_challenge(slot_number)
         if challenge and challenge.expires_at > ngx.time() then
             send_json(400, {
@@ -734,12 +695,10 @@ local function handle_guest_api()
             })
         end
         
-        -- Force cleanup: remove challenge, session, and all related data
         local red = connect_redis()
         local kicked_user = "unknown"
         
         if red then
-            -- Get current session info before deleting
             local session_key = "guest_active_session:" .. slot_number
             local session_data = redis_to_lua(red:get(session_key))
             if session_data then
@@ -749,11 +708,9 @@ local function handle_guest_api()
                 end
             end
             
-            -- Clean up everything related to this slot
             red:del("guest_challenge:" .. slot_number)
             red:del(session_key)
             
-            -- Clean up user-specific data
             if session_data then
                 local session_ok, session = pcall(cjson.decode, session_data)
                 if session_ok then
@@ -766,10 +723,7 @@ local function handle_guest_api()
         end
         
         ngx.log(ngx.WARN, "Force kicked inactive user '" .. kicked_user .. "' from slot " .. slot_number .. " (challenge timeout)")
-        
-        -- Now try to create session - should succeed since slot is completely clean
         create_secure_guest_session_with_challenge()
-        -- Don't send additional response - the function already did
         
     elseif uri == "/api/guest/stats" and method == "GET" then
         local stats = get_guest_stats()
@@ -810,10 +764,12 @@ local function handle_chat_page()
     template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_guest.html", context)
 end
 
-local function handle_chat_stream()
-    local server = require "server"
+-- =============================================================================
+-- UPDATED VLLM CHAT HANDLERS USING EXISTING MANAGE MODULE
+-- =============================================================================
+
+local function handle_vllm_chat_stream()
     local is_who = require "is_who"
-    
     local username, user_data = is_who.require_guest()
     
     local function update_guest_message_count()
@@ -855,6 +811,7 @@ local function handle_chat_stream()
         return true, nil
     end
     
+    -- Use the existing manage module for streaming
     local stream_context = {
         user_type = "is_guest",
         username = username,
@@ -864,12 +821,18 @@ local function handle_chat_stream()
         save_user_message = nil,
         save_ai_response = nil,
         pre_stream_check = pre_stream_check,
+        default_options = {
+            model = "devstral",
+            temperature = 0.7,
+            max_tokens = 1024
+        },
         post_stream_cleanup = function(response)
-            ngx.log(ngx.INFO, "Guest stream completed for: " .. (username or "unknown"))
+            ngx.log(ngx.INFO, "Guest vLLM stream completed for: " .. (username or "unknown"))
         end
     }
     
-    server.handle_chat_stream_common(stream_context)
+    -- Use existing manage module streaming function
+    manage.handle_chat_stream_common(stream_context)
 end
 
 local function handle_chat_api()
@@ -904,7 +867,7 @@ local function handle_chat_api()
         })
         
     elseif uri == "/api/chat/stream" and method == "POST" then
-        handle_chat_stream()
+        handle_vllm_chat_stream()
         
     else
         send_json(404, { 
@@ -924,9 +887,9 @@ return {
     handle_chat_page = handle_chat_page,
     handle_guest_api = handle_guest_api,
     handle_chat_api = handle_chat_api,
-    handle_chat_stream = handle_chat_stream,
+    handle_vllm_chat_stream = handle_vllm_chat_stream,
     
-    -- New challenge system functions
+    -- Challenge system functions
     create_guest_challenge = create_guest_challenge,
     get_guest_challenge = get_guest_challenge,
     respond_to_challenge = respond_to_challenge,

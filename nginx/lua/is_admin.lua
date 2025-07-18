@@ -61,7 +61,7 @@ end
 
 local function handle_admin_api()
     local cjson = require "cjson"
-    local server = require "server"
+    local manage = require "manage"
     
     local function send_json(status, tbl)
         ngx.status = status
@@ -81,8 +81,8 @@ local function handle_admin_api()
     
     if uri == "/api/admin/users" and method == "GET" then
         -- Get all users with enhanced details
-        local users = server.get_all_users()
-        local user_counts = server.get_user_counts()
+        local users = manage.get_all_users()
+        local user_counts = manage.get_user_counts()
         
         send_json(200, { 
             success = true, 
@@ -93,7 +93,7 @@ local function handle_admin_api()
         
     elseif uri == "/api/admin/users/pending" and method == "GET" then
         -- Get pending users for approval
-        local pending_users = server.get_pending_users()
+        local pending_users = manage.get_pending_users()
         
         send_json(200, {
             success = true,
@@ -123,7 +123,7 @@ local function handle_admin_api()
             send_json(400, { error = "Username is required" })
         end
         
-        local success, message = server.approve_user(target_username, username)
+        local success, message = manage.approve_user(target_username, username)
         
         if success then
             send_json(200, { 
@@ -161,7 +161,7 @@ local function handle_admin_api()
             send_json(400, { error = "Username is required" })
         end
         
-        local success, message = server.reject_user(target_username, username, reason)
+        local success, message = manage.reject_user(target_username, username, reason)
         
         if success then
             send_json(200, { 
@@ -183,9 +183,9 @@ local function handle_admin_api()
         -- Get comprehensive system stats
         local is_guest = require "is_guest"
         local guest_stats = is_guest.get_guest_stats()
-        local sse_stats = server.get_sse_stats()
-        local user_counts = server.get_user_counts()
-        local registration_stats = server.get_registration_stats()
+        local sse_stats = manage.get_sse_stats()
+        local user_counts = manage.get_user_counts()
+        local registration_stats = manage.get_registration_stats()
         
         send_json(200, {
             success = true,
@@ -235,7 +235,7 @@ local function handle_admin_api()
             send_json(400, { error = "Username is required" })
         end
         
-        local success, message = server.approve_user(target_username, username)
+        local success, message = manage.approve_user(target_username, username)
         
         if success then
             send_json(200, { 
@@ -276,7 +276,7 @@ local function handle_admin_api()
             send_json(400, { error = "Cannot delete your own account" })
         end
         
-        local success, message = server.reject_user(target_username, username, "Deleted by admin")
+        local success, message = manage.reject_user(target_username, username, "Deleted by admin")
         
         if success then
             send_json(200, { 
@@ -346,7 +346,7 @@ end
 
 local function handle_chat_api()
     local cjson = require "cjson"
-    local server = require "server"
+    local manage = require "manage"
     
     local function send_json(status, tbl)
         ngx.status = status
@@ -365,7 +365,7 @@ local function handle_chat_api()
     if uri == "/api/chat/history" and method == "GET" then
         -- Get chat history
         local limit = tonumber(ngx.var.arg_limit) or 50
-        local messages = server.get_chat_history(username, limit)
+        local messages = manage.get_chat_history(username, limit)
         
         send_json(200, {
             success = true,
@@ -376,7 +376,7 @@ local function handle_chat_api()
         
     elseif uri == "/api/chat/clear" and method == "POST" then
         -- Clear chat history
-        local success = server.clear_chat_history(username)
+        local success = manage.clear_chat_history(username)
         
         if success then
             send_json(200, { success = true, message = "Chat history cleared" })
@@ -400,7 +400,7 @@ end
 -- =============================================================================
 
 local function handle_chat_stream()
-    local server = require "server"
+    local manage = require "manage"
     local is_who = require "is_who"
     local cjson = require "cjson"
     
@@ -409,7 +409,7 @@ local function handle_chat_stream()
     
     -- Admin rate limiting (higher limits)
     local function pre_stream_check(message, request_data)
-        local rate_ok, rate_error = server.check_rate_limit(username, true, false)
+        local rate_ok, rate_error = manage.check_rate_limit(username, true, false)
         if not rate_ok then
             return false, rate_error
         end
@@ -418,17 +418,17 @@ local function handle_chat_stream()
     
     -- Get chat history for admin users
     local function get_history(limit)
-        return server.get_chat_history(username, limit)
+        return manage.get_chat_history(username, limit)
     end
     
     -- Save user message to Redis
     local function save_user_message(message)
-        server.save_message(username, "user", message)
+        manage.save_message(username, "user", message)
     end
     
     -- Save AI response to Redis
     local function save_ai_response(response)
-        server.save_message(username, "assistant", response)
+        manage.save_message(username, "assistant", response)
     end
     
     -- Admin logging
@@ -464,7 +464,7 @@ local function handle_chat_stream()
     }
     
     -- Call common streaming function
-    server.handle_chat_stream_common(stream_context)
+    manage.handle_chat_stream_common(stream_context)
 end
 
 -- =============================================
@@ -476,5 +476,5 @@ return {
     handle_dash_page = handle_dash_page,
     handle_admin_api = handle_admin_api,
     handle_chat_api = handle_chat_api,
-    handle_chat_stream = handle_chat_stream  -- FIXED: This was missing!
+    handle_chat_stream = handle_chat_stream
 }

@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/user_manager.lua - User management functions
+-- nginx/lua/manage_users.lua - User management functions
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -249,10 +249,10 @@ function M.approve_user(username, approved_by)
         return false, "User not found"
     end
     
-    red:hset(user_key, "user_type:", "is_approved")
-    red:hset(user_key, "approved_at:", os.date("!%Y-%m-%dT%TZ"))
-    red:hset(user_key, "approved_by:", approved_by)
-    red:hset(user_key, "last_active:", os.date("!%Y-%m-%dT%TZ"))
+    red:hset(user_key, "user_type", "is_approved")
+    red:hset(user_key, "approved_at", os.date("!%Y-%m-%dT%TZ"))
+    red:hset(user_key, "approved_by", approved_by)
+    red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%TZ"))
     
     red:close()
     

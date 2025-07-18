@@ -1,13 +1,16 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - FIXED ROUTING WITH PROPER GUEST SESSION HANDLING
+-- nginx/lua/is_who.lua - UPDATED FOR VLLM BACKEND WITH NEW ROUTE HANDLERS
 -- =============================================================================
 
 local jwt = require "resty.jwt"
-local server = require "server"
+local manage = require "manage"
 local auth = require "auth"
 local template = require "template"
+local cjson = require "cjson"
 
 local JWT_SECRET = os.getenv("JWT_SECRET")
+local VLLM_URL = os.getenv("VLLM_URL") or "http://vllm:8000"
+local VLLM_MODEL = os.getenv("VLLM_MODEL") or "devstral"
 
 local M = {}
 
@@ -88,11 +91,24 @@ function M.get_user_info()
 end
 
 -- =====================================================================
--- FIXED route_to_handler function with proper guest session creation
+-- UPDATED route_to_handler function with vLLM endpoints
 -- =====================================================================
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
     
+    -- Handle vLLM API endpoints
+    if route_type == "vllm_chat_api" then
+        M.handle_vllm_chat_api()
+        return
+    elseif route_type == "vllm_models_api" then
+        M.handle_vllm_models_api()
+        return
+    elseif route_type == "vllm_completions_api" then
+        M.handle_vllm_completions_api()
+        return
+    end
+    
+    -- Handle user-specific routes
     if ngx.var.user_type == "is_admin" then
         local is_admin = require "is_admin"
         if route_type == "chat" then
@@ -170,8 +186,231 @@ function M.route_to_handler(route_type)
     end
 end
 
+-- =====================================================================
+-- NEW VLLM API HANDLERS
+-- =====================================================================
+
+function M.handle_vllm_chat_api()
+    local user_type, username, user_data = M.set_vars()
+    
+    -- Check authentication
+    if user_type == "is_none" then
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Authentication required",
+            message = "Please login or start a guest session"
+        }))
+        return ngx.exit(401)
+    end
+    
+    -- Route to appropriate handler based on user type
+    if user_type == "is_admin" then
+        local is_admin = require "is_admin"
+        if is_admin.handle_vllm_chat_stream then
+            is_admin.handle_vllm_chat_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    elseif user_type == "is_approved" then
+        local is_approved = require "is_approved"
+        if is_approved.handle_vllm_chat_stream then
+            is_approved.handle_vllm_chat_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    elseif user_type == "is_guest" then
+        local is_guest = require "is_guest"
+        if is_guest.handle_vllm_chat_stream then
+            is_guest.handle_vllm_chat_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    else
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Access denied",
+            message = "Invalid user type"
+        }))
+        return ngx.exit(403)
+    end
+end
+
+function M.handle_vllm_models_api()
+    local user_type, username, user_data = M.set_vars()
+    
+    -- Check authentication
+    if user_type == "is_none" then
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Authentication required",
+            message = "Please login or start a guest session"
+        }))
+        return ngx.exit(401)
+    end
+    
+    -- Proxy to vLLM models endpoint
+    M.proxy_to_vllm("/v1/models")
+end
+
+function M.handle_vllm_completions_api()
+    local user_type, username, user_data = M.set_vars()
+    
+    -- Check authentication
+    if user_type == "is_none" then
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Authentication required",
+            message = "Please login or start a guest session"
+        }))
+        return ngx.exit(401)
+    end
+    
+    -- Route to appropriate handler based on user type
+    if user_type == "is_admin" then
+        local is_admin = require "is_admin"
+        if is_admin.handle_vllm_completions_stream then
+            is_admin.handle_vllm_completions_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    elseif user_type == "is_approved" then
+        local is_approved = require "is_approved"
+        if is_approved.handle_vllm_completions_stream then
+            is_approved.handle_vllm_completions_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    elseif user_type == "is_guest" then
+        local is_guest = require "is_guest"
+        if is_guest.handle_vllm_completions_stream then
+            is_guest.handle_vllm_completions_stream()
+        else
+            M.proxy_to_vllm_with_auth(user_type, username, user_data)
+        end
+    else
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Access denied",
+            message = "Invalid user type"
+        }))
+        return ngx.exit(403)
+    end
+end
+
+-- =====================================================================
+-- VLLM PROXY HELPERS - USING EXISTING MANAGE MODULE
+-- =====================================================================
+
+function M.proxy_to_vllm(endpoint)
+    local vllm_adapter = require "manage_adapter_vllm_streaming"
+    
+    -- Get request body
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    if not body then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Bad request",
+            message = "Request body required"
+        }))
+        return ngx.exit(400)
+    end
+    
+    -- Parse request
+    local ok, request_data = pcall(cjson.decode, body)
+    if not ok then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Bad request",
+            message = "Invalid JSON in request body"
+        }))
+        return ngx.exit(400)
+    end
+    
+    -- Handle /v1/models endpoint
+    if endpoint == "/v1/models" then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            object = "list",
+            data = {
+                {
+                    id = VLLM_MODEL,
+                    object = "model",
+                    created = ngx.time(),
+                    owned_by = "ai.junder.uk"
+                }
+            }
+        }))
+        return ngx.exit(200)
+    end
+    
+    -- For other endpoints, use the vLLM adapter
+    local result = vllm_adapter.call_vllm_api(request_data.messages or {}, request_data)
+    
+    if result.success then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(result.raw_response or {
+            choices = {
+                {
+                    message = {
+                        role = "assistant",
+                        content = result.content
+                    }
+                }
+            }
+        }))
+    else
+        ngx.status = 502
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Backend unavailable",
+            message = result.error or "Failed to connect to AI service"
+        }))
+    end
+end
+
+function M.proxy_to_vllm_with_auth(user_type, username, user_data)
+    -- Guest-specific checks
+    if user_type == "is_guest" and user_data then
+        -- Check message limit
+        if user_data.message_count >= user_data.max_messages then
+            ngx.status = 429
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Rate limit exceeded",
+                message = "Guest message limit reached (" .. user_data.max_messages .. " messages)"
+            }))
+            return ngx.exit(429)
+        end
+        
+        -- Check session expiry
+        if ngx.time() >= user_data.expires_at then
+            ngx.status = 401
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Session expired",
+                message = "Guest session has expired"
+            }))
+            return ngx.exit(401)
+        end
+    end
+    
+    -- Use the existing proxy function
+    M.proxy_to_vllm("/v1/chat/completions")
+end
+
 -- =============================================
--- NAVIGATION BUILDERS
+-- NAVIGATION BUILDERS (unchanged)
 -- =============================================
 function M.get_nav_buttons(user_type, username, user_data)
     if user_type == "is_admin" then
