@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - COMPLETE GUEST CHALLENGE SYSTEM
+-- nginx/lua/is_guest.lua - COMPLETE GUEST CHALLENGE SYSTEM WITH AUTO-CLEANUP
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -118,7 +118,7 @@ local function generate_display_username()
 end
 
 -- =============================================================================
--- GUEST CHALLENGE SYSTEM
+-- GUEST CHALLENGE SYSTEM WITH AUTO-CLEANUP
 -- =============================================================================
 
 local function create_guest_challenge(slot_number)
@@ -150,10 +150,11 @@ local function create_guest_challenge(slot_number)
     red:expire(challenge_key, CHALLENGE_TIMEOUT + 5)
     red:close()
     
-    ngx.log(ngx.INFO, "🚨 Guest challenge created for slot " .. slot_number .. " . ")
+    ngx.log(ngx.INFO, "🚨 Guest challenge created for slot " .. slot_number)
     return true, challenge_id
 end
 
+-- AUTO-CLEANUP: This function automatically kicks inactive users when their challenge expires
 local function get_guest_challenge(slot_number)
     local red = connect_redis()
     if not red then return nil end
@@ -173,11 +174,29 @@ local function get_guest_challenge(slot_number)
         return nil
     end
     
-    -- Check if challenge expired
+    -- AUTO-CLEANUP: If challenge expired, kick the inactive user immediately
     if challenge.expires_at <= ngx.time() then
+        ngx.log(ngx.WARN, "🚨 Challenge expired for slot " .. slot_number .. " - auto-kicking inactive user")
+        
+        -- Clean up challenge first
         red:del(challenge_key)
+        
+        -- Kick the inactive user who didn't respond to challenge
+        local session_key = "guest_active_session:" .. slot_number
+        local session_data = redis_to_lua(red:get(session_key))
+        if session_data then
+            local session_ok, session = pcall(cjson.decode, session_data)
+            if session_ok then
+                -- Clean up all user data
+                red:del("guest_session:" .. session.username)
+                red:del("username:" .. session.username)
+                ngx.log(ngx.WARN, "👢 Auto-kicked inactive user '" .. (session.display_username or session.username) .. "' (no challenge response)")
+            end
+            red:del(session_key)
+        end
+        
         red:close()
-        return nil
+        return nil  -- Return nil since challenge is now cleaned up and user kicked
     end
     
     red:close()
@@ -254,27 +273,8 @@ local function force_kick_guest_session(slot_number, reason)
     return true, session.display_username or session.username
 end
 
-local function cleanup_expired_challenge(slot_number)
-    local red = connect_redis()
-    if not red then return false end
-    
-    local challenge_key = "guest_challenge:" .. slot_number
-    local challenge_data = redis_to_lua(red:get(challenge_key))
-    
-    if challenge_data then
-        local ok, challenge = pcall(cjson.decode, challenge_data)
-        if ok and challenge.expires_at <= ngx.time() then
-            red:del(challenge_key)
-            ngx.log(ngx.INFO, "🕐 Expired challenge cleaned up for slot " .. slot_number)
-        end
-    end
-    
-    red:close()
-    return true
-end
-
 -- =============================================================================
--- ENHANCED SESSION MANAGEMENT
+-- ENHANCED SESSION MANAGEMENT WITH AUTO-CLEANUP
 -- =============================================================================
 
 local function cleanup_inactive_sessions_on_demand()
@@ -300,31 +300,67 @@ local function cleanup_inactive_sessions_on_demand()
             end
         end
         
-        cleanup_expired_challenge(i)
+        -- Auto-cleanup expired challenges (which kicks inactive users)
+        get_guest_challenge(i)
     end
     
     red:close()
     return cleaned
 end
 
+-- Enhanced slot finder with automatic cleanup
 local function find_available_guest_slot_or_challenge()
     local red = connect_redis()
     if not red then return nil, "Service unavailable" end
     local guest_accounts = get_guest_accounts()
-    -- First pass: look for fully available slots
+    
+    -- Pass 1: Look for available slots and auto-cleanup expired stuff
     for i = 1, MAX_GUEST_SESSIONS do
         local key = "guest_active_session:" .. i
         local data = redis_to_lua(red:get(key))
+        
         if not data then
+            -- Slot is completely free
             red:close()
             return guest_accounts[i], nil
         end
+        
+        -- Check if session is expired
+        local ok, session = pcall(cjson.decode, data)
+        if ok and session.expires_at and ngx.time() >= session.expires_at then
+            -- Session expired - clean it up completely
+            red:del(key)
+            red:del("guest_session:" .. session.username)
+            red:del("username:" .. session.username)
+            red:del("guest_challenge:" .. i)
+            ngx.log(ngx.INFO, "🧹 Auto-cleaned expired session for slot " .. i)
+            red:close()
+            return guest_accounts[i], nil
+        end
+        
+        -- CRITICAL: Check for expired challenges (this auto-kicks inactive users)
+        local challenge = get_guest_challenge(i)
+        if not challenge then
+            -- Either no challenge exists, OR challenge just expired and user was kicked
+            -- Check if session still exists after potential auto-kick
+            local session_check = redis_to_lua(red:get(key))
+            if not session_check then
+                -- Session was cleaned up by expired challenge - slot is now free!
+                ngx.log(ngx.INFO, "🎯 Slot " .. i .. " freed by expired challenge cleanup")
+                red:close()
+                return guest_accounts[i], nil
+            end
+            -- Session still exists but no active challenge - can be challenged
+        end
     end
-    -- Toggle between j = 1 and j = 2
+    
+    -- All slots occupied with active sessions - pick one to challenge
     local toggle_dict = ngx.shared.guest_toggle
     local last = toggle_dict:get("last_slot") or 1
     local j = (last == 1) and 2 or 1
     toggle_dict:set("last_slot", j)
+    
+    ngx.log(ngx.INFO, "🎲 All slots occupied - will challenge slot " .. j)
     red:close()
     return guest_accounts[j], "challengeable"
 end
@@ -333,7 +369,7 @@ local function create_secure_guest_session_with_challenge()
     local account, slot_status = find_available_guest_slot_or_challenge()
     
     if not slot_status then
-        -- Normal session creation
+        -- Normal session creation - slot is available
         local red = connect_redis()
         if not red then
             ngx.status = 503
@@ -391,7 +427,7 @@ local function create_secure_guest_session_with_challenge()
         
         ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
         
-        ngx.log(ngx.INFO, "=== GUEST SESSION CREATION SUCCESS ===")
+        ngx.log(ngx.INFO, "✅ GUEST SESSION CREATION SUCCESS")
         ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username .. " [Slot " .. account.guest_slot_number .. "]")
         
         -- Return success response
@@ -432,7 +468,6 @@ local function create_secure_guest_session_with_challenge()
                 timeout = CHALLENGE_TIMEOUT
             }))
             
-            -- End the request here - no further processing
             return
         else
             -- Challenge creation failed
@@ -447,6 +482,7 @@ local function create_secure_guest_session_with_challenge()
         end
     end
 end
+
 -- =============================================================================
 -- EXISTING FUNCTIONS
 -- =============================================================================
@@ -594,7 +630,7 @@ local function clear_all_guest_sessions()
 end
 
 -- =============================================================================
--- API HANDLERS
+-- API HANDLERS WITH FIXED RESPONSE HANDLING
 -- =============================================================================
 
 local function handle_guest_api()
@@ -688,6 +724,7 @@ local function handle_guest_api()
             send_json(400, { error = "slot_number required" })
         end
         
+        -- Check if challenge is still active
         local challenge = get_guest_challenge(slot_number)
         if challenge and challenge.expires_at > ngx.time() then
             send_json(400, {
@@ -697,18 +734,42 @@ local function handle_guest_api()
             })
         end
         
-        local kick_success, kicked_user = force_kick_guest_session(slot_number, "Challenge timeout - inactive user")
+        -- Force cleanup: remove challenge, session, and all related data
+        local red = connect_redis()
+        local kicked_user = "unknown"
         
-        if kick_success then
-            -- Call create session but it handles its own response
-            create_secure_guest_session_with_challenge()
-            -- Don't send additional response - the function already did
-        else
-            send_json(500, {
-                success = false,
-                error = "Failed to remove inactive user"
-            })
+        if red then
+            -- Get current session info before deleting
+            local session_key = "guest_active_session:" .. slot_number
+            local session_data = redis_to_lua(red:get(session_key))
+            if session_data then
+                local session_ok, session = pcall(cjson.decode, session_data)
+                if session_ok and session.display_username then
+                    kicked_user = session.display_username
+                end
+            end
+            
+            -- Clean up everything related to this slot
+            red:del("guest_challenge:" .. slot_number)
+            red:del(session_key)
+            
+            -- Clean up user-specific data
+            if session_data then
+                local session_ok, session = pcall(cjson.decode, session_data)
+                if session_ok then
+                    red:del("guest_session:" .. session.username)
+                    red:del("username:" .. session.username)
+                end
+            end
+            
+            red:close()
         end
+        
+        ngx.log(ngx.WARN, "Force kicked inactive user '" .. kicked_user .. "' from slot " .. slot_number .. " (challenge timeout)")
+        
+        -- Now try to create session - should succeed since slot is completely clean
+        create_secure_guest_session_with_challenge()
+        -- Don't send additional response - the function already did
         
     elseif uri == "/api/guest/stats" and method == "GET" then
         local stats = get_guest_stats()
