@@ -6,12 +6,10 @@ $MODEL_DESCRIPTION
 
 You are running in hybrid GPU+CPU mode with optimized memory management for stability and performance."
 
-# Core model parameters (using documentation defaults)
-PARAMETER use_mmap $OLLAMA_MMAP
+# Core model parameters - FIXED: Only valid Ollama parameters
 PARAMETER temperature $MODEL_TEMPERATURE
 PARAMETER top_p $MODEL_TOP_P
 PARAMETER top_k $MODEL_TOP_K
-PARAMETER min_p $MODEL_MIN_P
 PARAMETER repeat_penalty $MODEL_REPEAT_PENALTY
 PARAMETER repeat_last_n $MODEL_REPEAT_LAST_N
 
@@ -20,8 +18,11 @@ PARAMETER num_ctx $MODEL_NUM_CTX
 PARAMETER num_predict $MODEL_NUM_PREDICT
 PARAMETER seed $MODEL_SEED
 
-# Stop sequences
-PARAMETER stop $MODEL_STOP_1
-PARAMETER stop $MODEL_STOP_2
-PARAMETER stop $MODEL_STOP_3
-PARAMETER stop $MODEL_STOP_4
+# REMOVED: Stop sequences (let model use its defaults)
+# PARAMETER stop $MODEL_STOP_1
+# PARAMETER stop $MODEL_STOP_2  
+# PARAMETER stop $MODEL_STOP_3  # "[DONE]" conflicts with SSE streaming!
+# PARAMETER stop $MODEL_STOP_4
+
+# REMOVED: use_mmap (not a valid Modelfile parameter)
+# REMOVED: min_p (not supported in this Ollama version)

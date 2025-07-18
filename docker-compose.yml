@@ -31,16 +31,11 @@ services:
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
       - MODEL_TOP_P=${MODEL_TOP_P}
       - MODEL_TOP_K=${MODEL_TOP_K}
-      - MODEL_MIN_P=${MODEL_MIN_P}
       - MODEL_REPEAT_PENALTY=${MODEL_REPEAT_PENALTY}
       - MODEL_REPEAT_LAST_N=${MODEL_REPEAT_LAST_N}
       - MODEL_NUM_CTX=${MODEL_NUM_CTX}
       - MODEL_NUM_PREDICT=${MODEL_NUM_PREDICT}
       - MODEL_SEED=${MODEL_SEED}
-      - MODEL_STOP_1=${MODEL_STOP_1}
-      - MODEL_STOP_2=${MODEL_STOP_2}
-      - MODEL_STOP_3=${MODEL_STOP_3}
-      - MODEL_STOP_4=${MODEL_STOP_4}
     volumes:
       - ./volumes/ollama:/home/ollama/.ollama
       - ./volumes/ollama-cache:/ollama-cache
