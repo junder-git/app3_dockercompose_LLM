@@ -16,7 +16,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./volumes/models/devstral:/models/devstral
+      - ./volumes/huggingface/hub/models--mistralai--Devstral-Small-2507:/models/devstral
     environment:
       - MODEL_NAME=${OLLAMA_MODEL}
     deploy:
