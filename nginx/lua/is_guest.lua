@@ -332,6 +332,7 @@ end
 local function create_secure_guest_session_with_challenge(slot_status_hold) 
     if slot_status_hold then
         ngx.sleep(8)
+        ngx.exit(status)
         return create_secure_guest_session_with_challenge()
     end
     local account, slot_status = find_available_guest_slot_or_challenge()
@@ -411,10 +412,9 @@ local function create_secure_guest_session_with_challenge(slot_status_hold)
                 message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
                 timeout = CHALLENGE_TIMEOUT
             }))
+            force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
+            cleanup_inactive_sessions_on_demand()
         end
-        force_kick_guest_session(account.guest_slot_number, "eh ur kicked")
-        cleanup_inactive_sessions_on_demand()
-        -- ngx.exit(status)
         return create_secure_guest_session_with_challenge("clearing")
     end
 end
