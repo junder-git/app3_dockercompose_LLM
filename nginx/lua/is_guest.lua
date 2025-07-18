@@ -331,12 +331,12 @@ local function find_available_guest_slot_or_challenge()
 end
 
 local function create_secure_guest_session_with_challenge(slot_status_hold) 
-    if slot_status_hold != nil then
+    if slot_status_hold then
         ngx.sleep(8)
-        create_secure_guest_session_with_challenge()
+        return create_secure_guest_session_with_challenge()
     end
     local account, slot_status = find_available_guest_slot_or_challenge()
-    if slot_status == nil then
+    if not slot_status then
         -- Normal session creation
         local red = connect_redis()
         if not red then
