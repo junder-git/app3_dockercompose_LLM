@@ -227,7 +227,7 @@ function M.get_chat_features(user_type)
             <div class="user-features guest-features">
                 <div class="alert alert-warning">
                     <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
-                    <p class="mb-1">10 messages • 30 minutes • localStorage only</p>
+                    <p class="mb-1">10 messages • 10 minutes • localStorage only</p>
                     <a href="/register" class="btn btn-warning btn-sm">Register for unlimited</a>
                 </div>
             </div>
