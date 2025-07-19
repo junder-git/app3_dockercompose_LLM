@@ -4,7 +4,7 @@ services:
     container_name: devstral-vllm
     environment:
       - TORCH_USE_CUDA_DSA=1    # Enable device-side assertions
-      - VLLM_USE_V1=1           # Force V1 engine
+      - VLLM_USE_V1=0           # Force V1 engine
       - CUDA_VISIBLE_DEVICES=0  # Ensure single GPU
     command: >
       --model /models/devstral/Devstral-Small-2507-Q4_K_M.gguf
