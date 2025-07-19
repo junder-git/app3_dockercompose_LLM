@@ -41,12 +41,12 @@ end
 -- Try to load the system prompt on module load
 SYSTEM_PROMPT = try_load_system_prompt()
 
--- Configure default parameters
+-- Configure default parameters - FIXED: Reduced max_tokens
 local DEFAULT_PARAMS = {
     temperature = 0.7,
     top_p = 0.9,
     top_k = 40,
-    max_tokens = 1024
+    max_tokens = 512  -- FIXED: Reduced from 1024 to fit in 2048 context
 }
 
 -- Parse a URL string into its components
@@ -83,7 +83,7 @@ end
 -- Call the vLLM API
 function M.call_vllm_api(messages, options)
     local httpc = http.new()
-    httpc:set_timeout(600000) -- 5 minute timeout
+    httpc:set_timeout(600000) -- 10 minute timeout
     
     -- Parse URL
     local url_parts = parse_url(VLLM_URL)
@@ -175,7 +175,7 @@ function M.call_vllm_api(messages, options)
             }
         end
         
-        -- Extract text from Mistral response format
+        -- Extract text from OpenAI response format
         if data.choices and data.choices[1] and data.choices[1].message then
             return {
                 success = true,
@@ -200,9 +200,17 @@ function M.call_vllm_api(messages, options)
     end
 end
 
--- Handle streaming response for SSE output
+-- COMPLETELY REWRITTEN: Handle streaming response for SSE output
 function M.stream_to_sse(response, http_client)
-    -- Send initial event
+    -- Send connecting event
+    ngx.print("data: " .. cjson.encode({
+        type = "connecting",
+        message = "Connecting to AI model...",
+        model = VLLM_MODEL
+    }) .. "\n\n")
+    ngx.flush(true)
+    
+    -- Send initial start event
     ngx.print("data: " .. cjson.encode({
         type = "start",
         message = "Stream started",
@@ -215,10 +223,14 @@ function M.stream_to_sse(response, http_client)
     local accumulated = ""
     local chunk_count = 0
     local buffer = ""
+    local stream_started = false
+    
+    ngx.log(ngx.INFO, "Starting vLLM stream processing")
     
     while true do
-        -- Read next chunk
+        -- Read next chunk from vLLM
         local chunk, read_err = reader()
+        
         if read_err then
             ngx.log(ngx.ERR, "Error reading vLLM stream: " .. tostring(read_err))
             ngx.print("data: " .. cjson.encode({
@@ -232,7 +244,8 @@ function M.stream_to_sse(response, http_client)
         end
         
         if not chunk then
-            -- End of stream
+            -- End of stream from vLLM
+            ngx.log(ngx.INFO, "vLLM stream ended, accumulated: " .. tostring(#accumulated) .. " chars")
             ngx.print("data: " .. cjson.encode({
                 type = "complete",
                 final_content = accumulated,
@@ -246,69 +259,28 @@ function M.stream_to_sse(response, http_client)
         -- Add chunk to buffer
         buffer = buffer .. chunk
         
-        -- Process complete lines
-        local lines = {}
-        for line in (buffer .. "\n"):gmatch("(.-)\n") do
-            table.insert(lines, line)
-        end
-        
-        -- Keep the last incomplete line in the buffer
-        buffer = lines[#lines] or ""
-        lines[#lines] = nil
-        
-        -- Process each complete line
-        for _, line in ipairs(lines) do
-            if line:match("^%s*$") then
+        -- Process complete lines (split by \n)
+        while true do
+            local newline_pos = buffer:find("\n")
+            if not newline_pos then break end
+            
+            local line = buffer:sub(1, newline_pos - 1):gsub("^%s+", ""):gsub("%s+$", "")
+            buffer = buffer:sub(newline_pos + 1)
+            
+            if line == "" then
                 -- Skip empty lines
-                goto continue
+                goto continue_line
             end
             
-            -- Check for SSE data prefix
+            ngx.log(ngx.DEBUG, "Processing vLLM line: " .. line)
+            
+            -- Handle SSE data lines
             if line:sub(1, 6) == "data: " then
-                line = line:sub(7)
-            end
-            
-            -- Check for SSE completion marker
-            if line == "[DONE]" then
-                ngx.print("data: " .. cjson.encode({
-                    type = "complete",
-                    final_content = accumulated,
-                    total_chunks = chunk_count
-                }) .. "\n\n")
-                ngx.print("data: [DONE]\n\n")
-                ngx.flush(true)
-                goto stream_end
-            end
-            
-            -- Try to parse the line as JSON
-            local ok, data = pcall(cjson.decode, line)
-            if ok and data.choices and data.choices[1] then
-                local choice = data.choices[1]
-                local content = ""
+                local data_part = line:sub(7)
                 
-                -- Extract content based on response format
-                if choice.delta and choice.delta.content then
-                    content = choice.delta.content
-                elseif choice.message and choice.message.content then
-                    content = choice.message.content
-                end
-                
-                if content and content ~= "" then
-                    chunk_count = chunk_count + 1
-                    accumulated = accumulated .. content
-                    
-                    -- Send event
-                    ngx.print("data: " .. cjson.encode({
-                        type = "content",
-                        content = content,
-                        accumulated = accumulated,
-                        chunk_number = chunk_count,
-                        done = choice.finish_reason ~= nil
-                    }) .. "\n\n")
-                    ngx.flush(true)
-                end
-                
-                if choice.finish_reason then
+                -- Check for completion marker
+                if data_part == "[DONE]" then
+                    ngx.log(ngx.INFO, "Received [DONE] from vLLM")
                     ngx.print("data: " .. cjson.encode({
                         type = "complete",
                         final_content = accumulated,
@@ -318,13 +290,81 @@ function M.stream_to_sse(response, http_client)
                     ngx.flush(true)
                     goto stream_end
                 end
+                
+                -- Try to parse JSON data
+                local ok, data = pcall(cjson.decode, data_part)
+                if ok and data.choices and data.choices[1] then
+                    local choice = data.choices[1]
+                    
+                    -- Handle delta content (streaming format)
+                    if choice.delta then
+                        if choice.delta.role and not stream_started then
+                            stream_started = true
+                            ngx.log(ngx.INFO, "Stream role detected: " .. choice.delta.role)
+                        end
+                        
+                        if choice.delta.content and choice.delta.content ~= "" then
+                            chunk_count = chunk_count + 1
+                            accumulated = accumulated .. choice.delta.content
+                            
+                            ngx.log(ngx.DEBUG, "Content chunk " .. chunk_count .. ": " .. choice.delta.content)
+                            
+                            -- Send content event to browser
+                            ngx.print("data: " .. cjson.encode({
+                                type = "content",
+                                content = choice.delta.content
+                            }) .. "\n\n")
+                            ngx.flush(true)
+                        end
+                        
+                        -- Check for completion
+                        if choice.finish_reason then
+                            ngx.log(ngx.INFO, "Stream completed with reason: " .. choice.finish_reason)
+                            ngx.print("data: " .. cjson.encode({
+                                type = "complete",
+                                final_content = accumulated,
+                                total_chunks = chunk_count
+                            }) .. "\n\n")
+                            ngx.print("data: [DONE]\n\n")
+                            ngx.flush(true)
+                            goto stream_end
+                        end
+                    end
+                    
+                    -- Handle message content (non-streaming format fallback)
+                    if choice.message and choice.message.content then
+                        accumulated = choice.message.content
+                        chunk_count = 1
+                        
+                        ngx.print("data: " .. cjson.encode({
+                            type = "content",
+                            content = choice.message.content
+                        }) .. "\n\n")
+                        ngx.flush(true)
+                        
+                        ngx.print("data: " .. cjson.encode({
+                            type = "complete",
+                            final_content = accumulated,
+                            total_chunks = chunk_count
+                        }) .. "\n\n")
+                        ngx.print("data: [DONE]\n\n")
+                        ngx.flush(true)
+                        goto stream_end
+                    end
+                else
+                    if not ok then
+                        ngx.log(ngx.WARN, "Failed to parse vLLM JSON: " .. tostring(data))
+                    end
+                end
             end
             
-            ::continue::
+            ::continue_line::
         end
     end
     
     ::stream_end::
+    
+    ngx.log(ngx.INFO, "vLLM stream completed. Total chunks: " .. chunk_count .. ", Total content: " .. #accumulated .. " chars")
     
     -- Close the HTTP client
     if http_client then

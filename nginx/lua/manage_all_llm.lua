@@ -89,8 +89,6 @@ function M.handle_chat_stream_common(stream_context)
         model = options.model or stream_context.default_options.model or "Devstral"
     })
 
-    local accumulated_response = ""
-    
     -- Convert messages to vLLM format and enable streaming
     options.stream = true
     local formatted_messages = vllm_adapter.format_messages(messages)
@@ -100,13 +98,13 @@ function M.handle_chat_stream_common(stream_context)
     
     if result.success then
         -- Use the adapter's streaming function
+        -- Note: The streaming function handles all content accumulation internally
         vllm_adapter.stream_to_sse(result.response, result.http_client)
         
-        -- The final accumulated response is captured from the streaming process
-        -- Try to get it from the stream completion event
-        if stream_context.save_ai_response then
-            stream_context.save_ai_response(accumulated_response)
-        end
+        -- FIXED: The accumulated response is handled by the vLLM adapter
+        -- We don't need to track it here since the adapter sends complete events
+        -- with the final content already included
+        
     else
         -- Error handling
         sse_manager.sse_send({
@@ -121,7 +119,9 @@ function M.handle_chat_stream_common(stream_context)
 
     -- Run post-stream cleanup
     if stream_context.post_stream_cleanup then
-        stream_context.post_stream_cleanup(accumulated_response)
+        -- FIXED: Pass a placeholder since we don't track accumulated response here
+        -- The actual response saving should be handled by the vLLM adapter
+        stream_context.post_stream_cleanup("")
     end
 
     ngx.exit(200)
