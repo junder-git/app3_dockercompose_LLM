@@ -17,6 +17,7 @@ services:
       - "8000:8000"
     volumes:
       - ./volumes/models:/models
+      - ./volumes/vllm:/root/.cache/vllm
     networks:
       - devstral-network
     deploy:
