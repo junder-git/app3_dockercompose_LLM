@@ -12,11 +12,11 @@ services:
       --host 0.0.0.0
       --port 8000
       --tensor-parallel-size 1
-      --max-model-len 2048
+      --max-model-len 512
       --gpu-memory-utilization 0.85
       --max-num-seqs 3
       --disable-log-requests
-      --max-num-batched-tokens 2048
+      --max-num-batched-tokens 1536
       --kv-cache-dtype fp8
       --block-size 16
       --cpu-offload-gb 14

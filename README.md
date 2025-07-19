@@ -1,3 +1,40 @@
+ Memory Settings
+
+    --gpu-memory-utilization 0.85: 6.8GB of your 8GB VRAM
+    --max-model-len 512: 512 tokens per conversation
+    --max-num-batched-tokens 1536: Can handle 3 full conversations simultaneously (3 × 512)
+
+2. Concurrent Sessions
+
+    --max-num-seqs 3: ✅ Yes, this matches 3 SSE sessions
+    Each SSE session = 1 sequence
+    You can have 3 users chatting simultaneously
+
+3. Memory Distribution (8GB VRAM)
+
+    Model weights: ~4GB (compressed from 13.5GB CPU)
+    KV cache (3 users × 512 tokens): ~1.5GB
+    Working memory: ~1GB
+    Buffer: ~0.3GB
+    Total: ~6.8GB ✅
+
+4. Why This Ratio?
+
+max-num-batched-tokens (1536) = max-model-len (512) × max-num-seqs (3)
+
+This ensures all 3 users can use their full 512-token context simultaneously without batching delays.
+Performance Expectations:
+
+    512 tokens: ~4-5 exchanges per conversation
+    3 concurrent users: Full parallel processing
+    Response time: Should be fast with 6.8GB VRAM + CPU offloading
+
+This config should work much better on your RTX 3060 Ti!
+
+
+
+=====
+
 Ah, you want the entire 13.5GB model mlocked in CPU RAM with no disk swapping! That's a much clearer picture. Let me calculate the actual CPU RAM needs:
 
 use v1
