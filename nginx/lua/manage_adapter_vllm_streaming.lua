@@ -41,13 +41,13 @@ end
 -- Try to load the system prompt on module load
 SYSTEM_PROMPT = try_load_system_prompt()
 
--- Configure default parameters - Optimized for 2048 context window
+-- Configure default parameters - Conservative for stability
 local DEFAULT_PARAMS = {
     temperature = 0.7,
     top_p = 0.9,
     top_k = 40,
-    max_tokens = 512,  -- Conservative to leave room for system prompt and conversation history
-    stop = nil,        -- Let model decide when to stop
+    max_tokens = 256,  -- Very conservative to prevent CUDA memory issues
+    stop = nil,
     frequency_penalty = 0.0,
     presence_penalty = 0.0
 }

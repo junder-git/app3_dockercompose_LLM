@@ -1,3 +1,125 @@
+Ah, you want the entire 13.5GB model mlocked in CPU RAM with no disk swapping! That's a much clearer picture. Let me calculate the actual CPU RAM needs:
+CPU RAM Requirements (Full Model in Memory):
+1. Model Storage (mlocked)
+
+    Full model in CPU RAM: 13.5GB
+    No disk access: Model stays permanently in memory
+    Parameter: --cpu-offload-gb 13.5 (or higher for safety)
+
+2. KV Cache & Context (3 concurrent streams)
+
+    Per stream: 2048 tokens × fp8 = ~512MB per conversation
+    3 streams: 3 × 512MB = ~1.5GB
+    Growth buffer: +1GB for longer conversations
+    Total KV cache: ~2.5GB
+
+3. System & Docker Overhead
+
+    Docker container: ~1GB
+    vLLM process: ~1GB
+    System buffers: ~1GB
+    Total overhead: ~3GB
+
+4. Working Memory
+
+    Tensor operations: ~2GB
+    Batch processing: ~1GB
+    Total working: ~3GB
+
+Total CPU RAM Needed: ~22GB
+Key Changes:
+1. Full Model in CPU RAM
+
+    --cpu-offload-gb 14: Allocates 14GB for the full 13.5GB model (with buffer)
+    --preload-model-to-cpu: Forces full model preload into CPU RAM
+    Removed --swap-space: No need since model is always in RAM
+
+2. Memory Flow (No Disk Access)
+
+CPU RAM (14GB)          →  VRAM (6GB)
+Full model (mlocked)       Active layers + KV cache
+│                          │
+├─ All layers ready  ──────┼→ Hot layers (4GB)
+├─ Instant access          ├─ Active KV cache (2GB)
+└─ No disk I/O             └─ Working tensors
+
+3. Performance Benefits
+
+    Zero disk latency: All model access is RAM-speed
+    Fast layer swapping: GPU ↔ CPU transfers only
+    Predictable performance: No I/O wait times
+    Smooth inference: No stutters from disk reads
+
+Final Memory Budget (24GB):
+
+    Model in CPU RAM: 14GB (mlocked)
+    KV cache & context: 3GB
+    System + Docker: 3GB
+    Working memory: 3GB
+    Buffer: 1GB
+    Total: 24GB exactly ✅
+
+Perfect fit! Your 24GB will hold the entire model in RAM with room for 3 concurrent high-performance streams.
+
+
+
+
+=====
+
+GPU Memory Allocation
+
+Yes, you can set an absolute GPU memory limit instead of percentage. Here's the updated config:
+Alternative: Absolute GPU Memory Limit
+
+Unfortunately, vLLM doesn't have a direct --gpu-memory-gb flag, but you can calculate the percentage:
+
+If you have 16GB total VRAM and want to use exactly 6GB:
+
+    6GB / 16GB = 0.375
+    So use --gpu-memory-utilization 0.375
+
+If you have 8GB total VRAM and want to use exactly 6GB:
+
+    6GB / 8GB = 0.75
+    So use --gpu-memory-utilization 0.75
+
+Memory Strategy with 18GB Swap
+
+Your approach is correct:
+
+    GPU VRAM (6GB):
+        Model weights: ~4-5GB (compressed in VRAM)
+        KV cache + activations: ~1-2GB
+    CPU Swap (18GB):
+        Full model weights: ~13.5GB
+        Overflow KV cache: ~4.5GB
+        Total: ~18GB covers everything
+    How it works:
+        vLLM loads compressed model into GPU
+        Keeps working set in VRAM
+        Swaps older KV cache blocks to CPU RAM
+        Moves data back to GPU as needed
+
+What's your total VRAM?
+
+To give you the exact percentage, what GPU are you using?
+
+    RTX 4060 (8GB): Use --gpu-memory-utilization 0.75 for 6GB
+    RTX 4070 (12GB): Use --gpu-memory-utilization 0.50 for 6GB
+    RTX 4080 (16GB): Use --gpu-memory-utilization 0.375 for 6GB
+
+Recommended Final Config
+
+I added:
+
+    --gpu-memory-utilization 0.75 (assuming 8GB VRAM for 6GB usage)
+    --cpu-offload-gb 2 (keeps 2GB of model weights in CPU RAM proactively)
+    --swap-space 18 (your correct 18GB calculation)
+
+This should fit the model properly with your memory constraints!
+
+=====
+
 git lfs install
 git clone https://huggingface.co/mistralai/Devstral-Small-2507 ./volumes/models/devstral
 pip install huggingface-cli
