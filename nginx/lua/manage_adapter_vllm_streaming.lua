@@ -300,14 +300,14 @@ function M.stream_to_sse(response, http_client)
                     if choice.delta then
                         if choice.delta.role and not stream_started then
                             stream_started = true
-                            ngx.log(ngx.INFO, "Stream role detected: " .. choice.delta.role)
+                            ngx.log(ngx.INFO, "Stream role detected: " .. tostring(choice.delta.role))
                         end
                         
                         if choice.delta.content and choice.delta.content ~= "" then
                             chunk_count = chunk_count + 1
                             accumulated = accumulated .. choice.delta.content
                             
-                            ngx.log(ngx.DEBUG, "Content chunk " .. chunk_count .. ": " .. choice.delta.content)
+                            ngx.log(ngx.DEBUG, "Content chunk " .. chunk_count .. ": " .. tostring(choice.delta.content))
                             
                             -- Send content event to browser
                             ngx.print("data: " .. cjson.encode({
@@ -319,7 +319,7 @@ function M.stream_to_sse(response, http_client)
                         
                         -- Check for completion
                         if choice.finish_reason then
-                            ngx.log(ngx.INFO, "Stream completed with reason: " .. choice.finish_reason)
+                            ngx.log(ngx.INFO, "Stream completed with reason: " .. tostring(choice.finish_reason))
                             ngx.print("data: " .. cjson.encode({
                                 type = "complete",
                                 final_content = accumulated,
@@ -335,6 +335,8 @@ function M.stream_to_sse(response, http_client)
                     if choice.message and choice.message.content then
                         accumulated = choice.message.content
                         chunk_count = 1
+                        
+                        ngx.log(ngx.INFO, "Non-streaming response received: " .. tostring(#choice.message.content) .. " chars")
                         
                         ngx.print("data: " .. cjson.encode({
                             type = "content",
