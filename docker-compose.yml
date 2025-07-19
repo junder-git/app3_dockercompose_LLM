@@ -14,11 +14,6 @@ services:
       --max-model-len 2048
       --gpu-memory-utilization 0.80
       --max-num-seqs 3
-      --chat-template openai
-      --chat-template-content-format openai
-      --trust-remote-code
-      --response-mode stream
-      --enable-openai-api
     ports:
       - "8000:8000"
     volumes:

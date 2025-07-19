@@ -41,12 +41,15 @@ end
 -- Try to load the system prompt on module load
 SYSTEM_PROMPT = try_load_system_prompt()
 
--- Configure default parameters - FIXED: Reduced max_tokens
+-- Configure default parameters - Optimized for 2048 context window
 local DEFAULT_PARAMS = {
     temperature = 0.7,
     top_p = 0.9,
     top_k = 40,
-    max_tokens = 512  -- FIXED: Reduced from 1024 to fit in 2048 context
+    max_tokens = 512,  -- Conservative to leave room for system prompt and conversation history
+    stop = nil,        -- Let model decide when to stop
+    frequency_penalty = 0.0,
+    presence_penalty = 0.0
 }
 
 -- Parse a URL string into its components
@@ -106,11 +109,11 @@ function M.call_vllm_api(messages, options)
         })
     end
     
-    -- Build vLLM API request
+    -- Build vLLM API request with explicit streaming enabled
     local request_data = {
         model = VLLM_MODEL,
         messages = messages,
-        stream = options.stream or false
+        stream = true  -- ALWAYS enable streaming in the JSON payload to vLLM
     }
     
     -- Add model parameters from options or defaults
@@ -120,6 +123,18 @@ function M.call_vllm_api(messages, options)
         else
             request_data[k] = v
         end
+    end
+    
+    -- Override stream setting only if explicitly disabled
+    if options.stream == false then
+        request_data.stream = false
+    end
+    
+    -- Special handling for streaming parameters
+    if request_data.stream then
+        request_data.stream_options = {
+            include_usage = false  -- Reduce overhead for streaming
+        }
     end
     
     ngx.log(ngx.DEBUG, "vLLM request data: " .. cjson.encode(request_data))
@@ -139,7 +154,8 @@ function M.call_vllm_api(messages, options)
         path = "/v1/chat/completions",
         method = "POST",
         headers = {
-            ["Content-Type"] = "application/json"
+            ["Content-Type"] = "application/json",
+            ["Accept"] = "text/event-stream"  -- Important for SSE
         },
         body = cjson.encode(request_data)
     })
@@ -152,8 +168,21 @@ function M.call_vllm_api(messages, options)
         }
     end
     
+    -- Check for HTTP errors
+    if res.status >= 400 then
+        local body, _ = res:read_body()
+        httpc:close()
+        ngx.log(ngx.ERR, "vLLM HTTP error " .. res.status .. ": " .. tostring(body))
+        return {
+            success = false,
+            error = "vLLM HTTP error " .. res.status,
+            status = res.status,
+            body = body
+        }
+    end
+    
     -- Handle response based on streaming mode
-    if not options.stream then
+    if not request_data.stream then
         -- Non-streaming response handling
         local body, err = res:read_body()
         httpc:close()
@@ -200,7 +229,7 @@ function M.call_vllm_api(messages, options)
     end
 end
 
--- COMPLETELY REWRITTEN: Handle streaming response for SSE output
+-- Enhanced streaming handler with better error handling and recovery
 function M.stream_to_sse(response, http_client)
     -- Send connecting event
     ngx.print("data: " .. cjson.encode({
@@ -224,28 +253,38 @@ function M.stream_to_sse(response, http_client)
     local chunk_count = 0
     local buffer = ""
     local stream_started = false
+    local error_count = 0
+    local max_errors = 5
     
     ngx.log(ngx.INFO, "Starting vLLM stream processing")
     
     while true do
-        -- Read next chunk from vLLM
-        local chunk, read_err = reader()
+        -- Read next chunk from vLLM with error handling
+        local chunk, read_err = reader(8192)  -- Read up to 8KB at a time
         
         if read_err then
-            ngx.log(ngx.ERR, "Error reading vLLM stream: " .. tostring(read_err))
-            ngx.print("data: " .. cjson.encode({
-                type = "error",
-                error = "Error reading stream: " .. tostring(read_err),
-                done = true
-            }) .. "\n\n")
-            ngx.print("data: [DONE]\n\n")
-            ngx.flush(true)
-            break
+            error_count = error_count + 1
+            ngx.log(ngx.ERR, "Error reading vLLM stream (attempt " .. error_count .. "): " .. tostring(read_err))
+            
+            if error_count >= max_errors then
+                ngx.print("data: " .. cjson.encode({
+                    type = "error",
+                    error = "Too many read errors: " .. tostring(read_err),
+                    done = true
+                }) .. "\n\n")
+                ngx.print("data: [DONE]\n\n")
+                ngx.flush(true)
+                break
+            end
+            
+            -- Brief pause before retry
+            ngx.sleep(0.1)
+            goto continue_read
         end
         
         if not chunk then
             -- End of stream from vLLM
-            ngx.log(ngx.INFO, "vLLM stream ended, accumulated: " .. tostring(#accumulated) .. " chars")
+            ngx.log(ngx.INFO, "vLLM stream ended normally, accumulated: " .. tostring(#accumulated) .. " chars")
             ngx.print("data: " .. cjson.encode({
                 type = "complete",
                 final_content = accumulated,
@@ -255,6 +294,9 @@ function M.stream_to_sse(response, http_client)
             ngx.flush(true)
             break
         end
+        
+        -- Reset error count on successful read
+        error_count = 0
         
         -- Add chunk to buffer
         buffer = buffer .. chunk
@@ -267,8 +309,8 @@ function M.stream_to_sse(response, http_client)
             local line = buffer:sub(1, newline_pos - 1):gsub("^%s+", ""):gsub("%s+$", "")
             buffer = buffer:sub(newline_pos + 1)
             
-            if line == "" then
-                -- Skip empty lines
+            if line == "" or line:sub(1, 1) == ":" then
+                -- Skip empty lines and comments
                 goto continue_line
             end
             
@@ -307,7 +349,7 @@ function M.stream_to_sse(response, http_client)
                             chunk_count = chunk_count + 1
                             accumulated = accumulated .. choice.delta.content
                             
-                            ngx.log(ngx.DEBUG, "Content chunk " .. chunk_count .. ": " .. tostring(choice.delta.content))
+                            ngx.log(ngx.DEBUG, "Content chunk " .. chunk_count .. ": " .. tostring(#choice.delta.content) .. " chars")
                             
                             -- Send content event to browser
                             ngx.print("data: " .. cjson.encode({
@@ -323,6 +365,7 @@ function M.stream_to_sse(response, http_client)
                             ngx.print("data: " .. cjson.encode({
                                 type = "complete",
                                 final_content = accumulated,
+                                finish_reason = choice.finish_reason,
                                 total_chunks = chunk_count
                             }) .. "\n\n")
                             ngx.print("data: [DONE]\n\n")
@@ -355,13 +398,26 @@ function M.stream_to_sse(response, http_client)
                     end
                 else
                     if not ok then
-                        ngx.log(ngx.WARN, "Failed to parse vLLM JSON: " .. tostring(data))
+                        ngx.log(ngx.WARN, "Failed to parse vLLM JSON line: " .. tostring(data_part))
+                    elseif data.error then
+                        -- Handle API errors
+                        ngx.log(ngx.ERR, "vLLM API error: " .. cjson.encode(data.error))
+                        ngx.print("data: " .. cjson.encode({
+                            type = "error",
+                            error = "API error: " .. tostring(data.error.message or "unknown"),
+                            done = true
+                        }) .. "\n\n")
+                        ngx.print("data: [DONE]\n\n")
+                        ngx.flush(true)
+                        goto stream_end
                     end
                 end
             end
             
             ::continue_line::
         end
+        
+        ::continue_read::
     end
     
     ::stream_end::
@@ -400,18 +456,53 @@ function M.format_messages(messages)
         if msg.role == "user" or msg.role == "assistant" or msg.role == "system" then
             table.insert(formatted, {
                 role = msg.role,
-                content = msg.content
+                content = msg.content or ""
             })
         elseif msg.role == "ai" then
             -- Map 'ai' role to 'assistant'
             table.insert(formatted, {
                 role = "assistant",
-                content = msg.content
+                content = msg.content or ""
             })
         end
     end
     
     return formatted
+end
+
+-- Utility function to test vLLM connection
+function M.test_connection()
+    local httpc = http.new()
+    httpc:set_timeout(5000) -- 5 second timeout for health check
+    
+    local url_parts = parse_url(VLLM_URL)
+    
+    local ok, err = httpc:connect(url_parts.host, url_parts.port)
+    if not ok then
+        return {
+            success = false,
+            error = "Connection failed: " .. tostring(err)
+        }
+    end
+    
+    local res, err = httpc:request({
+        path = "/health",
+        method = "GET"
+    })
+    
+    httpc:close()
+    
+    if not res then
+        return {
+            success = false,
+            error = "Health check failed: " .. tostring(err)
+        }
+    end
+    
+    return {
+        success = res.status == 200,
+        status = res.status
+    }
 end
 
 return M
