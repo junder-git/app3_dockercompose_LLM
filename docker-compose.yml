@@ -2,14 +2,19 @@ services:
   vllm:
     image: vllm/vllm-openai:latest
     container_name: devstral-vllm
+    environment:
+      - CUDA_LAUNCH_BLOCKING=1  # Synchronous CUDA for better error reporting
+      - TORCH_USE_CUDA_DSA=1    # Enable device-side assertions
     command: >
       --model /models/devstral/Devstral-Small-2507-Q4_K_M.gguf
       --served-model-name devstral
       --host 0.0.0.0
       --port 8000
       --tensor-parallel-size 1
-      --max-model-len 4096
-      --gpu-memory-utilization 0.85
+      --max-model-len 1024
+      --gpu-memory-utilization 0.80
+      --max-num-seqs 3
+      --enforce-eager
     ports:
       - "8000:8000"
     volumes:
