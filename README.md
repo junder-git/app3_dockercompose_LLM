@@ -1,4 +1,6 @@
 Ah, you want the entire 13.5GB model mlocked in CPU RAM with no disk swapping! That's a much clearer picture. Let me calculate the actual CPU RAM needs:
+
+use v1
 CPU RAM Requirements (Full Model in Memory):
 1. Model Storage (mlocked)
 
