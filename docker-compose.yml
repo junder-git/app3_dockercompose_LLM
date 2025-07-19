@@ -4,7 +4,8 @@ services:
     container_name: devstral-vllm
     environment:
       - TORCH_USE_CUDA_DSA=1    # Enable device-side assertions
-      - VLLM_USE_V1=1        # Force V1 engine to avoid GGUF bug
+      - VLLM_USE_V1=1           # Force V1 engine
+      - CUDA_VISIBLE_DEVICES=0  # Ensure single GPU
     command: >
       --model /models/devstral/Devstral-Small-2507-Q4_K_M.gguf
       --served-model-name devstral
@@ -16,6 +17,7 @@ services:
       --max-num-seqs 3
       --disable-log-requests
       --max-num-batched-tokens 2048
+      --kv-cache-dtype fp8
       --block-size 16
       --cpu-offload-gb 14
       --swap-space 4
