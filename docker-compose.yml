@@ -3,7 +3,6 @@ services:
     image: vllm/vllm-openai:latest
     container_name: devstral-vllm
     environment:
-      - CUDA_LAUNCH_BLOCKING=1  # Synchronous CUDA for better error reporting
       - TORCH_USE_CUDA_DSA=1    # Enable device-side assertions
     command: >
       --model /models/devstral/Devstral-Small-2507-Q4_K_M.gguf
