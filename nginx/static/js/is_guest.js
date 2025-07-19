@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_guest.js - COMPLETE FIXED VERSION
+// nginx/static/js/is_guest.js - COMPLETE FIXED VERSION WITH PROPER SSE
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -278,7 +278,6 @@ class GuestChat {
         try {
             console.log('🌐 Making SSE request to /api/chat/stream');
             
-            // FIXED: Use fetch with proper SSE handling
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 
@@ -301,10 +300,11 @@ class GuestChat {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // CRITICAL FIX: Proper SSE stream processing
+            // COMPLETELY FIXED SSE PROCESSING - PROPER STREAM HANDLING
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let processedLines = new Set(); // Track processed lines to avoid duplicates
 
             console.log('📺 Starting SSE stream processing');
 
@@ -320,12 +320,20 @@ class GuestChat {
                 const chunk = decoder.decode(value, { stream: true });
                 buffer += chunk;
                 
-                // Process complete lines
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-                for (const line of lines) {
-                    if (line.trim() === '') continue;
+                // Process complete lines only (split by \n)
+                let newlineIndex;
+                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                    const line = buffer.slice(0, newlineIndex).trim();
+                    buffer = buffer.slice(newlineIndex + 1);
+                    
+                    if (line === '') continue; // Skip empty lines
+                    
+                    // Prevent duplicate processing of identical lines
+                    if (processedLines.has(line)) {
+                        console.log('🔄 Skipping duplicate line:', line);
+                        continue;
+                    }
+                    processedLines.add(line);
                     
                     console.log('📦 Processing SSE line:', line);
                     
@@ -378,7 +386,7 @@ class GuestChat {
                     }
                 }
                 
-                // Yield control to prevent blocking
+                // Small delay to prevent CPU blocking
                 await new Promise(resolve => setTimeout(resolve, 1));
             }
 
@@ -446,10 +454,6 @@ class GuestChat {
         return messageDiv;
     }
 
-    // =============================================================================
-    // ENHANCED: Better streaming message updates
-    // =============================================================================
-
     updateStreamingMessage(messageDiv, content) {
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
@@ -462,7 +466,6 @@ class GuestChat {
             // Auto-scroll to bottom
             const messagesContainer = document.getElementById('chat-messages');
             if (messagesContainer) {
-                // Smooth scroll to bottom
                 messagesContainer.scrollTo({
                     top: messagesContainer.scrollHeight,
                     behavior: 'smooth'
@@ -565,10 +568,6 @@ window.downloadGuestHistory = function() {
     
     console.log('📥 Guest chat history downloaded');
 };
-
-// =============================================================================
-// Guest Challenge System - Complete Client Side (No Sound)
-// =============================================================================
 
 // Guest Challenge Manager - handles challenges for existing guests
 class GuestChallengeManager {
@@ -680,7 +679,7 @@ class GuestChallengeManager {
         if (!lastActivity) return true;
         
         const timeSinceActivity = Date.now() - parseInt(lastActivity);
-        return timeSinceActivity < 10; // 10secs
+        return timeSinceActivity < 10000; // 10 seconds
     }
 
     updateLastActivity() {
@@ -728,13 +727,8 @@ class GuestChallengeManager {
         this.challengeActive = true;
         this.currentChallenge = challenge;
         
-        // Show modal
         this.challengeModal.show();
-        
-        // Start countdown
         this.startChallengeCountdown();
-        
-        // Show browser notification
         this.showBrowserNotification();
     }
 
@@ -748,7 +742,6 @@ class GuestChallengeManager {
             const remaining = Math.max(0, totalTime - elapsed);
             const seconds = Math.ceil(remaining / 1000);
             
-            // Update timer display
             const timerEl = document.getElementById('challenge-timer');
             const progressEl = document.getElementById('challenge-progress');
             
@@ -757,7 +750,6 @@ class GuestChallengeManager {
                 const percentage = (remaining / totalTime) * 100;
                 progressEl.style.width = percentage + '%';
                 
-                // Change color as time runs out
                 if (percentage < 30) {
                     progressEl.classList.remove('bg-warning');
                     progressEl.classList.add('bg-danger');
@@ -870,7 +862,6 @@ class GuestChallengeManager {
         localStorage.clear();
         sessionStorage.clear();
         
-        // Clear cookies
         document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
         document.cookie = 'guest_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
         

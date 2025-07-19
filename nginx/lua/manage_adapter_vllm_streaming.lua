@@ -83,7 +83,7 @@ end
 -- Call the vLLM API
 function M.call_vllm_api(messages, options)
     local httpc = http.new()
-    httpc:set_timeout(300000) -- 5 minute timeout
+    httpc:set_timeout(600000) -- 5 minute timeout
     
     -- Parse URL
     local url_parts = parse_url(VLLM_URL)
