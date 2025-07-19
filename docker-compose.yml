@@ -11,14 +11,14 @@ services:
       --port 8000
       --tensor-parallel-size 1
       --max-model-len 2048
-      --gpu-memory-utilization 0.20
+      --gpu-memory-utilization 0.1875
       --max-num-seqs 3
       --disable-log-requests
       --max-num-batched-tokens 2048
       --kv-cache-dtype fp8
       --block-size 16
       --cpu-offload-gb 14
-      --preload-model-to-cpu
+      --swap-space 4
       --enable-prefix-caching
       --enable-chunked-prefill
     ports:
