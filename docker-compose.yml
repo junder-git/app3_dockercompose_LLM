@@ -17,7 +17,6 @@ services:
       --max-num-seqs 3
       --disable-log-requests
       --max-num-batched-tokens 1536
-      --kv-cache-dtype fp8
       --block-size 16
       --cpu-offload-gb 14
       --swap-space 4
