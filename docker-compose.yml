@@ -14,7 +14,7 @@ services:
       --max-model-len 2048
       --gpu-memory-utilization 0.80
       --max-num-seqs 3
-      --enforce-eager
+      --response-mode stream
     ports:
       - "8000:8000"
     volumes:
