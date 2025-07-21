@@ -14,21 +14,10 @@ local M = {}
 -- CORE USER TYPE DETERMINATION
 -- =============================================
 
-function M.set_vars()
+function M.set_user()
     local user_type, username, guest_slot_number, user_data = auth.check()
     ngx.var.username = username or "guest"
     ngx.var.user_type = user_type or "is_none"
-    ngx.var.guest_slot_number = guest_slot_number or "1"    
-    
-    if user_type == "is_guest" and user_data and user_data.guest_slot_number then
-        local ok, err = pcall(function()
-            ngx.var.guest_slot_number = tostring(user_data.guest_slot_number)
-        end)
-        if not ok then 
-            ngx.log(ngx.WARN, "Failed to set guest_slot_id: " .. err) 
-        end
-    end    
-    
     return user_type, username, user_data
 end
 
@@ -56,41 +45,11 @@ end
 
 function M.require_guest()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "is_guest" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    if not user_data or not user_data.guest_slot_number then
+    if user_type ~= "is_admin" and user_type ~= "is_approved" and user_type ~= "is_guest" then
         ngx.status = 403
         return ngx.exec("@custom_50x")
     end
     return username, user_data
-end
-
-function M.get_user_info()
-    local user_type, username, user_data = auth.check()
-    
-    if user_type == "is_none" then
-        return { success = false, user_type = "is_none", authenticated = false, message = "Not authenticated" }
-    end
-    
-    local response = {
-        success = true,
-        username = username,
-        user_type = user_type,
-        authenticated = true
-    }
-    
-    if user_type == "is_guest" and user_data then
-        response.message_limit = user_data.max_messages or 10
-        response.messages_used = user_data.message_count or 0
-        response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
-        response.session_remaining = (user_data.expires_at or 0) - ngx.time()
-        response.guest_slot_number = user_data.guest_slot_number
-        response.priority = user_data.priority or 3
-    end
-    
-    return response
 end
 
 -- =====================================================================
@@ -99,16 +58,9 @@ end
 
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
-    
     -- Handle Ollama API endpoints first
     if route_type == "ollama_chat_api" then
         M.handle_ollama_chat_api()
-        return
-    elseif route_type == "ollama_models_api" then
-        M.handle_ollama_models_api()
-        return
-    elseif route_type == "ollama_completions_api" then
-        M.handle_ollama_completions_api()
         return
     end
     
@@ -119,10 +71,6 @@ function M.route_to_handler(route_type)
         if route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        
-    elseif user_type == "is_guest" then
-        -- Can see: ALL routes (/, /chat, /dash, /login, /register)
-        -- No redirects needed for guests
         
     elseif user_type == "is_pending" then
         -- Can see: /, /dash (pending shows as dash)
@@ -193,71 +141,6 @@ function M.handle_ollama_chat_api()
     elseif user_type == "is_guest" then
         local is_guest = require "is_guest"
         is_guest.handle_ollama_chat_stream()
-    else
-        ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Access denied",
-            message = "Invalid user type"
-        }))
-        return ngx.exit(403)
-    end
-end
-
-function M.handle_ollama_models_api()
-    local user_type, username, user_data = M.set_vars()
-    
-    if user_type == "is_none" then
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Authentication required",
-            message = "Please login or start a guest session"
-        }))
-        return ngx.exit(401)
-    end
-    
-    -- Simple models endpoint - return available model info
-    local MODEL_NAME = os.getenv("MODEL_NAME") or "devstral"
-    
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
-        object = "list",
-        data = {
-            {
-                id = MODEL_NAME,
-                object = "model",
-                created = ngx.time(),
-                owned_by = "ai.junder.uk"
-            }
-        }
-    }))
-end
-
-function M.handle_ollama_completions_api()
-    local user_type, username, user_data = M.set_vars()
-    
-    if user_type == "is_none" then
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Authentication required",
-            message = "Please login or start a guest session"
-        }))
-        return ngx.exit(401)
-    end
-    
-    -- Delegate to user-type specific completions handler
-    if user_type == "is_admin" then
-        local is_admin = require "is_admin"
-        is_admin.handle_ollama_completions_stream()
-    elseif user_type == "is_approved" then
-        local is_approved = require "is_approved"
-        is_approved.handle_ollama_completions_stream()
-    elseif user_type == "is_guest" then
-        local is_guest = require "is_guest"
-        is_guest.handle_ollama_completions_stream()
     else
         ngx.status = 403
         ngx.header.content_type = 'application/json'
