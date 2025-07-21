@@ -1,6 +1,9 @@
 -- =============================================================================
--- nginx/lua/is_pending.lua - PENDING USER DASHBOARD
+-- nginx/lua/is_pending.lua
 -- =============================================================================
+local function handle_dash_page()
+end
+
 
 local function handle_dash_page()
     local is_who = require "is_who"
@@ -34,5 +37,6 @@ local function handle_dash_page()
 end
 
 return {
+    handle_chat_page = handle_chat_page,
     handle_dash_page = handle_dash_page
 }

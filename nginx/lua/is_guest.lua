@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - UPDATED FOR VLLM BACKEND INTEGRATION
+-- nginx/lua/is_guest.lua - UPDATED
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -10,6 +10,45 @@ local manage = require "manage"  -- Use existing manage module
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
+
+-- =============================================================================
+-- PAGE HANDLERS
+-- =============================================================================
+
+local function handle_chat_page()
+    local template = require "template"
+    local is_who = require "is_who"
+    
+    local username = is_who.require_guest()
+    local nav_buttons = is_who.get_nav_buttons("is_guest", username, nil)
+    local chat_features = is_who.get_chat_features("is_guest")
+    
+    local context = {
+        page_title = "Guest Chat",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = username or "guest",
+        dash_buttons = nav_buttons,
+        chat_features = chat_features,
+        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat.html", context)
+end
+
+local function handle_dash_page()
+end
+
+
+
+
+return {
+    handle_chat_page = handle_chat_page,
+    handle_dash_page = handle_dash_page
+}
+
+
+
+
 
 -- Configuration
 local MAX_GUEST_SESSIONS = 2
@@ -741,30 +780,6 @@ local function handle_guest_api()
 end
 
 -- =============================================================================
--- PAGE HANDLERS
--- =============================================================================
-
-local function handle_chat_page()
-    local template = require "template"
-    local is_who = require "is_who"
-    
-    local username = is_who.require_guest()
-    local nav_buttons = is_who.get_nav_buttons("is_guest", username, nil)
-    local chat_features = is_who.get_chat_features("is_guest")
-    
-    local context = {
-        page_title = "Guest Chat",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = username or "guest",
-        dash_buttons = nav_buttons,
-        chat_features = chat_features,
-        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat_guest.html", context)
-end
-
--- =============================================================================
 -- UPDATED VLLM CHAT HANDLERS USING EXISTING MANAGE MODULE
 -- =============================================================================
 
@@ -877,21 +892,4 @@ local function handle_chat_api()
     end
 end
 
-return {
-    create_secure_guest_session = create_secure_guest_session_with_challenge,
-    validate_guest_session = validate_guest_session,
-    generate_display_username = generate_display_username,
-    get_guest_stats = get_guest_stats,
-    cleanup_guest_session = cleanup_guest_session,
-    clear_all_guest_sessions = clear_all_guest_sessions,
-    handle_chat_page = handle_chat_page,
-    handle_guest_api = handle_guest_api,
-    handle_chat_api = handle_chat_api,
-    handle_vllm_chat_stream = handle_vllm_chat_stream,
-    
-    -- Challenge system functions
-    create_guest_challenge = create_guest_challenge,
-    get_guest_challenge = get_guest_challenge,
-    respond_to_challenge = respond_to_challenge,
-    force_kick_guest_session = force_kick_guest_session
-}
+return { }

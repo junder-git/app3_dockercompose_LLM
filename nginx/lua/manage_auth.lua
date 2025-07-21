@@ -110,83 +110,9 @@ local function generate_guest_jwt(username, guest_slot_number)
     
     return token
 end
-
-
-local function check()
-    local token = ngx.var.cookie_access_token
-    if not token then
-        return "is_none", nil, nil
-    end
-    
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
-        -- Clear the invalid cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    local username = jwt_obj.payload.username
-    local user_type_claim = jwt_obj.payload.user_type
-    
-    -- Handle guest users differently
-    if user_type_claim == "is_guest" or user_type_claim == "guest" then
-        -- For guest users, validate against guest session system
-        local ok, is_guest = pcall(require, "is_guest")
-        if ok and is_guest.validate_guest_session then
-            local guest_session, error_msg = is_guest.validate_guest_session(token)
-            if guest_session then
-                return "is_guest", guest_session.display_username or guest_session.username, guest_session
-            else
-                ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
-                -- Clear the stale guest cookie
-                ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-                return "is_none", nil, nil
-            end
-        else
-            ngx.log(ngx.WARN, "Guest module not available")
-            -- Clear the cookie since we can't validate it
-            ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-            return "is_none", nil, nil
-        end
-    end
-    
-    -- For regular users, check Redis
-    local user_data = get_user(username)
-    if not user_data or user_data == "is_none" then
-        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
-        -- Clear the stale cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    -- Update user activity
-    local red = connect_redis()
-    if red then
-        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
-        red:close()
-    end
-    
-    -- Return user type based on Redis data (using is_* format)
-    if user_data.user_type == "is_admin" then
-        return "is_admin", username, user_data
-    end
-    if user_data.user_type == "is_approved" then
-        return "is_approved", username, user_data
-    end
-    if user_data.user_type == "is_pending" then
-        return "is_pending", username, user_data
-    end
-    if user_data.user_type == "is_none" then
-        return "is_none", "guest", nil
-    end
-    -- Default fallback
-    return "is_none", nil, nil
-end
 -- =============================================
 -- LOGIN HANDLER
 -- =============================================
-
 local function handle_login()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -296,38 +222,71 @@ end
 -- =============================================
 -- AUTH CHECK HANDLER
 -- =============================================
-
-local function handle_check_auth()
-    local user_type, username, user_data = check()
-    
-    if user_type == "is_none" then
-        send_json(200, { 
-            success = false, 
-            user_type = "is_none", 
-            authenticated = false, 
-            message = "Not authenticated" 
-        })
+local function check()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        return "is_none", nil, nil
     end
-    
-    local response = {
-        success = true,
-        username = username,
-        user_type = user_type,
-        authenticated = true
-    }
-    
-    if user_type == "is_guest" and user_data then
-        response.message_limit = user_data.max_messages or 10
-        response.messages_used = user_data.message_count or 0
-        response.messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
-        response.session_remaining = (user_data.expires_at or 0) - ngx.time()
-        response.guest_slot_number = user_data.guest_slot_number
-        response.priority = user_data.priority or 3
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
+        -- Clear the invalid cookie
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
     end
-    
-    send_json(200, response)
+    local username = jwt_obj.payload.username
+    local user_type_claim = jwt_obj.payload.user_type
+    -- Handle guest users differently
+    if user_type_claim == "is_guest" or user_type_claim == "guest" then
+        -- For guest users, validate against guest session system
+        local ok, is_guest = pcall(require, "is_guest")
+        if ok and is_guest.validate_guest_session then
+            local guest_session, error_msg = is_guest.validate_guest_session(token)
+            if guest_session then
+                return "is_guest", guest_session.display_username or guest_session.username, guest_session
+            else
+                ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
+                -- Clear the stale guest cookie
+                ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+                return "is_none", nil, nil
+            end
+        else
+            ngx.log(ngx.WARN, "Guest module not available")
+            -- Clear the cookie since we can't validate it
+            ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+            return "is_none", nil, nil
+        end
+    end
+    -- For regular users, check Redis
+    local user_data = get_user(username)
+    if not user_data or user_data == "is_none" then
+        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
+        -- Clear the stale cookie
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
+    end
+    -- Update user activity
+    local red = connect_redis()
+    if red then
+        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
+        red:close()
+    end
+    -- Return user type based on Redis data (using is_* format)
+    if user_data.user_type == "is_admin" then
+        return "is_admin", username, user_data
+    end
+    if user_data.user_type == "is_approved" then
+        return "is_approved", username, user_data
+    end
+    if user_data.user_type == "is_pending" then
+        return "is_pending", username, user_data
+    end
+    if user_data.user_type == "is_none" then
+        return "is_none", "guest", nil
+    end
+    -- Default fallback
+    return "is_none", nil, nil
 end
-
 -- =============================================
 -- MODULE EXPORTS
 -- =============================================
@@ -337,6 +296,5 @@ return {
     get_user = get_user,
     verify_password = verify_password,
     handle_login = handle_login,
-    handle_logout = handle_logout,
-    handle_check_auth = handle_check_auth
+    handle_logout = handle_logout
 }
