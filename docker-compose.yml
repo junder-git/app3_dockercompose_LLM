@@ -1,45 +1,44 @@
 services:
-  vllm:
-    image: vllm/vllm-openai:latest
-    container_name: devstral-vllm
+  ollama:
+    image: ollama/ollama:latest
+    container_name: devstral-ollama
     environment:
-      - TORCH_USE_CUDA_DSA=1    # Enable device-side assertions
-      - VLLM_USE_V1=1           # Force V1 engine
-      - CUDA_VISIBLE_DEVICES=0  # Ensure single GPU
-    command: >
-      --model /models/devstral/Devstral-Small-2507-Q4_K_M.gguf
-      --served-model-name devstral
-      --host 0.0.0.0
-      --port 8000
-      --tensor-parallel-size 1
-      --max-model-len 512
-      --gpu-memory-utilization 0.85
-      --max-num-seqs 3
-      --disable-log-requests
-      --max-num-batched-tokens 1536
-      --block-size 16
-      --cpu-offload-gb 14
-      --swap-space 4
-      --enable-prefix-caching
-      --enable-chunked-prefill
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_MODELS=/models
+      - OLLAMA_NUM_PARALLEL=3
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_FLASH_ATTENTION=1
+      # Memory management
+      - OLLAMA_MMAP=false
+      - OLLAMA_NUM_GPU=20
+      - OLLAMA_NUM_THREAD=8
     ports:
-      - "8000:8000"
+      - "11434:11434"
     volumes:
-      - ./volumes/models:/models
-      - ./volumes/vllm:/root/.cache/vllm
+      - ./volumes/ollama:/root/.ollama
     networks:
       - devstral-network
     deploy:
       resources:
         limits:
-          cpus: ${VLLM_CPU}
-          memory: ${VLLM_MEMORY}
+          cpus: ${OLLAMA_CPU:-4.0}
+          memory: ${OLLAMA_MEMORY:-22G}
         reservations:
-          cpus: ${VLLM_CPU}
-          memory: ${VLLM_MEMORY}
+          cpus: ${OLLAMA_CPU:-4.0}
+          memory: ${OLLAMA_MEMORY:-22G}
           devices:
             - capabilities: [gpu]
     restart: unless-stopped
+    # Initialize the model on startup
+    entrypoint: >
+      sh -c "
+        ollama serve &
+        sleep 10 &&
+        ollama create devstral -f /root/.ollama/Modelfile &&
+        ollama run devstral 'Hello' &&
+        wait
+      "
 
   redis:
     build: ./redis
@@ -75,8 +74,8 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
-      - VLLM_URL=${VLLM_URL}
-      - VLLM_MODEL=${VLLM_MODEL}
+      - OLLAMA_URL=${OLLAMA_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
       - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH}
     volumes:
       - ./volumes/nginx_cache:/var/cache/nginx
@@ -92,6 +91,8 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
+    depends_on:
+      - ollama
 
 networks:
   devstral-network:
