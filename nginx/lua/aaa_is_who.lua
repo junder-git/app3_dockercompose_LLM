@@ -94,13 +94,13 @@ function M.get_user_info()
 end
 
 -- =====================================================================
--- MAIN ROUTING HANDLER - DELEGATES TO APPROPRIATE MODULES
+-- MAIN ROUTING HANDLER - HANDLES REDIRECTS AND DELEGATES TO MODULES
 -- =====================================================================
 
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_vars()
     
-    -- Handle ollama API endpoints first
+    -- Handle Ollama API endpoints first
     if route_type == "ollama_chat_api" then
         M.handle_ollama_chat_api()
         return
@@ -110,6 +110,33 @@ function M.route_to_handler(route_type)
     elseif route_type == "ollama_completions_api" then
         M.handle_ollama_completions_api()
         return
+    end
+    
+    -- NEW ROUTING LOGIC: Based on what each user type can see
+    if user_type == "is_admin" or user_type == "is_approved" then
+        -- Can see: /chat, /dash, / 
+        -- Redirect login/register to dash
+        if route_type == "login" or route_type == "register" then
+            return ngx.redirect("/dash")
+        end
+        
+    elseif user_type == "is_guest" then
+        -- Can see: ALL routes (/, /chat, /dash, /login, /register)
+        -- No redirects needed for guests
+        
+    elseif user_type == "is_pending" then
+        -- Can see: /, /dash (pending shows as dash)
+        -- Block chat, login, register
+        if route_type == "chat" or route_type == "login" or route_type == "register" then
+            return ngx.redirect("/dash")
+        end
+        
+    elseif user_type == "is_none" then
+        -- Can see: /, /login, /register
+        -- Block chat and dash (unless upgrading to guest through available logic)
+        if route_type == "chat" or route_type == "dash" then
+            return ngx.redirect("/")
+        end
     end
     
     -- Route to user-type specific handlers
@@ -140,7 +167,7 @@ function M.route_to_handler(route_type)
 end
 
 -- =====================================================================
--- ollama API HANDLERS (KEEP THESE HERE AS THEY'RE CROSS-USER-TYPE)
+-- OLLAMA API HANDLERS (KEEP THESE HERE AS THEY'RE CROSS-USER-TYPE)
 -- =====================================================================
 
 function M.handle_ollama_chat_api()
@@ -156,7 +183,7 @@ function M.handle_ollama_chat_api()
         return ngx.exit(401)
     end
     
-    -- Delegate to user-type specific ollama handler
+    -- Delegate to user-type specific Ollama handler
     if user_type == "is_admin" then
         local is_admin = require "is_admin"
         is_admin.handle_ollama_chat_stream()
@@ -191,7 +218,7 @@ function M.handle_ollama_models_api()
     end
     
     -- Simple models endpoint - return available model info
-    local ollama_MODEL = os.getenv("ollama_MODEL") or "devstral"
+    local MODEL_NAME = os.getenv("MODEL_NAME") or "devstral"
     
     ngx.status = 200
     ngx.header.content_type = 'application/json'
@@ -199,7 +226,7 @@ function M.handle_ollama_models_api()
         object = "list",
         data = {
             {
-                id = ollama_MODEL,
+                id = MODEL_NAME,
                 object = "model",
                 created = ngx.time(),
                 owned_by = "ai.junder.uk"
@@ -276,6 +303,43 @@ end
 function M.handle_guest_api()
     local is_guest = require "is_guest"
     is_guest.handle_guest_api()
+end
+
+-- =============================================
+-- ERROR PAGE HANDLERS (KEPT IN is_who FOR CENTRAL HANDLING)
+-- =============================================
+
+function M.handle_404_page()
+    local template = require "manage_template"
+    local context = {
+        page_title = "404 - Page Not Found",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
+    }
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/404.html", context)
+end
+
+function M.handle_429_page()
+    local template = require "manage_template"
+    local context = {
+        page_title = "429 - Guest reached max sessions",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest", 
+        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
+    }
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/429.html", context)
+end
+
+function M.handle_50x_page()
+    local template = require "manage_template"
+    local context = {
+        page_title = "Server Error",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
+    }
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/50x.html", context)
 end
 
 return M
