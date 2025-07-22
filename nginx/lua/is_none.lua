@@ -742,7 +742,7 @@ end
 -- MODULE EXPORTS
 -- =============================================
 
-local M = {
+return {
     -- Main route handler
     handle_route = handle_route,
     
@@ -776,5 +776,3 @@ local M = {
     connect_redis = connect_redis,
     redis_to_lua = redis_to_lua
 }
-
-return M
