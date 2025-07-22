@@ -28,7 +28,8 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ./volumes/ollama:/root/.ollama
+      - ./volumes/ollama/models:/root/.ollama/models
+      - ./volumes/ollama/scripts:/root/.ollama/scripts
     networks:
       - devstral-network
     deploy:
