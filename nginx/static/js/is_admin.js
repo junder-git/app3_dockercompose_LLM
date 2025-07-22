@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/admin.js - ADMIN EXTENSIONS WITH VLLM INTEGRATION
+// nginx/static/js/is_admin.js - ADMIN CHAT (EXTENDS APPROVED FUNCTIONALITY)
 // =============================================================================
 
 // Admin Chat System - extends ApprovedChat with admin features
@@ -8,33 +8,20 @@ class AdminChat extends ApprovedChat {
         super();
         this.isAdmin = true;
         this.messageLimit = 'unlimited';
+        this.maxTokens = 4096; // Highest limit for admins
+        this.setupAdminFeatures();
         console.log('👑 Admin chat system initialized');
     }
 
     init() {
         super.init();
-        this.setupAdminFeatures();
         this.loadAdminData();
     }
 
     setupAdminFeatures() {
         console.log('🛠️ Setting up admin features');
-        
-        // Add admin-specific event listeners
-        this.setupAdminControls();
-        this.setupSystemMonitoring();
-    }
-
-    setupAdminControls() {
-        // Admin can see system information
         this.addAdminInfo();
-    }
-
-    setupSystemMonitoring() {
-        // Monitor system stats
-        setInterval(() => {
-            this.updateSystemStats();
-        }, 30000); // Update every 30 seconds
+        this.setupSystemMonitoring();
     }
 
     addAdminInfo() {
@@ -44,12 +31,19 @@ class AdminChat extends ApprovedChat {
             adminInfo.className = 'admin-info';
             adminInfo.innerHTML = `
                 <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i> 
+                    <i class="bi bi-shield-check"></i> 
                     <strong>Admin Mode:</strong> Full system access enabled
                 </div>
             `;
             chatContainer.insertBefore(adminInfo, chatContainer.firstChild);
         }
+    }
+
+    setupSystemMonitoring() {
+        // Monitor system stats every 30 seconds
+        setInterval(() => {
+            this.updateSystemStats();
+        }, 30000);
     }
 
     async loadAdminData() {
@@ -66,7 +60,7 @@ class AdminChat extends ApprovedChat {
 
     displayAdminStats(stats) {
         console.log('📊 Admin stats loaded:', stats);
-        // Display stats in admin interface
+        // Display stats in admin interface if needed
     }
 
     async updateSystemStats() {
@@ -74,7 +68,6 @@ class AdminChat extends ApprovedChat {
             const response = await fetch('/api/admin/stats', { credentials: 'include' });
             if (response.ok) {
                 const data = await response.json();
-                // Update system stats display
                 console.log('🔄 System stats updated');
             }
         } catch (error) {
@@ -82,60 +75,57 @@ class AdminChat extends ApprovedChat {
         }
     }
 
-    addMessage(sender, content, isStreaming = false) {
-        const messagesContainer = document.getElementById('chat-messages');
-        if (!messagesContainer) return;
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message message-${sender}`;
-        
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        
-        if (sender === 'user') {
-            // Show as admin user
-            contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
-                <i class="bi bi-shield-check text-danger me-2"></i>
-                <strong>Admin User</strong>
-                <span class="badge bg-danger ms-2">ADMIN</span>
-            </div>` + (window.marked ? marked.parse(content) : content);
-        } else {
-            contentDiv.innerHTML = isStreaming ? 
-                '<span class="streaming-content"></span>' : 
-                (window.marked ? marked.parse(content) : content);
+    // Override sendMessage to include admin-specific options
+    async sendMessage() {
+        console.log('🚀 Admin sendMessage called');
+        const input = document.getElementById('chat-input');
+        if (!input) {
+            console.error('Chat input not found');
+            return;
         }
         
-        messageDiv.appendChild(contentDiv);
-        messagesContainer.appendChild(messageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        const message = input.value.trim();
         
-        return messageDiv;
-    }
+        if (!message || this.isTyping) {
+            console.warn('Empty message or already typing');
+            return;
+        }
 
-    async sendMessage() {
-        const input = document.getElementById('chat-input');
-        const message = input?.value?.trim();
-        
-        if (!message || this.isTyping) return;
+        console.log('📤 Sending admin message:', message);
 
+        // Hide welcome prompt
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt) welcomePrompt.style.display = 'none';
         
+        // Add user message to UI immediately
         this.addMessage('user', message);
-        input.value = '';
-        this.updateCharCount();
         
+        // Clear input immediately and reset height
+        input.value = '';
+        input.style.height = 'auto';
+        this.updateCharCount();
+        this.autoResizeTextarea();
+        
+        // Set typing state
         this.isTyping = true;
         this.updateButtons(true);
 
+        // Create abort controller for this request
         this.abortController = new AbortController();
+        
+        // Add AI message container for streaming
         const aiMessage = this.addMessage('ai', '', true);
-        let accumulated = '';
 
         try {
+            console.log('🌐 Making admin SSE request');
+            
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    'Cache-Control': 'no-cache'
+                },
                 credentials: 'include',
                 signal: this.abortController.signal,
                 body: JSON.stringify({
@@ -143,52 +133,76 @@ class AdminChat extends ApprovedChat {
                     include_history: true,  // Admin gets full history
                     options: {
                         temperature: 0.7,
-                        max_tokens: 4096  // Highest limit for admins
+                        max_tokens: this.maxTokens  // Highest limit for admins
                     }
                 })
             });
 
-            if (!response.ok) throw new Error('HTTP ' + response.status);
+            console.log('📡 Admin response status:', response.status);
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const jsonStr = line.slice(6);
-                        if (jsonStr === '[DONE]') {
-                            this.finishStreaming(aiMessage, accumulated);
-                            return;
-                        }
-
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.content) {
-                                accumulated += data.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
-                            }
-                        } catch (e) {}
-                    }
-                }
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
+
+            // Use shared SSE processing from SharedChatBase
+            await this.processSSEStream(response, aiMessage);
+
         } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Admin chat error:', error);
-                this.updateStreamingMessage(aiMessage, '*Admin Error: ' + error.message + '*');
+            console.error('❌ Admin chat error:', error);
+            
+            if (error.name === 'AbortError') {
+                console.log('🛑 Admin request was aborted');
+                this.updateStreamingMessage(aiMessage, '*Request cancelled*');
+            } else {
+                const errorMessage = `*Admin Error: ${error.message}*`;
+                this.updateStreamingMessage(aiMessage, errorMessage);
             }
-            this.finishStreaming(aiMessage, accumulated);
+            
+            this.finishStreaming(aiMessage, `Admin Error: ${error.message}`);
         }
+    }
+
+    // Override addMessage to show admin styling
+    addMessage(sender, content, isStreaming = false, skipStorage = false) {
+        const messagesContainer = document.getElementById('chat-messages');
+        if (!messagesContainer) return;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message message-${sender}`;
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = `message-avatar avatar-${sender}`;
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        if (sender === 'user') {
+            avatarDiv.innerHTML = '<i class="bi bi-shield-check"></i>';
+            contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
+                <i class="bi bi-shield-check text-danger me-2"></i>
+                <strong>Admin User</strong>
+                <span class="badge bg-danger ms-2">ADMIN</span>
+            </div>` + (window.marked ? marked.parse(content) : content);
+        } else {
+            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
+            contentDiv.innerHTML = isStreaming ? 
+                '<span class="streaming-content"></span>' : 
+                (window.marked ? marked.parse(content) : content);
+        }
+        
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentDiv);
+        messagesContainer.appendChild(messageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        return messageDiv;
     }
 }
 
-// Admin-specific functions
+// =============================================================================
+// ADMIN-SPECIFIC FUNCTIONS
+// =============================================================================
+
 window.manageUsers = function() {
     window.open('/admin', '_blank');
 };
@@ -203,6 +217,7 @@ window.viewSystemLogs = async function() {
         }
     } catch (error) {
         console.error('Failed to load system logs:', error);
+        sharedInterface.showError('Failed to load system logs: ' + error.message);
     }
 };
 
@@ -237,14 +252,19 @@ window.exportAdminChats = async function() {
             URL.revokeObjectURL(url);
             
             console.log('👑 Admin chat history exported');
+            sharedInterface.showSuccess('Admin chat history exported successfully');
         } else {
             throw new Error('Failed to export admin chat history');
         }
     } catch (error) {
         console.error('Admin export error:', error);
-        alert('Admin export failed: ' + error.message);
+        sharedInterface.showError('Admin export failed: ' + error.message);
     }
 };
+
+// =============================================================================
+// ADMIN USER MANAGEMENT FUNCTIONS
+// =============================================================================
 
 window.loadPendingUsers = async function() {
     try {
@@ -370,7 +390,10 @@ window.clearGuestSessions = async function() {
     }
 };
 
-// Display functions
+// =============================================================================
+// ADMIN UI DISPLAY FUNCTIONS - Using shared alert system
+// =============================================================================
+
 function displayPendingUsers(users, count, maxPending) {
     const container = document.getElementById('user-management-content');
     if (!container) return;
@@ -547,7 +570,7 @@ function displaySystemStats(stats) {
         <div class="mt-3">
             <small class="text-muted">
                 Last updated: ${new Date().toLocaleString()}<br>
-                <strong>AI Engine:</strong> vLLM (OpenAI Compatible API)
+                <strong>AI Engine:</strong> Ollama (${stats.ai_engine || 'Devstral'})
             </small>
         </div>
     `;
@@ -556,6 +579,7 @@ function displaySystemStats(stats) {
 }
 
 function showUserManagementError(message) {
+    sharedInterface.showError(message);
     const container = document.getElementById('user-management-content');
     if (container) {
         container.innerHTML = `
@@ -567,6 +591,7 @@ function showUserManagementError(message) {
 }
 
 function showUserManagementSuccess(message) {
+    sharedInterface.showSuccess(message);
     const container = document.getElementById('user-management-content');
     if (container) {
         const existingAlert = container.querySelector('.alert-success');
@@ -588,4 +613,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('system-stats')) {
         refreshSystemStats();
     }
+    
+    // Only initialize if we're actually an admin user
+    sharedInterface.checkAuth()
+        .then(data => {
+            if (data.success && data.user_type === 'is_admin') {
+                // Initialize main admin chat if on chat page
+                if (window.location.pathname === '/chat') {
+                    window.adminChat = new AdminChat();
+                    window.chatSystem = window.adminChat; // For compatibility
+                    console.log('💬 Admin chat initialized');
+                }
+            }
+        })
+        .catch(error => {
+            console.warn('Could not check auth status for admin user:', error);
+        });
 });

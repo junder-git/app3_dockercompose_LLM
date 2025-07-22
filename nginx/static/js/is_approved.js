@@ -1,20 +1,23 @@
 // =============================================================================
-// nginx/static/js/approved.js - APPROVED USER EXTENSIONS (approved + admin get this)
+// nginx/static/js/is_approved.js - APPROVED USER CHAT (EXTENDS SHARED FUNCTIONALITY)
 // =============================================================================
 
-// Approved Chat System - extends GuestChat with Redis features
-class ApprovedChat extends GuestChat {
+// Approved Chat System - Extends SharedChatBase with Redis features
+class ApprovedChat extends SharedChatBase {
     constructor() {
         super();
         this.storageType = 'redis';
         this.messageLimit = 'unlimited';
-        console.log('✅ Approved chat system initialized');
+        this.maxTokens = 2048;
+        this.init();
     }
 
     init() {
-        super.init();
+        this.setupEventListeners();
         this.loadApprovedHistory();
+        this.setupSuggestionChips();
         this.setupApprovedFeatures();
+        console.log('✅ Approved chat system initialized');
     }
 
     async loadApprovedHistory() {
@@ -31,7 +34,7 @@ class ApprovedChat extends GuestChat {
                     if (messagesContainer) messagesContainer.innerHTML = '';
                     
                     data.messages.reverse().forEach(msg => {
-                        this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true); // Skip storage save
+                        this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true);
                     });
                     console.log('🗄️ Loaded', data.messages.length, 'messages from Redis');
                 }
@@ -43,12 +46,93 @@ class ApprovedChat extends GuestChat {
 
     setupApprovedFeatures() {
         // Enhanced message display for approved users
-        this.setupAdvancedFeatures();
+        console.log('🔧 Setting up approved user features');
     }
 
-    setupAdvancedFeatures() {
-        // Add approved-specific features
-        console.log('🔧 Setting up approved user features');
+    async sendMessage() {
+        console.log('🚀 Approved sendMessage called');
+        const input = document.getElementById('chat-input');
+        if (!input) {
+            console.error('Chat input not found');
+            return;
+        }
+        
+        const message = input.value.trim();
+        
+        if (!message || this.isTyping) {
+            console.warn('Empty message or already typing');
+            return;
+        }
+
+        console.log('📤 Sending approved message:', message);
+
+        // Hide welcome prompt
+        const welcomePrompt = document.getElementById('welcome-prompt');
+        if (welcomePrompt) welcomePrompt.style.display = 'none';
+        
+        // Add user message to UI immediately
+        this.addMessage('user', message);
+        
+        // Clear input immediately and reset height
+        input.value = '';
+        input.style.height = 'auto';
+        this.updateCharCount();
+        this.autoResizeTextarea();
+        
+        // Set typing state
+        this.isTyping = true;
+        this.updateButtons(true);
+
+        // Create abort controller for this request
+        this.abortController = new AbortController();
+        
+        // Add AI message container for streaming
+        const aiMessage = this.addMessage('ai', '', true);
+
+        try {
+            console.log('🌐 Making approved user SSE request');
+            
+            const response = await fetch('/api/chat/stream', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    'Cache-Control': 'no-cache'
+                },
+                credentials: 'include',
+                signal: this.abortController.signal,
+                body: JSON.stringify({
+                    message: message,
+                    include_history: true,  // Approved users get history
+                    options: {
+                        temperature: 0.7,
+                        max_tokens: this.maxTokens  // Higher limit for approved users
+                    }
+                })
+            });
+
+            console.log('📡 Approved user response status:', response.status);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            // Use shared SSE processing from SharedChatBase
+            await this.processSSEStream(response, aiMessage);
+
+        } catch (error) {
+            console.error('❌ Approved chat error:', error);
+            
+            if (error.name === 'AbortError') {
+                console.log('🛑 Request was aborted by user');
+                this.updateStreamingMessage(aiMessage, '*Request cancelled*');
+            } else {
+                const errorMessage = `*Error: ${error.message}*`;
+                this.updateStreamingMessage(aiMessage, errorMessage);
+            }
+            
+            this.finishStreaming(aiMessage, `Error: ${error.message}`);
+        }
     }
 
     addMessage(sender, content, isStreaming = false, skipStorage = false) {
@@ -69,6 +153,7 @@ class ApprovedChat extends GuestChat {
             contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
                 <i class="bi bi-person-check text-success me-2"></i>
                 <strong>Approved User</strong>
+                <span class="badge bg-success ms-2">APPROVED</span>
             </div>` + (window.marked ? marked.parse(content) : content);
         } else {
             avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
@@ -83,81 +168,6 @@ class ApprovedChat extends GuestChat {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         
         return messageDiv;
-    }
-
-    async sendMessage() {
-        const input = document.getElementById('chat-input');
-        const message = input?.value?.trim();
-        
-        if (!message || this.isTyping) return;
-
-        const welcomePrompt = document.getElementById('welcome-prompt');
-        if (welcomePrompt) welcomePrompt.style.display = 'none';
-        
-        this.addMessage('user', message);
-        input.value = '';
-        this.updateCharCount();
-        
-        this.isTyping = true;
-        this.updateButtons(true);
-
-        this.abortController = new AbortController();
-        const aiMessage = this.addMessage('ai', '', true);
-        let accumulated = '';
-
-        try {
-            const response = await fetch('/api/chat/stream', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                signal: this.abortController.signal,
-                body: JSON.stringify({
-                    message: message,
-                    include_history: true,  // Approved users get history
-                    options: {
-                        temperature: 0.7,
-                        max_tokens: 2048  // Higher limit for approved users
-                    }
-                })
-            });
-
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const jsonStr = line.slice(6);
-                        if (jsonStr === '[DONE]') {
-                            this.finishStreaming(aiMessage, accumulated);
-                            return;
-                        }
-
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            if (data.content) {
-                                accumulated += data.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
-                            }
-                        } catch (e) {}
-                    }
-                }
-            }
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error('Approved chat error:', error);
-                this.updateStreamingMessage(aiMessage, '*Error: ' + error.message + '*');
-            }
-            this.finishStreaming(aiMessage, accumulated);
-        }
     }
 
     async clearChat() {
@@ -179,9 +189,10 @@ class ApprovedChat extends GuestChat {
             
             this.messageCount = 0;
             console.log('🗑️ Approved user chat history cleared from Redis');
+            sharedInterface.showSuccess('Chat history cleared successfully');
         } catch (error) {
             console.error('Clear chat error:', error);
-            alert('Failed to clear chat: ' + error.message);
+            sharedInterface.showError('Failed to clear chat: ' + error.message);
         }
     }
 }
@@ -217,12 +228,13 @@ window.exportChats = async function() {
             URL.revokeObjectURL(url);
             
             console.log('📤 Approved user chat history exported');
+            sharedInterface.showSuccess('Chat history exported successfully');
         } else {
             throw new Error('Failed to export chat history');
         }
     } catch (error) {
         console.error('Export error:', error);
-        alert('Export failed: ' + error.message);
+        sharedInterface.showError('Export failed: ' + error.message);
     }
 };
 
@@ -231,3 +243,22 @@ window.clearHistory = function() {
         window.chatSystem.clearChat();
     }
 };
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    // Only initialize if we're actually an approved user
+    sharedInterface.checkAuth()
+        .then(data => {
+            if (data.success && (data.user_type === 'is_approved' || data.user_type === 'is_admin')) {
+                // Initialize main approved chat if on chat page
+                if (window.location.pathname === '/chat') {
+                    window.approvedChat = new ApprovedChat();
+                    window.chatSystem = window.approvedChat; // For compatibility
+                    console.log('💬 Approved chat initialized');
+                }
+            }
+        })
+        .catch(error => {
+            console.warn('Could not check auth status for approved user:', error);
+        });
+});

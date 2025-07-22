@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_guest.js - GUEST CHAT FUNCTIONALITY ONLY
+// nginx/static/js/is_guest.js - GUEST CHAT (EXTENDS SHARED FUNCTIONALITY)
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -63,13 +63,12 @@ const GuestChatStorage = {
     }
 };
 
-// Guest Chat System (base class used by all user types)
-class GuestChat {
+// Guest Chat System - Extends SharedChatBase
+class GuestChat extends SharedChatBase {
     constructor() {
-        this.isTyping = false;
-        this.abortController = null;
-        this.messageCount = 0;
+        super();
         this.storageType = 'localStorage';
+        this.messageLimit = 10;
         this.init();
     }
 
@@ -80,118 +79,9 @@ class GuestChat {
         console.log('👤 Guest chat system initialized');
     }
 
-    setupEventListeners() {
-        // Prevent form submission from refreshing page
-        const chatForm = document.getElementById('chat-form');
-        if (chatForm) {
-            chatForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.sendMessage();
-                return false;
-            });
-        }
-
-        const stopButton = document.getElementById('stop-button');
-        if (stopButton) {
-            stopButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.stopGeneration();
-            });
-        }
-
-        const clearButton = document.getElementById('clear-chat');
-        if (clearButton) {
-            clearButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.clearChat();
-            });
-        }
-        
-        // Proper Enter key handling for textarea
-        const textarea = document.getElementById('chat-input');
-        if (textarea) {
-            // Handle input changes for character count and auto-resize
-            textarea.addEventListener('input', (e) => {
-                this.updateCharCount();
-                this.autoResizeTextarea();
-            });
-            
-            // Enter key handling
-            textarea.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Shift+Enter: Allow new line
-                        return;
-                    } else {
-                        // Enter only: Send message
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        if (textarea.value.trim()) {
-                            this.sendMessage();
-                        }
-                        return false;
-                    }
-                }
-            });
-
-            // Auto-resize on load
-            this.autoResizeTextarea();
-        }
-
-        // Send button click handler
-        const sendButton = document.getElementById('send-button');
-        if (sendButton) {
-            sendButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const textarea = document.getElementById('chat-input');
-                if (textarea && textarea.value.trim()) {
-                    this.sendMessage();
-                }
-                return false;
-            });
-        }
-    }
-
-    setupSuggestionChips() {
-        document.querySelectorAll('.suggestion-chip').forEach(chip => {
-            chip.addEventListener('click', (e) => {
-                e.preventDefault();
-                const input = document.getElementById('chat-input');
-                if (input) {
-                    input.value = chip.dataset.prompt;
-                    input.focus();
-                    this.updateCharCount();
-                    this.autoResizeTextarea();
-                }
-            });
-        });
-    }
-
-    updateCharCount() {
-        const textarea = document.getElementById('chat-input');
-        const countEl = document.getElementById('char-count');
-        
-        if (textarea && countEl) {
-            const count = textarea.value.length;
-            countEl.textContent = count;
-        }
-    }
-
-    autoResizeTextarea() {
-        const textarea = document.getElementById('chat-input');
-        if (textarea) {
-            textarea.style.height = 'auto';
-            
-            const maxHeight = 120; // 120px max height
-            const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-            textarea.style.height = newHeight + 'px';
-            
-            textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-        }
+    // Override saveMessage to use localStorage
+    saveMessage(role, content) {
+        return GuestChatStorage.saveMessage(role, content);
     }
 
     loadGuestHistory() {
@@ -213,7 +103,7 @@ class GuestChat {
     }
 
     async sendMessage() {
-        console.log('🚀 sendMessage called');
+        console.log('🚀 Guest sendMessage called');
         const input = document.getElementById('chat-input');
         if (!input) {
             console.error('Chat input not found');
@@ -236,7 +126,7 @@ class GuestChat {
 
         // Check guest message limits
         const guestMessages = GuestChatStorage.getMessages();
-        if (guestMessages.length >= 10) {
+        if (guestMessages.length >= this.messageLimit) {
             alert('Guest message limit reached! Register for unlimited access.');
             return;
         }
@@ -263,7 +153,6 @@ class GuestChat {
         
         // Add AI message container for streaming
         const aiMessage = this.addMessage('ai', '', true);
-        let accumulated = '';
 
         try {
             console.log('🌐 Making SSE request to /api/chat/stream');
@@ -289,82 +178,8 @@ class GuestChat {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // SSE Stream processing
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let processedLines = new Set();
-
-            console.log('📺 Starting SSE stream processing');
-
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) {
-                    console.log('✅ Stream reader finished');
-                    break;
-                }
-
-                const chunk = decoder.decode(value, { stream: true });
-                buffer += chunk;
-                
-                let newlineIndex;
-                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                    const line = buffer.slice(0, newlineIndex).trim();
-                    buffer = buffer.slice(newlineIndex + 1);
-                    
-                    if (line === '') continue;
-                    
-                    if (processedLines.has(line)) {
-                        continue;
-                    }
-                    processedLines.add(line);
-                    
-                    console.log('📦 Processing SSE line:', line);
-                    
-                    if (line.startsWith('data: ')) {
-                        const jsonStr = line.slice(6).trim();
-                        
-                        if (jsonStr === '[DONE]') {
-                            console.log('✅ Stream completed with [DONE]');
-                            this.finishStreaming(aiMessage, accumulated);
-                            return;
-                        }
-
-                        try {
-                            const data = JSON.parse(jsonStr);
-                            console.log('📊 Parsed SSE data:', data);
-                            
-                            if (data.type === 'content' && data.content) {
-                                accumulated += data.content;
-                                this.updateStreamingMessage(aiMessage, accumulated);
-                                console.log('📝 Content received:', data.content);
-                            }
-                            
-                            if (data.type === 'complete' || data.done === true) {
-                                console.log('✅ Stream completed with complete flag');
-                                this.finishStreaming(aiMessage, accumulated);
-                                return;
-                            }
-                            
-                            if (data.type === 'error') {
-                                console.error('❌ Stream error:', data.error);
-                                this.updateStreamingMessage(aiMessage, '*Error: ' + data.error + '*');
-                                this.finishStreaming(aiMessage, '*Error: ' + data.error + '*');
-                                return;
-                            }
-                            
-                        } catch (parseError) {
-                            console.warn('⚠️ JSON parse error:', parseError, 'for:', jsonStr);
-                        }
-                    }
-                }
-                
-                await new Promise(resolve => setTimeout(resolve, 1));
-            }
-
-            console.log('🏁 Stream ended without [DONE], finishing with accumulated content');
-            this.finishStreaming(aiMessage, accumulated);
+            // Use shared SSE processing from SharedChatBase
+            await this.processSSEStream(response, aiMessage);
 
         } catch (error) {
             console.error('❌ Chat error:', error);
@@ -377,7 +192,7 @@ class GuestChat {
                 this.updateStreamingMessage(aiMessage, errorMessage);
             }
             
-            this.finishStreaming(aiMessage, accumulated || `Error: ${error.message}`);
+            this.finishStreaming(aiMessage, `Error: ${error.message}`);
         }
     }
 
@@ -406,7 +221,7 @@ class GuestChat {
             </div>` + (window.marked ? marked.parse(content) : content);
             
             if (!skipStorage) {
-                GuestChatStorage.saveMessage('user', content);
+                this.saveMessage('user', content);
             }
         } else {
             avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
@@ -415,7 +230,7 @@ class GuestChat {
                 (window.marked ? marked.parse(content) : content);
                 
             if (!isStreaming && content.trim() && !skipStorage) {
-                GuestChatStorage.saveMessage('assistant', content);
+                this.saveMessage('assistant', content);
             }
         }
         
@@ -427,79 +242,6 @@ class GuestChat {
         console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
         
         return messageDiv;
-    }
-
-    updateStreamingMessage(messageDiv, content) {
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            const parsedContent = window.marked ? marked.parse(content) : content;
-            streamingEl.innerHTML = parsedContent + '<span class="cursor blink">▋</span>';
-            
-            const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) {
-                messagesContainer.scrollTo({
-                    top: messagesContainer.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }
-        }
-    }
-
-    finishStreaming(messageDiv, finalContent) {
-        console.log('🏁 Finishing stream with content length:', finalContent.length);
-        
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            const parsedContent = window.marked ? marked.parse(finalContent) : finalContent;
-            streamingEl.innerHTML = parsedContent;
-            
-            if (finalContent.trim()) {
-                GuestChatStorage.saveMessage('assistant', finalContent);
-            }
-        }
-        
-        this.isTyping = false;
-        this.updateButtons(false);
-        
-        const messagesContainer = document.getElementById('chat-messages');
-        if (messagesContainer) {
-            messagesContainer.scrollTo({
-                top: messagesContainer.scrollHeight,
-                behavior: 'smooth'
-            });
-        }
-        
-        const input = document.getElementById('chat-input');
-        if (input) {
-            input.focus();
-        }
-    }
-
-    stopGeneration() {
-        console.log('⏹️ Stopping generation');
-        if (this.abortController) {
-            this.abortController.abort();
-        }
-        this.isTyping = false;
-        this.updateButtons(false);
-    }
-
-    updateButtons(isTyping) {
-        const sendButton = document.getElementById('send-button');
-        const stopButton = document.getElementById('stop-button');
-        const chatInput = document.getElementById('chat-input');
-
-        if (sendButton) {
-            sendButton.style.display = isTyping ? 'none' : 'inline-flex';
-            sendButton.disabled = isTyping;
-        }
-        if (stopButton) {
-            stopButton.style.display = isTyping ? 'inline-flex' : 'none';
-            stopButton.disabled = !isTyping;
-        }
-        if (chatInput) {
-            chatInput.disabled = isTyping;
-        }
     }
 
     clearChat() {
@@ -535,58 +277,43 @@ class GuestChallengeResponder {
     }
 
     createChallengeModal() {
-        const modalHTML = `
-            <div class="modal fade" id="guest-response-modal" tabindex="-1" aria-labelledby="responseModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content bg-dark border-warning">
-                        <div class="modal-header border-warning">
-                            <h5 class="modal-title text-warning" id="responseModalLabel">
-                                <i class="bi bi-exclamation-triangle"></i> Guest Session Challenge
-                            </h5>
-                        </div>
-                        <div class="modal-body">
-                            <div class="text-center">
-                                <div class="mb-3">
-                                    <i class="bi bi-person-x challenge-icon" style="font-size: 3rem; color: #ffc107;"></i>
-                                </div>
-                                <h6 class="text-warning mb-3">Someone wants to use your guest session!</h6>
-                                <p class="text-light mb-3">
-                                    Another user is requesting access to your guest slot. 
-                                    You appear to be inactive. Do you want to continue your session?
-                                </p>
-                                <div class="challenge-countdown mb-3">
-                                    <div class="progress bg-secondary" style="height: 12px; border-radius: 6px;">
-                                        <div id="response-progress" class="progress-bar bg-warning" role="progressbar" style="width: 100%;"></div>
-                                    </div>
-                                    <div class="mt-2">
-                                        <span class="text-warning">Time remaining: </span>
-                                        <span id="response-timer" class="text-light fw-bold" style="font-family: monospace; font-size: 1.25rem;">8</span>
-                                        <span class="text-light"> seconds</span>
-                                    </div>
-                                </div>
-                                <div class="alert alert-warning">
-                                    <small>
-                                        <i class="bi bi-info-circle"></i>
-                                        If you don't respond, you'll be disconnected and the other user will get access.
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer border-warning justify-content-center">
-                            <button type="button" class="btn btn-success me-2" id="response-accept">
-                                <i class="bi bi-check-circle"></i> Continue Session
-                            </button>
-                            <button type="button" class="btn btn-secondary" id="response-reject">
-                                <i class="bi bi-x-circle"></i> End Session
-                            </button>
-                        </div>
+        this.challengeModal = SharedModalUtils.createModal(
+            'guest-response-modal',
+            '<i class="bi bi-exclamation-triangle"></i> Guest Session Challenge',
+            `
+            <div class="text-center">
+                <div class="mb-3">
+                    <i class="bi bi-person-x challenge-icon" style="font-size: 3rem; color: #ffc107;"></i>
+                </div>
+                <h6 class="text-warning mb-3">Someone wants to use your guest session!</h6>
+                <p class="text-light mb-3">
+                    Another user is requesting access to your guest slot. 
+                    You appear to be inactive. Do you want to continue your session?
+                </p>
+                <div class="challenge-countdown mb-3">
+                    <div class="progress bg-secondary" style="height: 12px; border-radius: 6px;">
+                        <div id="response-progress" class="progress-bar bg-warning" role="progressbar" style="width: 100%;"></div>
+                    </div>
+                    <div class="mt-2">
+                        <span class="text-warning">Time remaining: </span>
+                        <span id="response-timer" class="text-light fw-bold" style="font-family: monospace; font-size: 1.25rem;">8</span>
+                        <span class="text-light"> seconds</span>
                     </div>
                 </div>
+                <div class="alert alert-warning">
+                    <small>
+                        <i class="bi bi-info-circle"></i>
+                        If you don't respond, you'll be disconnected and the other user will get access.
+                    </small>
+                </div>
             </div>
-        `;
-
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        this.challengeModal = new bootstrap.Modal(document.getElementById('guest-response-modal'));
+            `,
+            [
+                { id: 'response-accept', type: 'success', text: '<i class="bi bi-check-circle"></i> Continue Session' },
+                { id: 'response-reject', type: 'secondary', text: '<i class="bi bi-x-circle"></i> End Session' }
+            ]
+        );
+        
         console.log('📋 Challenge response modal created');
     }
 
@@ -637,7 +364,7 @@ class GuestChallengeResponder {
 
     async checkForChallenges() {
         try {
-            const userInfo = await this.getCurrentUserInfo();
+            const userInfo = await sharedInterface.checkAuth();
             if (!userInfo || userInfo.user_type !== 'is_guest') return;
 
             const response = await fetch(`/api/guest/challenge-status?username=${userInfo.username}`, {
@@ -653,19 +380,6 @@ class GuestChallengeResponder {
         } catch (error) {
             console.warn('Failed to check for challenges:', error);
         }
-    }
-
-    async getCurrentUserInfo() {
-        try {
-            const response = await fetch('/api/auth/check', { credentials: 'include' });
-            if (response.ok) {
-                const data = await response.json();
-                return data;
-            }
-        } catch (error) {
-            console.warn('Failed to get user info:', error);
-        }
-        return null;
     }
 
     handleIncomingChallenge(challenge) {
@@ -728,7 +442,7 @@ class GuestChallengeResponder {
         this.isListening = false;
         this.challengeModal.hide();
         
-        this.showTimeoutMessage();
+        sharedInterface.showWarning('Your guest session has been ended due to inactivity. Another user has taken your slot.');
         this.clearUserSession();
         
         setTimeout(() => {
@@ -761,7 +475,7 @@ class GuestChallengeResponder {
             }
         } catch (error) {
             console.error('Challenge response error:', error);
-            this.showErrorMessage('Failed to respond to challenge: ' + error.message);
+            sharedInterface.showError('Failed to respond to challenge: ' + error.message);
         }
     }
 
@@ -771,10 +485,10 @@ class GuestChallengeResponder {
         this.challengeModal.hide();
         
         if (response === 'accept' && result === 'accepted') {
-            this.showSuccessMessage('Session continued successfully!');
+            sharedInterface.showSuccess('Session continued successfully!');
             this.updateLastActivity();
         } else {
-            this.showInfoMessage('Session ended. Thank you for using ai.junder.uk!');
+            sharedInterface.showInfo('Session ended. Thank you for using ai.junder.uk!');
             this.clearUserSession();
             
             setTimeout(() => {
@@ -808,46 +522,8 @@ class GuestChallengeResponder {
     }
 
     clearUserSession() {
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        document.cookie = 'access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-        
-        console.log('🧹 User session cleared');
-    }
-
-    showTimeoutMessage() {
-        this.showAlert('Your guest session has been ended due to inactivity. Another user has taken your slot.', 'warning', 'exclamation-triangle');
-    }
-
-    showSuccessMessage(message) {
-        this.showAlert(message, 'success', 'check-circle');
-    }
-
-    showInfoMessage(message) {
-        this.showAlert(message, 'info', 'info-circle');
-    }
-
-    showErrorMessage(message) {
-        this.showAlert(message, 'danger', 'exclamation-triangle');
-    }
-
-    showAlert(message, type, icon) {
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
-        alert.style.cssText = 'top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; max-width: 500px;';
-        alert.innerHTML = `
-            <i class="bi bi-${icon}"></i> ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        
-        document.body.appendChild(alert);
-        
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, type === 'success' ? 3000 : 5000);
+        sharedInterface.clearClientData();
+        console.log('🧹 Guest session cleared');
     }
 }
 
@@ -871,8 +547,7 @@ window.downloadGuestHistory = function() {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     // Only initialize if we're actually a guest user
-    fetch('/api/auth/check', { credentials: 'include' })
-        .then(response => response.json())
+    sharedInterface.checkAuth()
         .then(data => {
             if (data.success && data.user_type === 'is_guest') {
                 // Initialize challenge responder for existing guests
@@ -884,6 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Initialize main guest chat if on chat page
                 if (window.location.pathname === '/chat') {
                     window.guestChat = new GuestChat();
+                    window.chatSystem = window.guestChat; // For compatibility
                     console.log('💬 Guest chat initialized');
                 }
             }
@@ -894,6 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Fallback: initialize chat if on chat page
             if (window.location.pathname === '/chat') {
                 window.guestChat = new GuestChat();
+                window.chatSystem = window.guestChat; // For compatibility
                 console.log('💬 Guest chat initialized (fallback)');
             }
         });
