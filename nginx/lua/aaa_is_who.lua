@@ -65,55 +65,41 @@ function M.route_to_handler(route_type)
         M.handle_ollama_chat_api()
         return
     end
-    
     -- NEW ROUTING LOGIC: Based on what each user type can see
-    if user_type == "is_admin" or user_type == "is_approved" then
+    if user_type == "is_admin" then
         -- Can see: /chat, /dash, / 
         -- Redirect login/register to dash
         if route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        
-    elseif user_type == "is_pending" then
+        return is_admin.handle_route(route_type)
+    end
+    if user_type == "is_approved" then
+        -- Can see: /chat, /dash, / 
+        -- Redirect login/register to dash
+        if route_type == "login" or route_type == "register" then
+            return ngx.redirect("/dash")
+        end
+        return is_approved.handle_route(route_type)
+    end
+    if user_type == "is_pending" then
         -- Can see: /, /dash (pending shows as dash)
         -- Block chat, login, register
         if route_type == "chat" or route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        
-    elseif user_type == "is_none" then
+    end
+    if user_type == "is_guest" then
+        is_guest.handle_route(route_type)
+    end  
+    if user_type == "is_none" then
         -- Can see: /, /login, /register
         -- Block chat and dash (unless upgrading to guest through available logic)
         if route_type == "chat" or route_type == "dash" then
             return ngx.redirect("/")
         end
     end
-    
-    -- Route to user-type specific handlers
-    if ngx.var.user_type == "is_admin" then
-        local is_admin = require "is_admin"
-        is_admin.handle_route(route_type)
-        
-    elseif ngx.var.user_type == "is_approved" then
-        local is_approved = require "is_approved"
-        is_approved.handle_route(route_type)
-        
-    elseif ngx.var.user_type == "is_guest" then
-        local is_guest = require "is_guest"
-        is_guest.handle_route(route_type)
-        
-    elseif ngx.var.user_type == "is_pending" then
-        local is_pending = require "is_pending"
-        is_pending.handle_route(route_type)
-        
-    elseif ngx.var.user_type == "is_none" then
-        local is_none = require "is_none"
-        is_none.handle_route(route_type)
-        
-    else
-        ngx.log(ngx.ERROR, "Unknown user type: " .. ngx.var.user_type)
-        return ngx.redirect("/login")
-    end
+    return ngx.redirect("/")
 end
 
 -- =====================================================================
