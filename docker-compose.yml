@@ -29,7 +29,6 @@ services:
       - "11434:11434"
     volumes:
       - ./volumes/ollama/models:/root/.ollama/models
-      - ./volumes/ollama/scripts:/root/.ollama/scripts
     networks:
       - devstral-network
     deploy:
