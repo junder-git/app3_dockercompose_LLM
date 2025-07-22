@@ -1,3 +1,59 @@
+-- =============================================================================
+-- nginx/lua/is_none.lua - WITH GUEST USERNAME SYSTEM
+-- =============================================================================
+
+local template = require "manage_template"
+local cjson = require "cjson"
+local jwt = require "resty.jwt"
+local redis = require "resty.redis"
+
+-- Configuration
+local MAX_GUEST_SESSIONS = 2
+local GUEST_SESSION_DURATION = 600  -- 10 minutes
+local GUEST_MESSAGE_LIMIT = 10
+local GUEST_CHAT_RETENTION = 259200  -- 3 days
+local CHALLENGE_TIMEOUT = 8  -- 8 seconds for challenge response
+local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
+local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
+
+local JWT_SECRET = os.getenv("JWT_SECRET")
+local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
+local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
+
+local USERNAME_POOLS = {
+    adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
+    animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
+}
+
+-- =============================================
+-- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
+-- =============================================
+local function handle_route(route_type)
+    if route_type == "index" then
+        handle_index_page()
+    elseif route_type == "login" then
+        handle_login_page()
+    elseif route_type == "register" then
+        handle_register_page()
+    elseif route_type == "chat" then
+        handle_chat_page()
+    elseif route_type == "dash" then
+        handle_dash_page()
+    elseif route_type == "chat_api" then
+        -- API access without auth should return 401
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Authentication required",
+            message = "Please login or start a guest session"
+        }))
+        return ngx.exit(401)
+    else
+        ngx.status = 404
+        return ngx.exec("@custom_404")
+    end
+end
+
 -- =============================================
 -- PAGE HANDLERS
 -- =============================================
@@ -74,6 +130,54 @@ end
 -- =============================================
 -- HELPER FUNCTIONS
 -- =============================================
+
+local function get_guest_accounts()
+    local now = ngx.time()
+    return {
+        {
+            username = "guest_user_1",
+            password = "nkcukfulnckfckufnckdgjvjgv",
+            token = jwt:sign(JWT_SECRET, {
+                header = { typ = "JWT", alg = "HS256" },
+                payload = {
+                    username = "guest_user_1",
+                    user_type = "is_guest",
+                    iat = now,
+                    exp = now + GUEST_SESSION_DURATION
+                }
+            })
+        },
+        {
+            username = "guest_user_2", 
+            password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
+            token = jwt:sign(JWT_SECRET, {
+                header = { typ = "JWT", alg = "HS256" },
+                payload = {
+                    username = "guest_user_2",
+                    user_type = "is_guest",
+                    iat = now,
+                    exp = now + GUEST_SESSION_DURATION
+                }
+            })
+        }
+    }
+end
+
+local function redis_to_lua(value)
+    if value == ngx.null or value == nil then return nil end
+    return value
+end
+
+local function connect_redis()
+    local red = redis:new()
+    red:set_timeout(1000)
+    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
+    if not ok then
+        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
+        return nil
+    end
+    return red
+end
 
 -- Generate navigation buttons for public users
 local function get_nav_buttons()
@@ -167,181 +271,6 @@ local function build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
     ]]
     
     return content
-end
-
--- =============================================
--- API HANDLERS
--- =============================================
-
-local function handle_guest_session_api()
-    local function send_json(status, tbl)
-        ngx.status = status
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode(tbl))
-        ngx.exit(status)
-    end
-    
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/guest/create-session" and method == "POST" then
-        create_secure_guest_session_with_challenge()
-        
-    elseif uri == "/api/guest/challenge-status" and method == "GET" then
-        local username = ngx.var.arg_username
-        if not username then
-            send_json(400, { error = "username parameter required" })
-        end
-        
-        local challenge = get_guest_challenge(username)
-        if challenge then
-            send_json(200, {
-                success = true,
-                challenge_active = true,
-                challenge = challenge,
-                remaining_time = challenge.expires_at - ngx.time()
-            })
-        else
-            send_json(200, {
-                success = true,
-                challenge_active = false,
-                message = "No active challenge"
-            })
-        end
-        
-    elseif uri == "/api/guest/challenge-response" and method == "POST" then
-        ngx.req.read_body()
-        local body = ngx.req.get_body_data()
-        if not body then
-            send_json(400, { error = "Request body required" })
-        end
-        
-        local ok, data = pcall(cjson.decode, body)
-        if not ok then
-            send_json(400, { error = "Invalid JSON" })
-        end
-        
-        local username = data.username
-        local response = data.response
-        local responder_ip = ngx.var.remote_addr
-        
-        if not username or not response then
-            send_json(400, { error = "username and response required" })
-        end
-        
-        local success, result = respond_to_challenge(username, response, responder_ip)
-        if success then
-            send_json(200, {
-                success = true,
-                challenge_result = result,
-                message = result == "accepted" and "Challenge accepted" or "Challenge rejected"
-            })
-        -- =============================================================================
--- nginx/lua/is_none.lua - WITH GUEST USERNAME SYSTEM
--- =============================================================================
-
-local template = require "manage_template"
-local cjson = require "cjson"
-local jwt = require "resty.jwt"
-local redis = require "resty.redis"
-
--- Configuration
-local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 600  -- 10 minutes
-local GUEST_MESSAGE_LIMIT = 10
-local GUEST_CHAT_RETENTION = 259200  -- 3 days
-local CHALLENGE_TIMEOUT = 8  -- 8 seconds for challenge response
-local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
-local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
-
-local JWT_SECRET = os.getenv("JWT_SECRET")
-local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
-local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
-
-local USERNAME_POOLS = {
-    adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
-    animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
-}
-
--- =============================================
--- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
--- =============================================
-local function handle_route(route_type)
-    if route_type == "index" then
-        handle_index_page()
-    elseif route_type == "login" then
-        handle_login_page()
-    elseif route_type == "register" then
-        handle_register_page()
-    elseif route_type == "chat" then
-        handle_chat_page()
-    elseif route_type == "dash" then
-        handle_dash_page()
-    elseif route_type == "chat_api" then
-        -- API access without auth should return 401
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Authentication required",
-            message = "Please login or start a guest session"
-        }))
-        return ngx.exit(401)
-    else
-        ngx.status = 404
-        return ngx.exec("@custom_404")
-    end
-end
-
--- =============================================
--- HELPER FUNCTIONS
--- =============================================
-
-local function get_guest_accounts()
-    local now = ngx.time()
-    return {
-        {
-            username = "guest_user_1",
-            password = "nkcukfulnckfckufnckdgjvjgv",
-            token = jwt:sign(JWT_SECRET, {
-                header = { typ = "JWT", alg = "HS256" },
-                payload = {
-                    username = "guest_user_1",
-                    user_type = "is_guest",
-                    iat = now,
-                    exp = now + GUEST_SESSION_DURATION
-                }
-            })
-        },
-        {
-            username = "guest_user_2", 
-            password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
-            token = jwt:sign(JWT_SECRET, {
-                header = { typ = "JWT", alg = "HS256" },
-                payload = {
-                    username = "guest_user_2",
-                    user_type = "is_guest",
-                    iat = now,
-                    exp = now + GUEST_SESSION_DURATION
-                }
-            })
-        }
-    }
-end
-
-local function redis_to_lua(value)
-    if value == ngx.null or value == nil then return nil end
-    return value
-end
-
-local function connect_redis()
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
-    if not ok then
-        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
-        return nil
-    end
-    return red
 end
 
 local function generate_display_username()
@@ -728,3 +657,124 @@ local function get_guest_stats()
         challenges_active = challenges_active
     }
 end
+
+-- =============================================
+-- API HANDLERS
+-- =============================================
+
+local function handle_guest_session_api()
+    local function send_json(status, tbl)
+        ngx.status = status
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(tbl))
+        ngx.exit(status)
+    end
+    
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/guest/create-session" and method == "POST" then
+        create_secure_guest_session_with_challenge()
+        
+    elseif uri == "/api/guest/challenge-status" and method == "GET" then
+        local username = ngx.var.arg_username
+        if not username then
+            send_json(400, { error = "username parameter required" })
+        end
+        
+        local challenge = get_guest_challenge(username)
+        if challenge then
+            send_json(200, {
+                success = true,
+                challenge_active = true,
+                challenge = challenge,
+                remaining_time = challenge.expires_at - ngx.time()
+            })
+        else
+            send_json(200, {
+                success = true,
+                challenge_active = false,
+                message = "No active challenge"
+            })
+        end
+        
+    elseif uri == "/api/guest/challenge-response" and method == "POST" then
+        ngx.req.read_body()
+        local body = ngx.req.get_body_data()
+        if not body then
+            send_json(400, { error = "Request body required" })
+        end
+        
+        local ok, data = pcall(cjson.decode, body)
+        if not ok then
+            send_json(400, { error = "Invalid JSON" })
+        end
+        
+        local username = data.username
+        local response = data.response
+        local responder_ip = ngx.var.remote_addr
+        
+        if not username or not response then
+            send_json(400, { error = "username and response required" })
+        end
+        
+        local success, result = respond_to_challenge(username, response, responder_ip)
+        if success then
+            send_json(200, {
+                success = true,
+                challenge_result = result,
+                message = result == "accepted" and "Challenge accepted" or "Challenge rejected"
+            })
+        else
+            send_json(500, {
+                success = false,
+                error = result,
+                message = "Challenge response failed"
+            })
+        end
+        
+    else
+        send_json(404, { error = "API endpoint not found" })
+    end
+end
+
+-- =============================================
+-- MODULE EXPORTS
+-- =============================================
+
+local M = {
+    -- Main route handler
+    handle_route = handle_route,
+    
+    -- API handlers
+    handle_guest_session_api = handle_guest_session_api,
+    
+    -- Page handlers
+    handle_index_page = handle_index_page,
+    handle_dash_page = handle_dash_page,
+    handle_chat_page = handle_chat_page,
+    handle_login_page = handle_login_page,
+    handle_register_page = handle_register_page,
+    
+    -- Helper functions that might be needed by other modules
+    get_guest_stats = get_guest_stats,
+    get_nav_buttons = get_nav_buttons,
+    build_guest_acquisition_dashboard = build_guest_acquisition_dashboard,
+    
+    -- Session management functions
+    create_secure_guest_session_with_challenge = create_secure_guest_session_with_challenge,
+    find_available_guest_slot_or_challenge = find_available_guest_slot_or_challenge,
+    
+    -- Challenge system functions
+    create_guest_challenge = create_guest_challenge,
+    get_guest_challenge = get_guest_challenge,
+    respond_to_challenge = respond_to_challenge,
+    
+    -- Utility functions
+    get_guest_accounts = get_guest_accounts,
+    generate_display_username = generate_display_username,
+    connect_redis = connect_redis,
+    redis_to_lua = redis_to_lua
+}
+
+return M
