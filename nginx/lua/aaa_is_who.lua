@@ -16,7 +16,7 @@ local M = {}
 
 function M.set_user()
     local user_type, username, user_data = auth.check()
-    if user_type == Nil then
+    if user_type ~= "is_admin" and user_type ~= "is_approved" and user_type ~= "is_pending" and user_type ~= "is_guest" then
         username = "guest"
         user_type = "is_none"
     end
