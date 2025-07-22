@@ -1,4 +1,4 @@
-FROM ./models/Devstral-Small-2507-Q4_K_M.gguf
+FROM ../models/Devstral-Small-2507-Q4_K_M.gguf
 
 # Template for chat completion
 TEMPLATE """{{ if .System }}<|im_start|>system
