@@ -19,7 +19,7 @@ PARAMETER num_predict ${MODEL_NUM_PREDICT}
 PARAMETER seed ${MODEL_SEED}
 
 # Memory management - force CPU+GPU hybrid loading
-PARAMETER mmap ${OLLAMA_MMAP}
+#PARAMETER mmap ${OLLAMA_MMAP}
 PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
 PARAMETER num_thread ${OLLAMA_NUM_THREAD}
 

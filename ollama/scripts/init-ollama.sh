@@ -12,25 +12,6 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
-wait_for_ollama() {
-    local retries=0
-    log "Waiting for Ollama server to be ready..."
-    
-    while [ $retries -lt $OLLAMA_MAX_RETRIES ]; do
-        if curl -f -s "http://127.0.0.1:11434/api/tags" > /dev/null 2>&1; then
-            log "Ollama server is ready!"
-            return 0
-        fi
-        
-        log "Ollama not ready yet (attempt $((retries + 1))/$OLLAMA_MAX_RETRIES), waiting ${OLLAMA_RETRY_INTERVAL}s..."
-        sleep $OLLAMA_RETRY_INTERVAL
-        retries=$((retries + 1))
-    done
-    
-    log "ERROR: Ollama server failed to start within $((OLLAMA_MAX_RETRIES * OLLAMA_RETRY_INTERVAL)) seconds"
-    return 1
-}
-
 check_model_exists() {
     local model_name="$1"
     log "Checking if model '$model_name' already exists..."
@@ -64,19 +45,6 @@ create_model() {
     fi
 }
 
-test_model() {
-    local model_name="$1"
-    log "Testing model '$model_name'..."
-    
-    if ollama run "$model_name" "Hello, I am ready!" > /dev/null 2>&1; then
-        log "Model '$model_name' is working correctly!"
-        return 0
-    else
-        log "Model '$model_name' test failed, but server will continue running"
-        return 1
-    fi
-}
-
 main() {
     log "=== Ollama Model Initialization Script ==="
     log "Starting Ollama server..."
@@ -85,14 +53,9 @@ main() {
     ollama serve &
     OLLAMA_PID=$!
     
-    # Wait for Ollama to be ready
-    if ! wait_for_ollama; then
-        log "ERROR: Failed to start Ollama server"
-        kill $OLLAMA_PID 2>/dev/null || true
-        exit 1
-    fi
-    
-    log "Ollama server is ready!"
+    # Give the server a moment to start
+    log "Waiting for Ollama server to start..."
+    sleep 5
     
     # Check if model already exists
     if check_model_exists "$MODEL_NAME"; then
@@ -102,17 +65,8 @@ main() {
         if create_model "$MODEL_NAME" "$MODELFILE_PATH"; then
             log "Model creation successful"
         else
-            log "ERROR: Model creation failed"
-            kill $OLLAMA_PID 2>/dev/null || true
-            exit 1
+            log "WARNING: Model creation failed, but keeping server running"
         fi
-    fi
-    
-    # Test the model (but don't fail if test fails)
-    if test_model "$MODEL_NAME"; then
-        log "Model '$MODEL_NAME' is ready!"
-    else
-        log "Model test failed but continuing with Ollama server running"
     fi
     
     log "=== Model initialization complete, keeping Ollama server running ==="

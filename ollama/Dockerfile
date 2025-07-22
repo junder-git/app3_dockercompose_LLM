@@ -1,5 +1,11 @@
 FROM ollama/ollama:latest
 
+# Install curl for health checks and envsubst for template processing
+RUN apt-get update && \
+    apt-get install -y gettext-base && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create necessary directories
 RUN mkdir -p /root/.ollama/models
 RUN mkdir -p /root/.ollama/scripts
