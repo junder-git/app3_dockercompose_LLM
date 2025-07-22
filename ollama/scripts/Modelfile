@@ -20,9 +20,5 @@ PARAMETER seed 0
 PARAMETER num_gpu 8
 PARAMETER num_thread 4
 
-# Options for memory and model management
-OPTION use_mmap false
-OPTION keepalive -1
-
 # System message
 SYSTEM """You are Devstral, a helpful AI assistant specialized in software development and coding tasks."""
