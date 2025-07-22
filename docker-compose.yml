@@ -104,9 +104,6 @@ services:
           cpus: ${NGINX_CPU}
           memory: ${NGINX_MEMORY}
     restart: unless-stopped
-    depends_on:
-      - ollama
-      - redis
 
 networks:
   devstral-network:
