@@ -2,6 +2,7 @@ FROM ollama/ollama:latest
 
 # Create necessary directories
 RUN mkdir -p /root/.ollama/models
+RUN mkdir -p /root/.ollama/scripts
 
 # Copy the GGUF model file
 COPY models/Devstral-Small-2507-Q4_K_M.gguf /root/.ollama/models/Devstral-Small-2507-Q4_K_M.gguf
