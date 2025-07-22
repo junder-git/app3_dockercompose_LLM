@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    build: ./ollama
     container_name: devstral-ollama
     environment:
       - OLLAMA_HOST=${OLLAMA_HOST}
@@ -42,7 +42,6 @@ services:
           devices:
             - capabilities: [gpu]
     restart: unless-stopped
-    entrypoint: ["/root/.ollama/init-ollama.sh"]
 
   redis:
     build: ./redis

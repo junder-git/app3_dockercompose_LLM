@@ -3,3 +3,4 @@
 **/__pycache__
 !example.env
 volumes
+ollama/models
