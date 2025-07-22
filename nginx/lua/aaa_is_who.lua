@@ -15,9 +15,11 @@ local M = {}
 -- =============================================
 
 function M.set_user()
-    local user_type, username, guest_slot_number, user_data = auth.check()
-    ngx.var.username = username or "guest"
-    ngx.var.user_type = user_type or "is_none"
+    local user_type, username, user_data = auth.check()
+    if user_type == Nil then
+        username = "guest"
+        user_type = "is_none"
+    end
     return user_type, username, user_data
 end
 
@@ -57,7 +59,7 @@ end
 -- =====================================================================
 
 function M.route_to_handler(route_type)
-    local user_type, username, user_data = M.set_vars()
+    local user_type, username, user_data = M.set_user()
     -- Handle Ollama API endpoints first
     if route_type == "ollama_chat_api" then
         M.handle_ollama_chat_api()
@@ -119,7 +121,7 @@ end
 -- =====================================================================
 
 function M.handle_ollama_chat_api()
-    local user_type, username, user_data = M.set_vars()
+    local user_type, username, user_data = M.set_user()
     
     if user_type == "is_none" then
         ngx.status = 401
