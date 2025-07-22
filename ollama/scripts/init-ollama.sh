@@ -5,8 +5,6 @@ set -e
 # Configuration from environment variables
 MODEL_NAME="${MODEL_NAME}"
 MODELFILE_PATH="${MODELFILE_PATH}"
-OLLAMA_MAX_RETRIES="${OLLAMA_MAX_RETRIES}"
-OLLAMA_RETRY_INTERVAL="${OLLAMA_RETRY_INTERVAL}"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -29,15 +27,9 @@ create_model() {
     local model_name="$1"
     local modelfile_path="$2"
     
-    log "Processing Modelfile with environment variables..."
-    envsubst < "$modelfile_path" > "${modelfile_path}.processed"
-    
-    log "Creating model '$model_name' from processed Modelfile..."
-    if ollama create "$model_name" -f "${modelfile_path}.processed"; then
+    log "Creating model '$model_name' from Modelfile: $modelfile_path"
+    if ollama create "$model_name" -f "$modelfile_path"; then
         log "Model '$model_name' created successfully!"
-        
-        # Clean up processed file
-        rm -f "${modelfile_path}.processed"
         return 0
     else
         log "ERROR: Failed to create model '$model_name'"
@@ -47,6 +39,8 @@ create_model() {
 
 main() {
     log "=== Ollama Model Initialization Script ==="
+    log "Model: $MODEL_NAME"
+    log "Modelfile: $MODELFILE_PATH"
     log "Starting Ollama server..."
     
     # Start Ollama server in background

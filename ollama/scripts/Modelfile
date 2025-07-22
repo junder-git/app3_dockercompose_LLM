@@ -1,4 +1,4 @@
-FROM ../models/Devstral-Small-2507-Q4_K_M.gguf
+FROM /root/.ollama/models/Devstral-Small-2507-Q4_K_M.gguf
 
 # Template for chat completion
 TEMPLATE """{{ if .System }}<|im_start|>system
@@ -9,19 +9,20 @@ TEMPLATE """{{ if .System }}<|im_start|>system
 """
 
 # Model parameters
-PARAMETER temperature ${MODEL_TEMPERATURE}
-PARAMETER top_p ${MODEL_TOP_P}
-PARAMETER top_k ${MODEL_TOP_K}
-PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
-PARAMETER repeat_last_n ${MODEL_REPEAT_LAST_N}
-PARAMETER num_ctx ${MODEL_NUM_CTX}
-PARAMETER num_predict ${MODEL_NUM_PREDICT}
-PARAMETER seed ${MODEL_SEED}
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+PARAMETER repeat_last_n 64
+PARAMETER num_ctx 2048
+PARAMETER num_predict 512
+PARAMETER seed 0
+PARAMETER num_gpu 8
+PARAMETER num_thread 4
 
-# Memory management - force CPU+GPU hybrid loading
-#PARAMETER mmap ${OLLAMA_MMAP}
-PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
-PARAMETER num_thread ${OLLAMA_NUM_THREAD}
+# Options for memory and model management
+OPTION use_mmap false
+OPTION keepalive -1
 
 # System message
 SYSTEM """You are Devstral, a helpful AI assistant specialized in software development and coding tasks."""
