@@ -1,11 +1,13 @@
 -- =============================================================================
--- nginx/lua/is_none.lua - SIMPLIFIED, GUEST SESSION ONLY ON CHAT BUTTON CLICK
+-- nginx/lua/is_none.lua - IMPORT SHARED FUNCTIONS FROM manage_auth
 -- =============================================================================
 
 local template = require "manage_template"
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
-local redis = require "resty.redis"
+
+-- Import required modules
+local auth = require "manage_auth"
 
 -- Configuration
 local MAX_GUEST_SESSIONS = 2
@@ -17,8 +19,14 @@ local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
 local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
 
 local JWT_SECRET = os.getenv("JWT_SECRET")
-local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
-local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
+
+-- =============================================
+-- HELPER FUNCTIONS - IMPORT FROM manage_auth
+-- =============================================
+
+-- Use shared Redis functions from manage_auth
+local redis_to_lua = auth.redis_to_lua
+local connect_redis = auth.connect_redis
 
 local USERNAME_POOLS = {
     adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
@@ -26,23 +34,19 @@ local USERNAME_POOLS = {
 }
 
 -- =============================================
--- HELPER FUNCTIONS - DEFINED FIRST
+-- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
 -- =============================================
 
-local function redis_to_lua(value)
-    if value == ngx.null or value == nil then return nil end
-    return value
-end
-
-local function connect_redis()
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
-    if not ok then
-        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
-        return nil
-    end
-    return red
+local function handle_index_page()
+    -- Simple static index page - no guest session logic here
+    local context = {
+        page_title = "ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons()
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
 end
 
 local function get_guest_accounts()

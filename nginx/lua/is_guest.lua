@@ -1,11 +1,9 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - FIXED: COMPLETE GUEST SESSION IMPLEMENTATION
+-- nginx/lua/is_guest.lua - IMPORT SHARED FUNCTIONS FROM manage_auth
 -- =============================================================================
 
 local template = require "manage_template"
 local cjson = require "cjson"
-local jwt = require "resty.jwt"
-local redis = require "resty.redis"
 
 -- Import required modules
 local auth = require "manage_auth"
@@ -14,31 +12,14 @@ local auth = require "manage_auth"
 local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
-local GUEST_CHAT_RETENTION = 259200  -- 3 days
-
-local JWT_SECRET = os.getenv("JWT_SECRET")
-local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
-local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 
 -- =============================================
--- HELPER FUNCTIONS - IMPORTED FROM is_none
+-- HELPER FUNCTIONS - IMPORT FROM manage_auth
 -- =============================================
 
-local function redis_to_lua(value)
-    if value == ngx.null or value == nil then return nil end
-    return value
-end
-
-local function connect_redis()
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
-    if not ok then
-        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
-        return nil
-    end
-    return red
-end
+-- Use shared Redis functions from manage_auth
+local redis_to_lua = auth.redis_to_lua
+local connect_redis = auth.connect_redis
 
 -- Get the current guest user's info from auth check
 local function get_guest_username()
@@ -50,8 +31,7 @@ local function get_guest_username()
 end
 
 local function get_nav_buttons(username)
-    local display_name = username or get_guest_username()
-    return '<span class="nav-text text-warning me-2"><i class="bi bi-clock-history"></i> ' .. display_name .. '</span><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+    return '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
 end
 
 local function get_chat_features()
@@ -64,51 +44,6 @@ local function get_chat_features()
             </div>
         </div>
     ]]
-end
-
--- CRITICAL: Guest session validation function expected by manage_auth.lua
-local function validate_guest_session(token)
-    if not token then
-        return nil, "No token provided"
-    end
-    
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        return nil, "Invalid JWT token"
-    end
-    
-    local username = jwt_obj.payload.username
-    local user_type = jwt_obj.payload.user_type
-    
-    if user_type ~= "is_guest" then
-        return nil, "Not a guest token"
-    end
-    
-    -- Check if guest session still exists in Redis
-    local red = connect_redis()
-    if not red then
-        return nil, "Redis unavailable"
-    end
-    
-    local session_key = "guest_session:" .. username
-    local session_data = redis_to_lua(red:get(session_key))
-    red:close()
-    
-    if not session_data then
-        return nil, "Guest session not found"
-    end
-    
-    local ok, session = pcall(cjson.decode, session_data)
-    if not ok then
-        return nil, "Invalid session data"
-    end
-    
-    -- Check if session is expired
-    if session.expires_at and ngx.time() >= session.expires_at then
-        return nil, "Guest session expired"
-    end
-    
-    return session, nil
 end
 
 local function get_guest_stats()
@@ -280,7 +215,7 @@ local function handle_index_page()
         page_title = "ai.junder.uk - Guest Session",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = display_name,
-        dash_buttons = get_nav_buttons(display_name)
+        dash_buttons = get_nav_buttons()
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
@@ -301,7 +236,7 @@ local function handle_dash_page()
         page_title = "Guest Dashboard - ai.junder.uk",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = display_name,
-        dash_buttons = get_nav_buttons(display_name),
+        dash_buttons = get_nav_buttons(),
         dashboard_content = dashboard_content
     }
     
@@ -322,7 +257,7 @@ local function handle_chat_page()
         page_title = "Guest Chat - ai.junder.uk",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = display_name,
-        dash_buttons = get_nav_buttons(display_name),
+        dash_buttons = get_nav_buttons(),
         chat_features = get_chat_features(),
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
     }
@@ -337,7 +272,7 @@ local function handle_login_page()
         page_title = "Login - ai.junder.uk (Guest Session Active)",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = display_name,
-        dash_buttons = get_nav_buttons(display_name),
+        dash_buttons = get_nav_buttons(),
         auth_title = "Login to Full Account",
         auth_subtitle = "End guest session and login to your full account"
     }
@@ -352,7 +287,7 @@ local function handle_register_page()
         page_title = "Register - ai.junder.uk (Guest Session Active)",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = display_name,
-        dash_buttons = get_nav_buttons(display_name),
+        dash_buttons = get_nav_buttons(),
         auth_title = "Create Full Account",
         auth_subtitle = "End guest session and create a permanent account"
     }
@@ -472,7 +407,6 @@ return {
     handle_ollama_chat_stream = handle_ollama_chat_stream,
     
     -- Session management functions
-    validate_guest_session = validate_guest_session,
     get_guest_stats = get_guest_stats,
     update_guest_message_count = update_guest_message_count,
     
