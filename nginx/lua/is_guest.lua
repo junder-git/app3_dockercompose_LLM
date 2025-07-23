@@ -122,87 +122,6 @@ local function update_guest_message_count(user_data)
     return true
 end
 
-local function build_guest_dashboard(user_data)
-    if not user_data then
-        return '<div class="alert alert-danger">Guest session data not found</div>'
-    end
-    
-    local messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
-    local time_remaining = (user_data.expires_at or 0) - ngx.time()
-    local minutes_remaining = math.max(0, math.floor(time_remaining / 60))
-    local seconds_remaining = math.max(0, time_remaining % 60)
-    
-    return string.format([[
-        <div class="dashboard-container">
-            <div class="dashboard-header text-center">
-                <h2><i class="bi bi-clock-history text-warning"></i> Guest Session Active</h2>
-                <p>Temporary access to ai.junder.uk</p>
-            </div>
-            
-            <div class="dashboard-content">
-                <div class="row justify-content-center">
-                    <div class="col-md-8">
-                        <div class="card bg-dark border-warning mb-4">
-                            <div class="card-body">
-                                <h5 class="card-title text-warning">
-                                    <i class="bi bi-info-circle"></i> Session Status
-                                </h5>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Messages Remaining:</strong> %d/%d</p>
-                                        <p><strong>Time Remaining:</strong> %dm %ds</p>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <p><strong>Storage:</strong> Browser only</p>
-                                        <p><strong>Guest ID:</strong> %s</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="mt-3">
-                                    <a href="/chat" class="btn btn-warning me-2">
-                                        <i class="bi bi-chat-square-dots"></i> Continue Chatting
-                                    </a>
-                                    <button class="btn btn-outline-danger" onclick="logout()">
-                                        <i class="bi bi-x-circle"></i> End Session
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="card bg-dark border-success">
-                            <div class="card-body">
-                                <h5 class="card-title text-success">
-                                    <i class="bi bi-person-plus"></i> Upgrade to Full Account
-                                </h5>
-                                <p>Get unlimited access and persistent chat history:</p>
-                                <ul class="list-unstyled">
-                                    <li>✅ Unlimited messages</li>
-                                    <li>✅ Persistent history in Redis</li>
-                                    <li>✅ Export chat data</li>
-                                    <li>✅ Priority model access</li>
-                                </ul>
-                                
-                                <div class="mt-3">
-                                    <a href="/register" class="btn btn-success me-2">
-                                        <i class="bi bi-person-plus"></i> Create Account
-                                    </a>
-                                    <a href="/login" class="btn btn-outline-primary">
-                                        <i class="bi bi-box-arrow-in-right"></i> Login Existing
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    ]], 
-    messages_remaining, (user_data.max_messages or 10),
-    minutes_remaining, seconds_remaining,
-    (user_data.display_username or user_data.username or "unknown")
-    )
-end
-
 -- =============================================
 -- PAGE HANDLERS - GUESTS CAN SEE ALL PAGES
 -- =============================================
@@ -219,28 +138,6 @@ local function handle_index_page()
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
-end
-
-local function handle_dash_page()
-    local user_type, username, user_data = auth.check()
-    
-    if user_type ~= "is_guest" then
-        ngx.log(ngx.WARN, "Non-guest user accessing guest dashboard: " .. (user_type or "none"))
-        return ngx.redirect("/")
-    end
-    
-    local display_name = user_data and user_data.display_username or username or "guest"
-    local dashboard_content = build_guest_dashboard(user_data)
-    
-    local context = {
-        page_title = "Guest Dashboard - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,
-        dash_buttons = get_nav_buttons(),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
 end
 
 local function handle_chat_page()
@@ -372,8 +269,6 @@ local function handle_route(route_type)
         handle_index_page()
     elseif route_type == "chat" then
         handle_chat_page()
-    elseif route_type == "dash" then 
-        handle_dash_page()
     elseif route_type == "login" then
         handle_login_page()
     elseif route_type == "register" then
@@ -396,7 +291,6 @@ return {
     
     -- Page handlers
     handle_index_page = handle_index_page,
-    handle_dash_page = handle_dash_page,
     handle_chat_page = handle_chat_page,
     handle_login_page = handle_login_page,
     handle_register_page = handle_register_page,

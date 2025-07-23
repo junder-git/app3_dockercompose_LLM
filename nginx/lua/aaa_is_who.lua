@@ -96,6 +96,9 @@ function M.route_to_handler(route_type)
         return is_pending.handle_route(route_type)
         
     elseif user_type == "is_guest" then
+        if route_type == "dash" then
+            return ngx.redirect("/")
+        end
         local is_guest = require "is_guest"
         return is_guest.handle_route(route_type)
         

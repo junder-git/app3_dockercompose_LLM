@@ -33,22 +33,6 @@ local USERNAME_POOLS = {
     animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 }
 
--- =============================================
--- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
--- =============================================
-
-local function handle_index_page()
-    -- Simple static index page - no guest session logic here
-    local context = {
-        page_title = "ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons()
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
-end
-
 local function get_guest_accounts()
     local now = ngx.time()
     return {
@@ -174,160 +158,6 @@ local function generate_display_username()
     red:expire(key, GUEST_CHAT_RETENTION + 3600)
     red:close()
     return fallback
-end
-
--- Build guest acquisition dashboard
-local function build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
-    local content = [[
-        <div class="dashboard-container">
-            <div class="dashboard-header text-center">
-                <h2><i class="bi bi-speedometer2"></i> Welcome to ai.junder.uk</h2>
-                <p>Advanced coding model, powered by Devstral</p>
-            </div>
-            
-            <div class="dashboard-content">
-                <div class="row justify-content-center">
-                    <div class="col-md-8">
-    ]]
-    
-    if guest_unavailable then
-        content = content .. [[
-                        <div class="alert alert-warning" role="alert">
-                            <h5><i class="bi bi-exclamation-triangle"></i> Guest Chat Unavailable</h5>
-                            <p>All guest chat sessions are currently occupied. Please try again later or create an account for guaranteed access.</p>
-                        </div>
-        ]]
-    end
-    
-    content = content .. [[
-                        <div class="card bg-dark border-primary mb-4">
-                            <div class="card-body">
-                                <h5 class="card-title text-primary">
-                                    <i class="bi bi-chat-dots"></i> Guest Chat Status
-                                </h5>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <p><strong>Active Sessions:</strong> ]] .. guest_stats.active_sessions .. [[/]] .. guest_stats.max_sessions .. [[</p>
-                                        <p><strong>Available Slots:</strong> ]] .. guest_stats.available_slots .. [[</p>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <p><strong>Session Duration:</strong> 10 minutes</p>
-                                        <p><strong>Message Limit:</strong> 10 messages</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="mt-3">
-    ]]
-    
-    if guest_stats.available_slots > 0 then
-        content = content .. [[
-                                    <button class="btn btn-success" onclick="startGuestSession()">
-                                        <i class="bi bi-chat-square-dots"></i> Start Guest Chat
-                                    </button>
-        ]]
-    else
-        content = content .. [[
-                                    <button class="btn btn-secondary" disabled>
-                                        <i class="bi bi-chat-square-dots"></i> Guest Chat Full
-                                    </button>
-                                    <small class="text-muted ms-2">Try again in a few minutes</small>
-        ]]
-    end
-    
-    content = content .. [[
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="card bg-dark border-success">
-                            <div class="card-body">
-                                <h5 class="card-title text-success">
-                                    <i class="bi bi-person-plus"></i> Get Full Access
-                                </h5>
-                                <p>Create an account for unlimited chat access and persistent history.</p>
-                                
-                                <div class="mt-3">
-                                    <a href="/register" class="btn btn-success me-2">
-                                        <i class="bi bi-person-plus"></i> Create Account
-                                    </a>
-                                    <a href="/login" class="btn btn-outline-primary">
-                                        <i class="bi bi-box-arrow-in-right"></i> Login
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    ]]
-    
-    return content
-end
-
--- =============================================
--- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
--- =============================================
-
-local function handle_index_page()
-    -- Simple static index page - no guest session logic here
-    local context = {
-        page_title = "ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons()
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
-end
-
-local function handle_dash_page()
-    -- Show guest upgrade options for is_none users
-    local guest_unavailable = ngx.var.arg_guest_unavailable
-    local guest_stats = get_guest_stats()
-    
-    local dashboard_content = build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
-    
-    local context = {
-        page_title = "Get Access - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
-end
-
-local function handle_chat_page()
-    -- When is_none users try to access chat, attempt to create guest session
-    create_secure_guest_session_with_challenge()
-end
-
-local function handle_login_page()
-    local context = {
-        page_title = "Login - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Welcome Back",
-        auth_subtitle = "Sign in to access Devstral AI"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
-end
-
-local function handle_register_page()
-    local context = {
-        page_title = "Register - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Create Account",
-        auth_subtitle = "Join the Devstral AI community"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
 end
 
 -- =============================================
@@ -719,6 +549,54 @@ local function handle_guest_session_api()
 end
 
 -- =============================================
+-- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
+-- =============================================
+
+local function handle_index_page()
+    -- Simple static index page - no guest session logic here
+    local context = {
+        page_title = "ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons()
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
+end
+
+local function handle_chat_page()
+    -- When is_none users try to access chat, attempt to create guest session
+    create_secure_guest_session_with_challenge()
+end
+
+local function handle_login_page()
+    local context = {
+        page_title = "Login - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons(),
+        auth_title = "Welcome Back",
+        auth_subtitle = "Sign in to access Devstral AI"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
+end
+
+local function handle_register_page()
+    local context = {
+        page_title = "Register - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons(),
+        auth_title = "Create Account",
+        auth_subtitle = "Join the Devstral AI community"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
+end
+
+
+-- =============================================
 -- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
 -- =============================================
 local function handle_route(route_type)
@@ -730,8 +608,6 @@ local function handle_route(route_type)
         handle_register_page()
     elseif route_type == "chat" then
         handle_chat_page()
-    elseif route_type == "dash" then
-        handle_dash_page()
     elseif route_type == "chat_api" then
         -- API access without auth should return 401
         ngx.status = 401
@@ -760,7 +636,6 @@ return {
     
     -- Page handlers
     handle_index_page = handle_index_page,
-    handle_dash_page = handle_dash_page,
     handle_chat_page = handle_chat_page,
     handle_login_page = handle_login_page,
     handle_register_page = handle_register_page,
@@ -768,7 +643,6 @@ return {
     -- Helper functions that might be needed by other modules
     get_guest_stats = get_guest_stats,
     get_nav_buttons = get_nav_buttons,
-    build_guest_acquisition_dashboard = build_guest_acquisition_dashboard,
     
     -- Session management functions
     create_secure_guest_session_with_challenge = create_secure_guest_session_with_challenge,
