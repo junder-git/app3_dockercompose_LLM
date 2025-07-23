@@ -1,12 +1,12 @@
 -- =============================================================================
 -- nginx/lua/is_pending.lua
 -- =============================================================================
-local function handle_dash_page()
+local function handle_chat_page()
 end
 
 
 local function handle_dash_page()
-    local is_who = require "is_who"
+    local is_who = require "aaa_is_who"
     local template = require "template"
     
     local user_type, username, user_data = is_who.check()

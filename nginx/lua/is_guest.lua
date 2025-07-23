@@ -7,28 +7,6 @@ local cjson = require "cjson"
 local is_who = require "is_who"
 
 -- =============================================
--- MAIN ROUTE HANDLER - is_guest can see: ALL routes (/, /chat, /dash, /login, /register)
--- =============================================
-local function handle_route(route_type)
-    if route_type == "index" then
-        handle_index_page()
-    elseif route_type == "chat" then
-        handle_chat_page()
-    elseif route_type == "dash" then 
-        handle_dash_page()
-    elseif route_type == "login" then
-        handle_login_page()
-    elseif route_type == "register" then
-        handle_register_page()
-    elseif route_type == "chat_api" then
-        handle_chat_api()
-    else
-        ngx.status = 404
-        return ngx.exec("@custom_404")
-    end
-end
-
--- =============================================
 -- FIVE HANDLERS (guests can see everything)
 -- =============================================
 local function handle_index_page()
@@ -387,6 +365,28 @@ local function handle_force_claim()
         success = true,
         message = "Force claim placeholder"
     }))
+end
+
+-- =============================================
+-- MAIN ROUTE HANDLER - is_guest can see: ALL routes (/, /chat, /dash, /login, /register)
+-- =============================================
+local function handle_route(route_type)
+    if route_type == "index" then
+        handle_index_page()
+    elseif route_type == "chat" then
+        handle_chat_page()
+    elseif route_type == "dash" then 
+        handle_dash_page()
+    elseif route_type == "login" then
+        handle_login_page()
+    elseif route_type == "register" then
+        handle_register_page()
+    elseif route_type == "chat_api" then
+        handle_chat_api()
+    else
+        ngx.status = 404
+        return ngx.exec("@custom_404")
+    end
 end
 
 return {

@@ -26,40 +26,10 @@ local USERNAME_POOLS = {
 }
 
 -- =============================================
--- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
--- =============================================
-local function handle_route(route_type)
-    if route_type == "index" then
-        handle_index_page()
-    elseif route_type == "login" then
-        handle_login_page()
-    elseif route_type == "register" then
-        handle_register_page()
-    elseif route_type == "chat" then
-        handle_chat_page()
-    elseif route_type == "dash" then
-        handle_dash_page()
-    elseif route_type == "chat_api" then
-        -- API access without auth should return 401
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Authentication required",
-            message = "Please login or start a guest session"
-        }))
-        return ngx.exit(401)
-    else
-        ngx.status = 404
-        return ngx.exec("@custom_404")
-    end
-end
-
--- =============================================
 -- PAGE HANDLERS
 -- =============================================
 
 local function handle_index_page()
-    local guest_slot_requested = ngx.var.arg_guest_slot_requested
     local auto_start_guest = (guest_slot_requested == "1") and "true" or "false"
     local guest_stats = get_guest_stats()
     
@@ -80,7 +50,6 @@ end
 local function handle_dash_page()
     -- is_none users can't normally see dash, but if they got here via redirect logic,
     -- show them guest upgrade options instead
-    local guest_unavailable = ngx.var.arg_guest_unavailable
     local guest_stats = get_guest_stats()
     
     local dashboard_content = build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
@@ -677,7 +646,6 @@ local function handle_guest_session_api()
         create_secure_guest_session_with_challenge()
         
     elseif uri == "/api/guest/challenge-status" and method == "GET" then
-        local username = ngx.var.arg_username
         if not username then
             send_json(400, { error = "username parameter required" })
         end
@@ -735,6 +703,35 @@ local function handle_guest_session_api()
         
     else
         send_json(404, { error = "API endpoint not found" })
+    end
+end
+
+-- =============================================
+-- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
+-- =============================================
+local function handle_route(route_type)
+    if route_type == "index" then
+        handle_index_page()
+    elseif route_type == "login" then
+        handle_login_page()
+    elseif route_type == "register" then
+        handle_register_page()
+    elseif route_type == "chat" then
+        handle_chat_page()
+    elseif route_type == "dash" then
+        handle_dash_page()
+    elseif route_type == "chat_api" then
+        -- API access without auth should return 401
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Authentication required",
+            message = "Please login or start a guest session"
+        }))
+        return ngx.exit(401)
+    else
+        ngx.status = 404
+        return ngx.exec("@custom_404")
     end
 end
 
