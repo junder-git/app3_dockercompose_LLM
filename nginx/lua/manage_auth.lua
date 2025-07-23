@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED WITH handle_check_auth FUNCTION
+-- nginx/lua/manage_auth.lua - SIMPLIFIED: ALL USERS IN REDIS
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -94,7 +94,119 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- AUTH CHECK FUNCTION - CORE LOGIC
+-- LOGIN HANDLER
+-- =============================================
+local function handle_login()
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    if not body then
+        send_json(400, { error = "No request body" })
+    end
+    
+    local ok, data = pcall(cjson.decode, body)
+    if not ok then
+        send_json(400, { error = "Invalid JSON" })
+    end
+    
+    local username = data.username
+    local password = data.password
+    
+    if not username or not password then
+        send_json(400, { error = "Username and password required" })
+    end
+    
+    -- Get user from Redis
+    local user_data = get_user(username)
+    if not user_data then
+        ngx.log(ngx.WARN, "Login attempt for non-existent user: " .. username)
+        send_json(401, { error = "Invalid credentials" })
+    end
+    
+    -- Verify password
+    if not verify_password(password, user_data.password_hash) then
+        ngx.log(ngx.WARN, "Invalid password for user: " .. username)
+        send_json(401, { error = "Invalid credentials" })
+    end
+    
+    -- Generate JWT based on user type
+    local payload = {
+        username = username,
+        user_type = user_data.user_type,
+        iat = ngx.time(),
+        exp = ngx.time() + 86400 * 7  -- 7 days
+    }
+    
+    local token = jwt:sign(JWT_SECRET, {
+        header = { typ = "JWT", alg = "HS256" },
+        payload = payload
+    })
+    
+    -- Set secure cookie
+    ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
+    
+    ngx.log(ngx.INFO, "User logged in successfully: " .. username .. " (type: " .. user_data.user_type .. ")")
+    
+    send_json(200, {
+        success = true,
+        message = "Login successful",
+        username = username,
+        user_type = user_data.user_type
+    })
+end
+
+-- =============================================
+-- LOGOUT HANDLER
+-- =============================================
+local function handle_logout()
+    ngx.log(ngx.INFO, "=== LOGOUT START ===")
+    
+    local user_type, username, user_data = check()  -- Use the existing check function
+    
+    ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
+    
+    -- Clear cookies
+    local cookie_headers = {
+        "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    }
+    ngx.header["Set-Cookie"] = cookie_headers
+    
+    -- Guest session cleanup
+    if user_type == "is_guest" and user_data and user_data.username then
+        local ok, err = pcall(function()
+            local red = connect_redis()
+            if red then
+                -- Clean up guest session
+                red:del("guest_session:" .. user_data.username)
+                red:del("guest_active_session:" .. user_data.username)
+                red:del("username:" .. user_data.username)
+                red:close()
+                ngx.log(ngx.INFO, "Guest session cleaned up for: " .. user_data.username)
+            end
+        end)
+        if not ok then
+            ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. tostring(err))
+        end
+    end
+    
+    local logout_user = username or "guest"
+    local logout_type = user_type or "is_none"
+    
+    ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
+    ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
+    
+    send_json(200, {
+        success = true,
+        message = "Logout successful",
+        redirect = "/",
+        logged_out_user = logout_user,
+        logged_out_type = logout_type
+    })
+end
+
+-- =============================================
+-- AUTH CHECK FUNCTION - CORE LOGIC (SIMPLIFIED)
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
@@ -113,27 +225,54 @@ local function check()
     local username = jwt_obj.payload.username
     local user_type_claim = jwt_obj.payload.user_type
     
-    -- Handle guest users differently
-    if user_type_claim == "is_guest" or user_type_claim == "guest" then
-        -- For guest users, validate against guest session system
-        local ok, is_guest = pcall(require, "is_guest")
-        if ok and is_guest.validate_guest_session then
-            local guest_session, error_msg = is_guest.validate_guest_session(token)
-            if guest_session then
-                return "is_guest", guest_session.display_username or guest_session.username, guest_session
-            else
-                ngx.log(ngx.WARN, "Guest session validation failed: " .. (error_msg or "unknown"))
-                -- Clear the stale guest cookie
-                ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-                return "is_none", nil, nil
-            end
-        else
-            ngx.log(ngx.WARN, "Guest module not available")
-            -- Clear the cookie since we can't validate it
-            ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-            return "is_none", nil, nil
-        end
+    -- For ALL users (including guests), check Redis
+    local user_data = get_user(username)
+    if not user_data then
+        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
+        -- Clear the stale cookie
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
     end
     
-    -- For regular users, check Redis
-    local user_data = get_user(username)
+    -- Update user activity
+    local red = connect_redis()
+    if red then
+        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
+        red:close()
+    end
+    
+    -- Return user type based on Redis data (using is_* format)
+    if user_data.user_type == "is_admin" then
+        return "is_admin", username, user_data
+    end
+    if user_data.user_type == "is_approved" then
+        return "is_approved", username, user_data
+    end
+    if user_data.user_type == "is_pending" then
+        return "is_pending", username, user_data
+    end
+    if user_data.user_type == "is_guest" then
+        return "is_guest", username, user_data
+    end
+    if user_data.user_type == "is_none" then
+        return "is_none", "guest", nil
+    end
+    
+    -- Default fallback
+    return "is_none", nil, nil
+end
+
+-- =============================================
+-- MODULE EXPORTS
+-- =============================================
+
+return {
+    check = check,
+    get_user = get_user,
+    verify_password = verify_password,
+    handle_login = handle_login,
+    handle_logout = handle_logout,
+    -- Export Redis helper functions for other modules
+    redis_to_lua = redis_to_lua,
+    connect_redis = connect_redis
+}
