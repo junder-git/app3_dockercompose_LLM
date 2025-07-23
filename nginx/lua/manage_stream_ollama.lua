@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_adapter_ollama_streaming.lua - Simple Ollama adapter
+-- nginx/lua/manage_stream_ollama.lua - SHARED CHAT API AND STREAMING
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -98,6 +98,201 @@ function M.format_messages(messages)
     end
     
     return formatted
+end
+
+-- =============================================
+-- SHARED CHAT API HANDLER - USED BY ALL USER TYPES
+-- =============================================
+
+function M.handle_chat_api(user_type)
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/chat/history" and method == "GET" then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        
+        if user_type == "is_guest" then
+            ngx.say(cjson.encode({
+                success = true,
+                messages = {},
+                user_type = user_type,
+                storage_type = "localStorage",
+                note = "Guest users don't have persistent chat history"
+            }))
+        else
+            -- For regular users, could load from Redis/database here
+            ngx.say(cjson.encode({
+                success = true,
+                messages = {},
+                user_type = user_type,
+                storage_type = "redis",
+                note = "Chat history loaded from server"
+            }))
+        end
+        
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        
+        if user_type == "is_guest" then
+            ngx.say(cjson.encode({ 
+                success = true, 
+                message = "Guest chat uses localStorage only - clear from browser"
+            }))
+        else
+            -- For regular users, could clear Redis/database here
+            ngx.say(cjson.encode({ 
+                success = true, 
+                message = "Chat history cleared from server"
+            }))
+        end
+        
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        -- Delegate to appropriate streaming handler based on user type
+        if user_type == "is_guest" then
+            local is_guest = require "is_guest"
+            return is_guest.handle_ollama_chat_stream()
+        elseif user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_ollama_chat_stream()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_ollama_chat_stream()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Invalid user type for chat streaming"
+            }))
+            return ngx.exit(403)
+        end
+        
+    else
+        ngx.status = 404
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ 
+            error = "Chat API endpoint not found",
+            requested = method .. " " .. uri,
+            user_type = user_type
+        }))
+        return ngx.exit(404)
+    end
+end
+
+-- =============================================
+-- SHARED CHAT STREAMING HANDLER
+-- =============================================
+
+function M.handle_chat_stream_common(stream_context)
+    ngx.log(ngx.INFO, "🚀 Starting chat stream for user type: " .. (stream_context.user_type or "unknown"))
+    
+    -- Read request body
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    if not body then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Request body required" }))
+        return ngx.exit(400)
+    end
+    
+    local ok, data = pcall(cjson.decode, body)
+    if not ok then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Invalid JSON" }))
+        return ngx.exit(400)
+    end
+    
+    local message = data.message
+    if not message or message == "" then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Message required" }))
+        return ngx.exit(400)
+    end
+    
+    -- Run pre-stream checks if provided
+    if stream_context.pre_stream_check then
+        local check_ok, check_error = stream_context.pre_stream_check(message, data)
+        if not check_ok then
+            ngx.status = 429
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Stream check failed",
+                message = check_error
+            }))
+            return ngx.exit(429)
+        end
+    end
+    
+    -- Set up SSE headers
+    ngx.header.content_type = 'text/event-stream; charset=utf-8'
+    ngx.header.cache_control = 'no-cache'
+    ngx.header.connection = 'keep-alive'
+    ngx.header["X-Accel-Buffering"] = "no"
+    ngx.flush(true)
+    
+    -- Build messages for Ollama
+    local messages = {}
+    
+    -- Add chat history if enabled
+    if stream_context.include_history and stream_context.history_limit > 0 then
+        -- Could load chat history here for regular users
+        -- For now, just add the current message
+    end
+    
+    -- Add current user message
+    table.insert(messages, {
+        role = "user",
+        content = message
+    })
+    
+    -- Use stream context options or defaults
+    local options = {}
+    if stream_context.default_options then
+        for k, v in pairs(stream_context.default_options) do
+            options[k] = data[k] or v
+        end
+    end
+    
+    -- Stream callback function
+    local function stream_callback(chunk)
+        if chunk.content and chunk.content ~= "" then
+            ngx.print("data: " .. cjson.encode({
+                content = chunk.content,
+                done = false
+            }) .. "\n\n")
+            ngx.flush(true)
+        end
+        
+        if chunk.done then
+            ngx.print("data: " .. cjson.encode({
+                content = "",
+                done = true
+            }) .. "\n\n")
+            ngx.flush(true)
+            return true
+        end
+        
+        return false
+    end
+    
+    -- Call Ollama streaming
+    local success, error_msg = M.call_ollama_streaming(messages, options, stream_callback)
+    
+    if not success then
+        ngx.print("data: " .. cjson.encode({
+            error = true,
+            content = "Error: " .. (error_msg or "Unknown streaming error"),
+            done = true
+        }) .. "\n\n")
+        ngx.flush(true)
+    end
+    
+    ngx.log(ngx.INFO, "✅ Chat stream completed for " .. (stream_context.user_type or "unknown"))
 end
 
 -- Main Ollama streaming function

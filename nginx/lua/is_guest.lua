@@ -1,208 +1,57 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - SIMPLIFIED: THREE MAIN HANDLERS
+-- nginx/lua/is_guest.lua - FIXED: COMPLETE GUEST SESSION IMPLEMENTATION
 -- =============================================================================
 
 local template = require "manage_template"
 local cjson = require "cjson"
-local is_who = require "is_who"
+local jwt = require "resty.jwt"
+local redis = require "resty.redis"
+
+-- Import required modules
+local auth = require "manage_auth"
+
+-- Configuration
+local MAX_GUEST_SESSIONS = 2
+local GUEST_SESSION_DURATION = 600  -- 10 minutes
+local GUEST_MESSAGE_LIMIT = 10
+local GUEST_CHAT_RETENTION = 259200  -- 3 days
+
+local JWT_SECRET = os.getenv("JWT_SECRET")
+local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
+local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
 
 -- =============================================
--- FIVE HANDLERS (guests can see everything)
+-- HELPER FUNCTIONS - IMPORTED FROM is_none
 -- =============================================
-local function handle_index_page()
-    -- Guest can see index - show them they're a guest
-    local context = {
-        page_title = "ai.junder.uk - Guest Session",
-        hero_title = "ai.junder.uk",
-        hero_subtitle = "You're in a guest session! Advanced coding model, powered by Devstral.",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = get_guest_username(),
-        dash_buttons = get_nav_buttons(),
-        auto_start_guest = "false"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
+
+local function redis_to_lua(value)
+    if value == ngx.null or value == nil then return nil end
+    return value
 end
 
-local function handle_dash_page()
-    -- Guest dashboard shows their session info
-    local username, user_data = is_who.require_guest()
-    
-    local dashboard_content = build_guest_dashboard(user_data)
-    
-    local context = {
-        page_title = "Guest Dashboard - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = username,
-        dash_buttons = get_nav_buttons(),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
-end
-
-local function handle_chat_page()
-    local username, user_data = is_who.require_guest()
-    
-    local context = {
-        page_title = "Guest Chat",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = username or "guest",
-        dash_buttons = get_nav_buttons(username),
-        chat_features = get_chat_features(),
-        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat.html", context)
-end
-
--- =============================================
--- API HANDLERS
--- =============================================
-local function handle_chat_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/chat/history" and method == "GET" then
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            success = true,
-            messages = {},
-            user_type = "is_guest",
-            storage_type = "none",
-            note = "Guest users don't have persistent chat history"
-        }))
-        
-    elseif uri == "/api/chat/clear" and method == "POST" then
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({ 
-            success = true, 
-            message = "Guest chat uses localStorage only - clear from browser"
-        }))
-        
-    elseif uri == "/api/chat/stream" and method == "POST" then
-        handle_ollama_chat_stream()
-        
-    else
-        ngx.status = 404
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({ 
-            error = "Guest Chat API endpoint not found",
-            requested = method .. " " .. uri
-        }))
-        return ngx.exit(404)
+local function connect_redis()
+    local red = redis:new()
+    red:set_timeout(1000)
+    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
+    if not ok then
+        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
+        return nil
     end
+    return red
 end
 
-local function handle_guest_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/guest/create-session" and method == "POST" then
-        create_secure_guest_session_with_challenge()
-    elseif uri == "/api/guest/challenge-status" and method == "GET" then
-        handle_challenge_status()
-    elseif uri == "/api/guest/challenge-response" and method == "POST" then
-        handle_challenge_response()
-    elseif uri == "/api/guest/force-claim" and method == "POST" then
-        handle_force_claim()
-    elseif uri == "/api/guest/stats" and method == "GET" then
-        local stats = get_guest_stats()
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            success = true,
-            stats = stats
-        }))
-    else
-        ngx.status = 404
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({ 
-            error = "Guest API endpoint not found",
-            requested = method .. " " .. uri
-        }))
-        return ngx.exit(404)
-    end
-end
-
--- =============================================
--- OLLAMA STREAMING HANDLER
--- =============================================
-local function handle_ollama_chat_stream()
-    local username, user_data = is_who.require_guest()
-    
-    local function pre_stream_check(message, request_data)
-        local current_count = user_data.message_count or 0
-        
-        if current_count >= user_data.max_messages then
-            return false, "Guest message limit reached (" .. user_data.max_messages .. " messages). Register for unlimited access."
-        end
-        
-        if ngx.time() >= user_data.expires_at then
-            return false, "Guest session expired. Please start a new session."
-        end
-        
-        update_guest_message_count(user_data)
-        return true, nil
-    end
-    
-    -- Use existing manage module for Ollama streaming
-    local manage = require "manage"
-    local stream_context = {
-        user_type = "is_guest",
-        username = username,
-        include_history = false,
-        history_limit = 0,
-        pre_stream_check = pre_stream_check,
-        default_options = {
-            model = "devstral",
-            temperature = 0.7,
-            max_tokens = 1024
-        }
-    }
-    
-    manage.handle_chat_stream_common(stream_context)
-end
-
-local function handle_login_page()
-    -- Guest can see login page - show option to end guest session
-    local context = {
-        page_title = "Login - ai.junder.uk (Guest Session Active)",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = get_guest_username(),
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Login to Full Account",
-        auth_subtitle = "End guest session and login to your full account"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
-end
-
-local function handle_register_page()
-    -- Guest can see register page - show option to end guest session  
-    local context = {
-        page_title = "Register - ai.junder.uk (Guest Session Active)",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = get_guest_username(),
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Create Full Account",
-        auth_subtitle = "End guest session and create a permanent account"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
-end
-
--- =============================================
--- HELPER FUNCTIONS
--- =============================================
+-- Get the current guest user's info from auth check
 local function get_guest_username()
-    local user_type, username, user_data = is_who.set_vars()
-    return username or "guest"
+    local user_type, username, user_data = auth.check()
+    if user_type == "is_guest" then
+        return user_data.display_username or username or "guest"
+    end
+    return "guest"
 end
+
 local function get_nav_buttons(username)
-    return '<a class="nav-link" href="/chat">Guest Chat</a><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+    local display_name = username or get_guest_username()
+    return '<span class="nav-text text-warning me-2"><i class="bi bi-clock-history"></i> ' .. display_name .. '</span><a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
 end
 
 local function get_chat_features()
@@ -217,30 +66,115 @@ local function get_chat_features()
     ]]
 end
 
--- =============================================
--- GUEST SESSION MANAGEMENT (Additional functionality)
--- =============================================
+-- CRITICAL: Guest session validation function expected by manage_auth.lua
+local function validate_guest_session(token)
+    if not token then
+        return nil, "No token provided"
+    end
+    
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        return nil, "Invalid JWT token"
+    end
+    
+    local username = jwt_obj.payload.username
+    local user_type = jwt_obj.payload.user_type
+    
+    if user_type ~= "is_guest" then
+        return nil, "Not a guest token"
+    end
+    
+    -- Check if guest session still exists in Redis
+    local red = connect_redis()
+    if not red then
+        return nil, "Redis unavailable"
+    end
+    
+    local session_key = "guest_session:" .. username
+    local session_data = redis_to_lua(red:get(session_key))
+    red:close()
+    
+    if not session_data then
+        return nil, "Guest session not found"
+    end
+    
+    local ok, session = pcall(cjson.decode, session_data)
+    if not ok then
+        return nil, "Invalid session data"
+    end
+    
+    -- Check if session is expired
+    if session.expires_at and ngx.time() >= session.expires_at then
+        return nil, "Guest session expired"
+    end
+    
+    return session, nil
+end
 
--- Configuration
-local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 600  -- 10 minutes
-local GUEST_MESSAGE_LIMIT = 10
+local function get_guest_stats()
+    local red = connect_redis()
+    if not red then 
+        return {
+            active_sessions = 0,
+            max_sessions = MAX_GUEST_SESSIONS,
+            available_slots = MAX_GUEST_SESSIONS,
+            challenges_active = 0
+        }
+    end
+
+    local active_count = 0
+    local challenges_active = 0
+    
+    -- Check guest_user_1 and guest_user_2
+    for i = 1, MAX_GUEST_SESSIONS do
+        local username = "guest_user_" .. i
+        local session_key = "guest_active_session:" .. username
+        local session_data = redis_to_lua(red:get(session_key))
+        
+        if session_data then
+            local ok, session = pcall(cjson.decode, session_data)
+            if ok and session.expires_at and ngx.time() < session.expires_at then
+                active_count = active_count + 1
+            else
+                -- Clean expired session
+                red:del(session_key)
+            end
+        end
+        
+        local challenge_key = "guest_challenge:" .. username
+        local challenge_data = redis_to_lua(red:get(challenge_key))
+        if challenge_data then
+            local ok, challenge = pcall(cjson.decode, challenge_data)
+            if ok and challenge.expires_at and ngx.time() < challenge.expires_at then
+                challenges_active = challenges_active + 1
+            else
+                red:del(challenge_key)
+            end
+        end
+    end
+    
+    red:close()
+    
+    return {
+        active_sessions = active_count,
+        max_sessions = MAX_GUEST_SESSIONS,
+        available_slots = MAX_GUEST_SESSIONS - active_count,
+        challenges_active = challenges_active
+    }
+end
 
 local function update_guest_message_count(user_data)
-    if not user_data or not user_data.guest_slot_number then
+    if not user_data or not user_data.username then
         return false
     end
     
-    local redis = require "resty.redis"
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(os.getenv("REDIS_HOST") or "redis", tonumber(os.getenv("REDIS_PORT")) or 6379)
-    if not ok then return false end
+    local red = connect_redis()
+    if not red then return false end
     
     user_data.message_count = (user_data.message_count or 0) + 1
     user_data.last_activity = ngx.time()
     
-    local session_key = "guest_active_session:" .. user_data.guest_slot_number
+    local session_key = "guest_active_session:" .. user_data.username
     local user_session_key = "guest_session:" .. user_data.username
     
     red:set(session_key, cjson.encode(user_data))
@@ -254,10 +188,14 @@ local function update_guest_message_count(user_data)
 end
 
 local function build_guest_dashboard(user_data)
+    if not user_data then
+        return '<div class="alert alert-danger">Guest session data not found</div>'
+    end
+    
     local messages_remaining = (user_data.max_messages or 10) - (user_data.message_count or 0)
     local time_remaining = (user_data.expires_at or 0) - ngx.time()
-    local minutes_remaining = math.floor(time_remaining / 60)
-    local seconds_remaining = time_remaining % 60
+    local minutes_remaining = math.max(0, math.floor(time_remaining / 60))
+    local seconds_remaining = math.max(0, time_remaining % 60)
     
     return string.format([[
         <div class="dashboard-container">
@@ -326,50 +264,174 @@ local function build_guest_dashboard(user_data)
     ]], 
     messages_remaining, (user_data.max_messages or 10),
     minutes_remaining, seconds_remaining,
-    (user_data.display_username or "unknown")
+    (user_data.display_username or user_data.username or "unknown")
     )
 end
 
--- Placeholder functions for guest session management
-local function create_secure_guest_session_with_challenge()
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
-        success = true,
-        message = "Guest session creation placeholder"
-    }))
+-- =============================================
+-- PAGE HANDLERS - GUESTS CAN SEE ALL PAGES
+-- =============================================
+
+local function handle_index_page()
+    local user_type, username, user_data = auth.check()
+    local display_name = user_data and user_data.display_username or username or "guest"
+    
+    local context = {
+        page_title = "ai.junder.uk - Guest Session",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = display_name,
+        dash_buttons = get_nav_buttons(display_name)
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
 end
 
-local function handle_challenge_status()
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
-        success = true,
-        challenge_active = false
-    }))
+local function handle_dash_page()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_guest" then
+        ngx.log(ngx.WARN, "Non-guest user accessing guest dashboard: " .. (user_type or "none"))
+        return ngx.redirect("/")
+    end
+    
+    local display_name = user_data and user_data.display_username or username or "guest"
+    local dashboard_content = build_guest_dashboard(user_data)
+    
+    local context = {
+        page_title = "Guest Dashboard - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = display_name,
+        dash_buttons = get_nav_buttons(display_name),
+        dashboard_content = dashboard_content
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
 end
 
-local function handle_challenge_response()
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
-        success = true,
-        message = "Challenge response placeholder"
-    }))
+local function handle_chat_page()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_guest" then
+        ngx.log(ngx.WARN, "Non-guest user accessing guest chat: " .. (user_type or "none"))
+        return ngx.redirect("/")
+    end
+    
+    local display_name = user_data and user_data.display_username or username or "guest"
+    
+    local context = {
+        page_title = "Guest Chat - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = display_name,
+        dash_buttons = get_nav_buttons(display_name),
+        chat_features = get_chat_features(),
+        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat.html", context)
 end
 
-local function handle_force_claim()
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
-        success = true,
-        message = "Force claim placeholder"
-    }))
+local function handle_login_page()
+    local display_name = get_guest_username()
+    
+    local context = {
+        page_title = "Login - ai.junder.uk (Guest Session Active)",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = display_name,
+        dash_buttons = get_nav_buttons(display_name),
+        auth_title = "Login to Full Account",
+        auth_subtitle = "End guest session and login to your full account"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
+end
+
+local function handle_register_page()
+    local display_name = get_guest_username()
+    
+    local context = {
+        page_title = "Register - ai.junder.uk (Guest Session Active)",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = display_name,
+        dash_buttons = get_nav_buttons(display_name),
+        auth_title = "Create Full Account",
+        auth_subtitle = "End guest session and create a permanent account"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
 end
 
 -- =============================================
--- MAIN ROUTE HANDLER - is_guest can see: ALL routes (/, /chat, /dash, /login, /register)
+-- API HANDLERS - USE SHARED MODULES
 -- =============================================
+
+local function handle_chat_api()
+    -- Use shared chat API handler from manage_stream_ollama
+    local stream_ollama = require "manage_stream_ollama"
+    return stream_ollama.handle_chat_api("is_guest")
+end
+
+-- Import guest session management from is_none
+local function handle_guest_api()
+    local is_none = require "is_none"
+    return is_none.handle_guest_session_api()
+end
+
+-- =============================================
+-- OLLAMA STREAMING HANDLER - USE SHARED MODULE
+-- =============================================
+
+local function handle_ollama_chat_stream()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_guest" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Access denied",
+            message = "Guest session required"
+        }))
+        return ngx.exit(403)
+    end
+    
+    -- Guest-specific pre-stream check function
+    local function guest_pre_stream_check(message, request_data)
+        local current_count = user_data.message_count or 0
+        
+        if current_count >= (user_data.max_messages or GUEST_MESSAGE_LIMIT) then
+            return false, "Guest message limit reached (" .. (user_data.max_messages or GUEST_MESSAGE_LIMIT) .. " messages). Register for unlimited access."
+        end
+        
+        if user_data.expires_at and ngx.time() >= user_data.expires_at then
+            return false, "Guest session expired. Please start a new session."
+        end
+        
+        update_guest_message_count(user_data)
+        return true, nil
+    end
+    
+    -- Use shared Ollama streaming from manage_stream_ollama
+    local stream_ollama = require "manage_stream_ollama"
+    local stream_context = {
+        user_type = "is_guest",
+        username = username,
+        user_data = user_data,
+        include_history = false,
+        history_limit = 0,
+        pre_stream_check = guest_pre_stream_check,
+        default_options = {
+            model = os.getenv("MODEL_NAME") or "devstral",
+            temperature = tonumber(os.getenv("MODEL_TEMPERATURE")) or 0.7,
+            max_tokens = tonumber(os.getenv("MODEL_NUM_PREDICT")) or 1024
+        }
+    }
+    
+    return stream_ollama.handle_chat_stream_common(stream_context)
+end
+
+-- =============================================
+-- MAIN ROUTE HANDLER - GUESTS CAN SEE ALL ROUTES
+-- =============================================
+
 local function handle_route(route_type)
     if route_type == "index" then
         handle_index_page()
@@ -389,16 +451,34 @@ local function handle_route(route_type)
     end
 end
 
+-- =============================================
+-- MODULE EXPORTS
+-- =============================================
+
 return {
+    -- Main route handler
     handle_route = handle_route,
+    
+    -- Page handlers
     handle_index_page = handle_index_page,
     handle_dash_page = handle_dash_page,
     handle_chat_page = handle_chat_page,
+    handle_login_page = handle_login_page,
+    handle_register_page = handle_register_page,
+    
+    -- API handlers
     handle_guest_api = handle_guest_api,
+    handle_chat_api = handle_chat_api,
     handle_ollama_chat_stream = handle_ollama_chat_stream,
-    get_guest_stats = get_guest_stats
+    
+    -- Session management functions
+    validate_guest_session = validate_guest_session,
+    get_guest_stats = get_guest_stats,
+    update_guest_message_count = update_guest_message_count,
+    
+    -- Helper functions
+    get_guest_username = get_guest_username,
+    get_nav_buttons = get_nav_buttons,
+    get_chat_features = get_chat_features,
+    build_guest_dashboard = build_guest_dashboard
 }
-
-
-
-
