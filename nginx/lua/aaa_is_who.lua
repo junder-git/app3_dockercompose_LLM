@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_who.lua - RESTRUCTURED: ROUTING ONLY, NO PAGE HANDLERS
+-- nginx/lua/aaa_is_who.lua - FIXED: USE EXISTING auth.check() FUNCTION
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -151,8 +151,6 @@ function M.handle_ollama_chat_api()
     end
 end
 
-
-
 -- =============================================
 -- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY)
 -- =============================================
@@ -166,7 +164,17 @@ function M.handle_auth_api()
     elseif uri == "/api/auth/logout" and method == "POST" then
         auth.handle_logout()
     elseif uri == "/api/auth/check" and method == "GET" then
-        auth.handle_check_auth()
+        -- FIXED: Use the existing check() function and wrap it in a handler
+        local user_type, username, user_data = auth.check()
+        
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = true,
+            authenticated = user_type ~= "is_none",
+            user_type = user_type,
+            username = username
+        }))
     else
         ngx.status = 404
         ngx.header.content_type = 'application/json'
@@ -185,8 +193,8 @@ function M.handle_admin_api()
 end
 
 function M.handle_guest_api()
-    local is_guest = require "is_guest"
-    is_guest.handle_guest_api()
+    local is_none = require "is_none"
+    is_none.handle_guest_session_api()
 end
 
 -- =============================================

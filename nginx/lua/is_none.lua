@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_none.lua - WITH GUEST USERNAME SYSTEM
+-- nginx/lua/is_none.lua - SIMPLIFIED, GUEST SESSION ONLY ON CHAT BUTTON CLICK
 -- =============================================================================
 
 local template = require "manage_template"
@@ -26,79 +26,24 @@ local USERNAME_POOLS = {
 }
 
 -- =============================================
--- PAGE HANDLERS
+-- HELPER FUNCTIONS - DEFINED FIRST
 -- =============================================
 
-local function handle_index_page()
-    local auto_start_guest = (guest_slot_requested == "1") and "true" or "false"
-    local guest_stats = get_guest_stats()
-    
-    local context = {
-        page_title = "ai.junder.uk",
-        hero_title = "ai.junder.uk",
-        hero_subtitle = "Advanced coding model, powered by Devstral.",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auto_start_guest = auto_start_guest,
-        guest_stats = guest_stats
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
+local function redis_to_lua(value)
+    if value == ngx.null or value == nil then return nil end
+    return value
 end
 
-local function handle_dash_page()
-    -- is_none users can't normally see dash, but if they got here via redirect logic,
-    -- show them guest upgrade options instead
-    local guest_stats = get_guest_stats()
-    
-    local dashboard_content = build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
-    
-    local context = {
-        page_title = "Get Access - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
+local function connect_redis()
+    local red = redis:new()
+    red:set_timeout(1000)
+    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
+    if not ok then
+        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
+        return nil
+    end
+    return red
 end
-
-local function handle_chat_page()
-    -- When is_none users try to access chat, attempt to create guest session
-    create_secure_guest_session_with_challenge()
-end
-
-local function handle_login_page()
-    local context = {
-        page_title = "Login - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Welcome Back",
-        auth_subtitle = "Sign in to access Devstral AI"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
-end
-
-local function handle_register_page()
-    local context = {
-        page_title = "Register - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Create Account",
-        auth_subtitle = "Join the Devstral AI community"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
-end
-
--- =============================================
--- HELPER FUNCTIONS
--- =============================================
 
 local function get_guest_accounts()
     local now = ngx.time()
@@ -132,25 +77,99 @@ local function get_guest_accounts()
     }
 end
 
-local function redis_to_lua(value)
-    if value == ngx.null or value == nil then return nil end
-    return value
-end
-
-local function connect_redis()
-    local red = redis:new()
-    red:set_timeout(1000)
-    local ok, err = red:connect(REDIS_HOST, REDIS_PORT)
-    if not ok then
-        ngx.log(ngx.ERR, "Redis connection failed: " .. (err or "unknown"))
-        return nil
-    end
-    return red
-end
-
 -- Generate navigation buttons for public users
 local function get_nav_buttons()
     return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
+end
+
+local function get_guest_stats()
+    local red = connect_redis()
+    if not red then 
+        return {
+            active_sessions = 0,
+            max_sessions = MAX_GUEST_SESSIONS,
+            available_slots = MAX_GUEST_SESSIONS,
+            challenges_active = 0
+        }
+    end
+
+    local active_count = 0
+    local challenges_active = 0
+    local guest_accounts = get_guest_accounts()
+    
+    for _, account in ipairs(guest_accounts) do
+        local session_key = "guest_active_session:" .. account.username
+        local session_data = redis_to_lua(red:get(session_key))
+        
+        if session_data then
+            local ok, session = pcall(cjson.decode, session_data)
+            if ok and session.expires_at and ngx.time() < session.expires_at then
+                active_count = active_count + 1
+            else
+                -- Clean expired session
+                red:del(session_key)
+            end
+        end
+        
+        local challenge_key = "guest_challenge:" .. account.username
+        local challenge_data = redis_to_lua(red:get(challenge_key))
+        if challenge_data then
+            local ok, challenge = pcall(cjson.decode, challenge_data)
+            if ok and challenge.expires_at and ngx.time() < challenge.expires_at then
+                challenges_active = challenges_active + 1
+            else
+                red:del(challenge_key)
+            end
+        end
+    end
+    
+    red:close()
+    
+    return {
+        active_sessions = active_count,
+        max_sessions = MAX_GUEST_SESSIONS,
+        available_slots = MAX_GUEST_SESSIONS - active_count,
+        challenges_active = challenges_active
+    }
+end
+
+local function generate_display_username()
+    local red = connect_redis()
+    if not red then
+        local pool = USERNAME_POOLS
+        return pool.adjectives[math.random(#pool.adjectives)] ..
+               pool.animals[math.random(#pool.animals)] ..
+               tostring(math.random(100, 999))
+    end
+
+    local pool = USERNAME_POOLS
+    local max_attempts, attempts = 3, 0
+
+    while attempts < max_attempts do
+        local adjective = pool.adjectives[math.random(#pool.adjectives)]
+        local animal = pool.animals[math.random(#pool.animals)]
+        local number = math.random(100, 999)
+        local candidate = adjective .. animal .. number
+        local key = "guest_username_blacklist:" .. candidate
+
+        if not redis_to_lua(red:get(key)) then
+            red:set(key, "1")
+            red:expire(key, GUEST_CHAT_RETENTION + 3600)
+            red:close()
+            return candidate
+        end
+
+        attempts = attempts + 1
+    end
+
+    local adjective = pool.adjectives[math.random(#pool.adjectives)]
+    local animal = pool.animals[math.random(#pool.animals)]
+    local fallback = adjective .. animal .. tostring(ngx.time()):sub(-4)
+    local key = "guest_username_blacklist:" .. fallback
+    red:set(key, "1")
+    red:expire(key, GUEST_CHAT_RETENTION + 3600)
+    red:close()
+    return fallback
 end
 
 -- Build guest acquisition dashboard
@@ -242,43 +261,69 @@ local function build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
     return content
 end
 
-local function generate_display_username()
-    local red = connect_redis()
-    if not red then
-        local pool = USERNAME_POOLS
-        return pool.adjectives[math.random(#pool.adjectives)] ..
-               pool.animals[math.random(#pool.animals)] ..
-               tostring(math.random(100, 999))
-    end
+-- =============================================
+-- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
+-- =============================================
 
-    local pool = USERNAME_POOLS
-    local max_attempts, attempts = 3, 0
+local function handle_index_page()
+    -- Simple static index page - no guest session logic here
+    local context = {
+        page_title = "ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons()
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
+end
 
-    while attempts < max_attempts do
-        local adjective = pool.adjectives[math.random(#pool.adjectives)]
-        local animal = pool.animals[math.random(#pool.animals)]
-        local number = math.random(100, 999)
-        local candidate = adjective .. animal .. number
-        local key = "guest_username_blacklist:" .. candidate
+local function handle_dash_page()
+    -- Show guest upgrade options for is_none users
+    local guest_unavailable = ngx.var.arg_guest_unavailable
+    local guest_stats = get_guest_stats()
+    
+    local dashboard_content = build_guest_acquisition_dashboard(guest_unavailable, guest_stats)
+    
+    local context = {
+        page_title = "Get Access - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons(),
+        dashboard_content = dashboard_content
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/dash.html", context)
+end
 
-        if not redis_to_lua(red:get(key)) then
-            red:set(key, "1")
-            red:expire(key, GUEST_CHAT_RETENTION + 3600)
-            red:close()
-            return candidate
-        end
+local function handle_chat_page()
+    -- When is_none users try to access chat, attempt to create guest session
+    create_secure_guest_session_with_challenge()
+end
 
-        attempts = attempts + 1
-    end
+local function handle_login_page()
+    local context = {
+        page_title = "Login - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons(),
+        auth_title = "Welcome Back",
+        auth_subtitle = "Sign in to access Devstral AI"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
+end
 
-    local adjective = pool.adjectives[math.random(#pool.adjectives)]
-    local animal = pool.animals[math.random(#pool.animals)]
-    local fallback = adjective .. animal .. tostring(ngx.time()):sub(-4)
-    local key = "guest_username_blacklist:" .. fallback
-    red:set(key, "1")
-    red:expire(key, GUEST_CHAT_RETENTION + 3600)
-    red:close()
-    return fallback
+local function handle_register_page()
+    local context = {
+        page_title = "Register - ai.junder.uk",
+        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        username = "guest",
+        dash_buttons = get_nav_buttons(),
+        auth_title = "Create Account",
+        auth_subtitle = "Join the Devstral AI community"
+    }
+    
+    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
 end
 
 -- =============================================
@@ -582,51 +627,6 @@ local function create_secure_guest_session_with_challenge()
     end
 end
 
-local function get_guest_stats()
-    local red = connect_redis()
-    if not red then 
-        return {
-            active_sessions = 0,
-            max_sessions = MAX_GUEST_SESSIONS,
-            available_slots = MAX_GUEST_SESSIONS,
-            challenges_active = 0
-        }
-    end
-
-    local active_count = 0
-    local challenges_active = 0
-    local guest_accounts = get_guest_accounts()
-    
-    for _, account in ipairs(guest_accounts) do
-        local session_key = "guest_active_session:" .. account.username
-        local session_data = redis_to_lua(red:get(session_key))
-        
-        if session_data then
-            local ok, session = pcall(cjson.decode, session_data)
-            if ok and session.expires_at and ngx.time() < session.expires_at then
-                active_count = active_count + 1
-            else
-                -- Clean expired session
-                red:del(session_key)
-            end
-        end
-        
-        local challenge = get_guest_challenge(account.username)
-        if challenge then
-            challenges_active = challenges_active + 1
-        end
-    end
-    
-    red:close()
-    
-    return {
-        active_sessions = active_count,
-        max_sessions = MAX_GUEST_SESSIONS,
-        available_slots = MAX_GUEST_SESSIONS - active_count,
-        challenges_active = challenges_active
-    }
-end
-
 -- =============================================
 -- API HANDLERS
 -- =============================================
@@ -646,6 +646,7 @@ local function handle_guest_session_api()
         create_secure_guest_session_with_challenge()
         
     elseif uri == "/api/guest/challenge-status" and method == "GET" then
+        local username = ngx.var.arg_username
         if not username then
             send_json(400, { error = "username parameter required" })
         end
@@ -700,6 +701,13 @@ local function handle_guest_session_api()
                 message = "Challenge response failed"
             })
         end
+        
+    elseif uri == "/api/guest/stats" and method == "GET" then
+        local stats = get_guest_stats()
+        send_json(200, {
+            success = true,
+            stats = stats
+        })
         
     else
         send_json(404, { error = "API endpoint not found" })
