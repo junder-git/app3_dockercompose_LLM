@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - IMPORT SHARED FUNCTIONS FROM manage_auth
+-- nginx/lua/is_guest.lua - FIXED: DISPLAY NAME AND LOGOUT FUNCTIONALITY
 -- =============================================================================
 
 local template = require "manage_template"
@@ -21,17 +21,22 @@ local GUEST_MESSAGE_LIMIT = 10
 local redis_to_lua = auth.redis_to_lua
 local connect_redis = auth.connect_redis
 
--- Get the current guest user's info from auth check
-local function get_guest_username()
+-- FIXED: Get the current guest user's display name (not internal username)
+local function get_guest_display_name()
     local user_type, username, user_data = auth.check()
-    if user_type == "is_guest" then
-        return user_data.display_username or username or "guest"
+    if user_type == "is_guest" and user_data then
+        -- FIXED: Return display_username, not the internal username
+        return user_data.display_username or "guest"
     end
     return "guest"
 end
 
-local function get_nav_buttons(username)
-    return '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+-- FIXED: Generate proper navigation buttons with logout functionality
+local function get_nav_buttons(display_name)
+    display_name = display_name or get_guest_display_name()
+    return string.format(
+        '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
+    )
 end
 
 local function get_chat_features()
@@ -128,13 +133,14 @@ end
 
 local function handle_index_page()
     local user_type, username, user_data = auth.check()
-    local display_name = user_data and user_data.display_username or username or "guest"
+    -- FIXED: Use display name instead of internal username
+    local display_name = (user_data and user_data.display_username) or "guest"
     
     local context = {
         page_title = "ai.junder.uk - Guest Session",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,
-        dash_buttons = get_nav_buttons()
+        username = display_name,  -- FIXED: Show display name
+        dash_buttons = get_nav_buttons(display_name)
     }
     
     template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
@@ -148,13 +154,14 @@ local function handle_chat_page()
         return ngx.redirect("/")
     end
     
-    local display_name = user_data and user_data.display_username or username or "guest"
+    -- FIXED: Use display name instead of internal username
+    local display_name = (user_data and user_data.display_username) or "guest"
     
     local context = {
         page_title = "Guest Chat - ai.junder.uk",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,
-        dash_buttons = get_nav_buttons(),
+        username = display_name,  -- FIXED: Show display name
+        dash_buttons = get_nav_buttons(display_name),
         chat_features = get_chat_features(),
         chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
     }
@@ -163,13 +170,13 @@ local function handle_chat_page()
 end
 
 local function handle_login_page()
-    local display_name = get_guest_username()
+    local display_name = get_guest_display_name()
     
     local context = {
         page_title = "Login - ai.junder.uk (Guest Session Active)",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,
-        dash_buttons = get_nav_buttons(),
+        username = display_name,  -- FIXED: Show display name
+        dash_buttons = get_nav_buttons(display_name),
         auth_title = "Login to Full Account",
         auth_subtitle = "End guest session and login to your full account"
     }
@@ -178,13 +185,13 @@ local function handle_login_page()
 end
 
 local function handle_register_page()
-    local display_name = get_guest_username()
+    local display_name = get_guest_display_name()
     
     local context = {
         page_title = "Register - ai.junder.uk (Guest Session Active)",
         nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,
-        dash_buttons = get_nav_buttons(),
+        username = display_name,  -- FIXED: Show display name
+        dash_buttons = get_nav_buttons(display_name),
         auth_title = "Create Full Account",
         auth_subtitle = "End guest session and create a permanent account"
     }
@@ -200,6 +207,28 @@ local function handle_chat_api()
     -- Use shared chat API handler from manage_stream_ollama
     local stream_ollama = require "manage_stream_ollama"
     return stream_ollama.handle_chat_api("is_guest")
+end
+
+-- FIXED: Guest logout handler using manage_auth
+local function handle_guest_logout()
+    -- FIXED: Use the shared logout handler from manage_auth
+    local user_type, username, user_data = auth.check()
+    
+    if user_type == "is_guest" then
+        ngx.log(ngx.INFO, "🔚 Guest logout requested for: " .. (user_data and user_data.display_username or username or "unknown"))
+        
+        -- Use the shared logout from manage_auth which handles guest cleanup
+        auth.handle_logout()
+        return
+    else
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = "Not a guest session"
+        }))
+        return ngx.exit(403)
+    end
 end
 
 -- Import guest session management from is_none
@@ -275,6 +304,8 @@ local function handle_route(route_type)
         handle_register_page()
     elseif route_type == "chat_api" then
         handle_chat_api()
+    elseif route_type == "guest_logout" then
+        handle_guest_logout()
     else
         ngx.status = 404
         return ngx.exec("@custom_404")
@@ -299,14 +330,14 @@ return {
     handle_guest_api = handle_guest_api,
     handle_chat_api = handle_chat_api,
     handle_ollama_chat_stream = handle_ollama_chat_stream,
+    handle_guest_logout = handle_guest_logout,  -- FIXED: Export logout handler
     
     -- Session management functions
     get_guest_stats = get_guest_stats,
     update_guest_message_count = update_guest_message_count,
     
     -- Helper functions
-    get_guest_username = get_guest_username,
+    get_guest_display_name = get_guest_display_name,  -- FIXED: Export display name function
     get_nav_buttons = get_nav_buttons,
-    get_chat_features = get_chat_features,
-    build_guest_dashboard = build_guest_dashboard
+    get_chat_features = get_chat_features
 }

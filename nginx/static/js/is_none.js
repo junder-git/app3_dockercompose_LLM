@@ -429,10 +429,10 @@ class GuestStatsDisplay {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Only initialize on relevant pages for is_none users
+    // Always initialize on relevant pages for is_none users
     if (window.location.pathname === '/' || window.location.pathname === '/dash') {
         window.guestSessionManager = new GuestSessionManager();
         window.guestStatsDisplay = new GuestStatsDisplay();
-        console.log('🚀 Guest session management loaded for is_none user');
+        console.log('🚀 Guest session management loaded');
     }
 });

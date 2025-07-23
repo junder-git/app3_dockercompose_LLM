@@ -151,7 +151,8 @@ local function handle_login()
         success = true,
         message = "Login successful",
         username = username,
-        user_type = user_data.user_type
+        user_type = user_data.user_type,
+        redirect = "/chat"  -- Always redirect to chat after login
     })
 end
 

@@ -155,7 +155,7 @@ function M.handle_ollama_chat_api()
 end
 
 -- =============================================
--- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY)
+-- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY) - REMOVED CHECK ENDPOINT
 -- =============================================
 
 function M.handle_auth_api()
@@ -166,22 +166,17 @@ function M.handle_auth_api()
         auth.handle_login()
     elseif uri == "/api/auth/logout" and method == "POST" then
         auth.handle_logout()
-    elseif uri == "/api/auth/check" and method == "GET" then
-        -- FIXED: Use the existing check() function and wrap it in a handler
-        local user_type, username, user_data = auth.check()
-        
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            success = true,
-            authenticated = user_type ~= "is_none",
-            user_type = user_type,
-            username = username
-        }))
     else
         ngx.status = 404
         ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({ error = "Auth endpoint not found" }))
+        ngx.say(cjson.encode({ 
+            error = "Auth endpoint not found",
+            message = "Only login and logout endpoints available",
+            available_endpoints = {
+                "POST /api/auth/login - User login",
+                "POST /api/auth/logout - User logout"
+            }
+        }))
     end
 end
 

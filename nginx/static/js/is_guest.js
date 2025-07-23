@@ -546,32 +546,17 @@ window.downloadGuestHistory = function() {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Only initialize if we're actually a guest user
-    sharedInterface.checkAuth()
-        .then(data => {
-            if (data.success && data.user_type === 'is_guest') {
-                // Initialize challenge responder for existing guests
-                if (!window.guestChallengeResponder) {
-                    window.guestChallengeResponder = new GuestChallengeResponder();
-                    console.log('🎯 Challenge responder initialized for guest user');
-                }
-                
-                // Initialize main guest chat if on chat page
-                if (window.location.pathname === '/chat') {
-                    window.guestChat = new GuestChat();
-                    window.chatSystem = window.guestChat; // For compatibility
-                    console.log('💬 Guest chat initialized');
-                }
-            }
-        })
-        .catch(error => {
-            console.warn('Could not check auth status:', error);
-            
-            // Fallback: initialize chat if on chat page
-            if (window.location.pathname === '/chat') {
-                window.guestChat = new GuestChat();
-                window.chatSystem = window.guestChat; // For compatibility
-                console.log('💬 Guest chat initialized (fallback)');
-            }
-        });
+    // Always initialize guest functionality on chat page
+    if (window.location.pathname === '/chat') {
+        // Initialize challenge responder for guest users (server will determine if needed)
+        if (!window.guestChallengeResponder) {
+            window.guestChallengeResponder = new GuestChallengeResponder();
+            console.log('🎯 Challenge responder initialized');
+        }
+        
+        // Initialize main guest chat
+        window.guestChat = new GuestChat();
+        window.chatSystem = window.guestChat; // For compatibility
+        console.log('💬 Guest chat initialized');
+    }
 });

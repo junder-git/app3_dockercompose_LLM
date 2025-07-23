@@ -312,7 +312,7 @@ class SharedChatBase {
 }
 
 // =============================================================================
-// SHARED AUTHENTICATION AND NAVIGATION
+// SHARED AUTHENTICATION AND NAVIGATION - REMOVED AUTH CHECKS
 // =============================================================================
 
 class SharedInterface {
@@ -330,7 +330,6 @@ class SharedInterface {
         // Only expose methods that need to be called from HTML onclick attributes
         window.logout = this.logout.bind(this);
         window.updateNavigation = this.updateNavigation.bind(this);
-        window.checkAuth = this.checkAuth.bind(this);
     }
 
     setupPublicFeatures() {
@@ -416,10 +415,6 @@ class SharedInterface {
             
             if (data.success) {
                 this.showSuccess('Login successful! Redirecting...');
-                
-                if (data.nav_html) {
-                    this.updateNavigation(data.nav_html);
-                }
                 
                 setTimeout(() => {
                     window.location.href = data.redirect || '/chat';
@@ -527,11 +522,6 @@ class SharedInterface {
             const data = await response.json();
             console.log('✅ Server logout successful:', data);
             
-            if (data.nav_html) {
-                this.updateNavigation(data.nav_html);
-                console.log('🔄 Navigation updated after logout');
-            }
-            
             this.clearClientData();
             this.showSuccess('Logged out successfully');
             
@@ -558,44 +548,10 @@ class SharedInterface {
     }
 
     updateNavigation(navHtml = null) {
-        if (navHtml) {
-            const navElement = document.querySelector('nav');
-            if (navElement) {
-                navElement.outerHTML = navHtml;
-                console.log('🔄 Navigation updated directly');
-            }
-            return Promise.resolve();
-        }
-
-        return fetch('/api/auth/check', { credentials: 'include' })
-            .then(response => response.json())
-            .then(data => {
-                if (data.nav_html) {
-                    const navElement = document.querySelector('nav');
-                    if (navElement) {
-                        navElement.outerHTML = data.nav_html;
-                        console.log('🔄 Navigation updated from server');
-                    }
-                }
-                return data;
-            })
-            .catch(error => {
-                console.warn('Failed to update navigation:', error);
-                return null;
-            });
-    }
-
-    async checkAuth() {
-        try {
-            const response = await fetch('/api/auth/check', { credentials: 'include' });
-            const data = await response.json();
-            
-            console.log('🔍 Auth check result:', data.user_type || 'none');
-            return data;
-        } catch (error) {
-            console.warn('Auth check failed:', error);
-            return { authenticated: false, user_type: 'none' };
-        }
+        // Navigation is now handled server-side during page rendering
+        // This function is kept for compatibility but does nothing
+        console.log('🔄 Navigation handled server-side during page rendering');
+        return Promise.resolve();
     }
 
     // =============================================================================
@@ -781,30 +737,21 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🎨 Bootstrap components initialized');
     }
     
-    // Auto-update navigation on page load
-    sharedInterface.updateNavigation();
-    
     console.log('✅ Shared interface initialized successfully');
 });
 
 // Handle page visibility changes
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && sharedInterface) {
-        console.log('👁️ Page became visible, checking auth status...');
-        sharedInterface.checkAuth().then(data => {
-            if (data && data.nav_html) {
-                sharedInterface.updateNavigation(data.nav_html);
-            }
-        });
+    if (document.visibilityState === 'visible') {
+        console.log('👁️ Page became visible');
+        // No need to check auth - handled server-side
     }
 });
 
 // Handle browser back/forward navigation
 window.addEventListener('popstate', () => {
-    if (sharedInterface) {
-        console.log('🔄 Browser navigation detected, updating nav...');
-        sharedInterface.updateNavigation();
-    }
+    console.log('🔄 Browser navigation detected');
+    // Navigation is handled server-side during page load
 });
 
 // Handle online/offline status
@@ -812,7 +759,6 @@ window.addEventListener('online', () => {
     if (sharedInterface) {
         console.log('🌐 Connection restored');
         sharedInterface.showInfo('Connection restored');
-        sharedInterface.updateNavigation();
     }
 });
 
