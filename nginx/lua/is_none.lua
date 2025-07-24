@@ -134,11 +134,12 @@ local function get_challenge_status(slot_number)
     end
     
     if challenge.expires_at <= ngx.time() then
-        -- Challenge expired - inactive user gets auto-kicked when new session is created
-        ngx.log(ngx.WARN, "🚨 Challenge expired for slot " .. slot_number .. " - slot will be overwritten")
+        -- Challenge expired - ACTUALLY FREE THE SLOT by removing the session
+        ngx.log(ngx.WARN, "🚨 Challenge expired for slot " .. slot_number .. " - freeing slot")
         
-        -- Clean up expired challenge (session will be overwritten naturally)
-        ngx.shared.guest_sessions:delete(challenge_key)
+        local slot_key = "guest_session_" .. slot_number
+        ngx.shared.guest_sessions:delete(slot_key)  -- Remove the inactive user's session
+        ngx.shared.guest_sessions:delete(challenge_key)  -- Remove the challenge
         
         return nil
     end
@@ -172,6 +173,13 @@ local function respond_to_challenge(slot_number, response)
     challenge.response = response
     challenge.responded_at = ngx.time()
     challenge.status = response == "accept" and "accepted" or "rejected"
+    
+    -- If user rejected the challenge, free the slot immediately
+    if response == "reject" then
+        local slot_key = "guest_session_" .. slot_number
+        ngx.shared.guest_sessions:delete(slot_key)  -- Free the slot
+        ngx.log(ngx.INFO, "🚪 User rejected challenge for slot " .. slot_number .. " - slot freed")
+    end
     
     ngx.shared.guest_sessions:set(challenge_key, cjson.encode(challenge), 60)
     
@@ -601,9 +609,28 @@ function M.update_session_activity(slot_number)
     return true
 end
 
--- =============================================
--- ROUTE HANDLER
--- =============================================
+function M.cleanup_guest_session(display_username)
+    if not display_username then
+        return false, "No display username provided"
+    end
+    
+    -- Find and clean up the session by display name
+    for slot = 1, MAX_GUEST_SESSIONS do
+        local session = M.get_session(slot)
+        if session and session.display_name == display_username then
+            local slot_key = "guest_session_" .. slot
+            local challenge_key = "guest_challenge_" .. slot
+            
+            ngx.shared.guest_sessions:delete(slot_key)
+            ngx.shared.guest_sessions:delete(challenge_key)
+            
+            ngx.log(ngx.INFO, "🧹 Guest session cleaned up: " .. display_username .. " (slot " .. slot .. ")")
+            return true, "Cleaned up slot " .. slot
+        end
+    end
+    
+    return false, "Session not found"
+end
 
 function M.handle_route(route_type)
     if route_type == "guest_api" then

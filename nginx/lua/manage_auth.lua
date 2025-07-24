@@ -283,16 +283,14 @@ local function handle_logout()
     ngx.header["Set-Cookie"] = cookie_headers
     
     -- Guest session cleanup
-    if user_type == "is_guest" and user_data and user_data.username then
+    if user_type == "is_guest" and user_data and user_data.display_username then
         local ok, err = pcall(function()
-            local red = connect_redis()
-            if red then
-                -- Clean up guest session
-                red:del("guest_session:" .. user_data.username)
-                red:del("guest_active_session:" .. user_data.username)
-                red:del("username:" .. user_data.username)
-                red:close()
-                ngx.log(ngx.INFO, "Guest session cleaned up for: " .. user_data.username)
+            local is_none = require "is_none"
+            local cleanup_success, cleanup_msg = is_none.cleanup_guest_session(user_data.display_username)
+            if cleanup_success then
+                ngx.log(ngx.INFO, "Guest session cleaned up: " .. user_data.display_username)
+            else
+                ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. cleanup_msg)
             end
         end)
         if not ok then
