@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - SIMPLIFIED: ALL USERS IN REDIS
+-- nginx/lua/manage_auth.lua - FIXED: PROPER REDIS HANDLING AND DEBUGGING
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -36,22 +36,32 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
--- FIXED: Get user function that properly handles Redis structure
+-- FIXED: Get user function with proper Redis handling and debugging
 local function get_user(username)
     if not username or username == "" then
+        ngx.log(ngx.WARN, "get_user called with empty username")
         return nil
     end
     
     local red = connect_redis()
-    if not red then return nil end
+    if not red then 
+        ngx.log(ngx.ERR, "get_user: Redis connection failed")
+        return nil 
+    end
     
     local user_key = "username:" .. username
+    ngx.log(ngx.INFO, "get_user: Looking for key: " .. user_key)
+    
     local user_data = red:hgetall(user_key)
     
+    -- FIXED: Check if Redis returned an empty array (key doesn't exist)
     if not user_data or #user_data == 0 then
+        ngx.log(ngx.WARN, "get_user: No data found for key: " .. user_key)
         red:close()
         return nil
     end
+    
+    ngx.log(ngx.INFO, "get_user: Raw Redis data: " .. cjson.encode(user_data))
     
     -- Convert Redis hash to Lua table
     local user = {}
@@ -69,19 +79,25 @@ local function get_user(username)
     
     red:close()
     
+    ngx.log(ngx.INFO, "get_user: Parsed user data: " .. cjson.encode(user))
+    
     -- Validate required fields
     if not user.username or not user.password_hash then
+        ngx.log(ngx.WARN, "get_user: Missing required fields for user: " .. username)
         return nil
     end
     
     return user
 end
 
--- FIXED: Password verification function
+-- FIXED: Password verification with detailed logging
 local function verify_password(password, stored_hash)
     if not password or not stored_hash then
+        ngx.log(ngx.WARN, "verify_password: Missing password or hash")
         return false
     end
+    
+    ngx.log(ngx.INFO, "verify_password: Verifying password for stored hash: " .. stored_hash)
     
     -- Use the same hashing method as your setup script
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
@@ -90,22 +106,32 @@ local function verify_password(password, stored_hash)
     local hash = handle:read("*a"):gsub("\n", "")
     handle:close()
     
+    ngx.log(ngx.INFO, "verify_password: Generated hash: " .. hash)
+    ngx.log(ngx.INFO, "verify_password: Stored hash:   " .. stored_hash)
+    ngx.log(ngx.INFO, "verify_password: Match: " .. tostring(hash == stored_hash))
+    
     return hash == stored_hash
 end
 
 -- =============================================
--- LOGIN HANDLER
+-- LOGIN HANDLER WITH DETAILED DEBUGGING
 -- =============================================
 local function handle_login()
+    ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
+    
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
     
     if not body then
+        ngx.log(ngx.WARN, "Login: No request body")
         send_json(400, { error = "No request body" })
     end
     
+    ngx.log(ngx.INFO, "Login: Request body: " .. body)
+    
     local ok, data = pcall(cjson.decode, body)
     if not ok then
+        ngx.log(ngx.WARN, "Login: Invalid JSON: " .. tostring(data))
         send_json(400, { error = "Invalid JSON" })
     end
     
@@ -113,21 +139,26 @@ local function handle_login()
     local password = data.password
     
     if not username or not password then
+        ngx.log(ngx.WARN, "Login: Missing credentials")
         send_json(400, { error = "Username and password required" })
     end
     
-    -- Get user from Redis
-    local user_data = get_user(username)
+    ngx.log(ngx.INFO, "Login: Attempting login for username: " .. username)
+    
     if not user_data then
-        ngx.log(ngx.WARN, "Login attempt for non-existent user: " .. username)
+        ngx.log(ngx.WARN, "Login: User not found: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
     
+    ngx.log(ngx.INFO, "Login: User found, verifying password")
+    
     -- Verify password
     if not verify_password(password, user_data.password_hash) then
-        ngx.log(ngx.WARN, "Invalid password for user: " .. username)
+        ngx.log(ngx.WARN, "Login: Invalid password for user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
+    
+    ngx.log(ngx.INFO, "Login: Password verified, generating JWT")
     
     -- Generate JWT based on user type
     local payload = {
@@ -145,7 +176,7 @@ local function handle_login()
     -- Set secure cookie
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
     
-    ngx.log(ngx.INFO, "User logged in successfully: " .. username .. " (type: " .. user_data.user_type .. ")")
+    ngx.log(ngx.INFO, "Login: Success for user: " .. username .. " (type: " .. user_data.user_type .. ")")
     
     send_json(200, {
         success = true,

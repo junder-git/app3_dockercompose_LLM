@@ -43,10 +43,27 @@ function M.handle_index_page()
     local user_type, username, user_data = auth.check()
     local display_name = get_display_username(user_type, username, user_data)
     
+    -- For is_none users, we need to show the guest session creation button
+    local start_chat_button = ""
+    if user_type == "is_none" then
+        start_chat_button = [[
+            <button class="btn btn-primary btn-lg me-3" onclick="startGuestSession()">
+                <i class="bi bi-chat-dots"></i> Start chat
+            </button>
+        ]]
+    else
+        start_chat_button = [[
+            <a href="/chat" class="btn btn-primary btn-lg me-3">
+                <i class="bi bi-chat-dots"></i> Start chat
+            </a>
+        ]]
+    end
+    
     local context = {
         page_title = "ai.junder.uk - Advanced AI Chat",
         username = display_name,
-        dash_buttons = get_nav_buttons(user_type, username, user_data)
+        dash_buttons = get_nav_buttons(user_type, username, user_data),
+        start_chat_button = start_chat_button
     }
     
     template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/index.html", user_type, "index", context)

@@ -234,9 +234,12 @@ function M.handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
+    -- IMPORTANT: Login and logout should be accessible without authentication checks
     if uri == "/api/auth/login" and method == "POST" then
+        -- NO AUTH CHECK - anyone should be able to login
         auth.handle_login()
     elseif uri == "/api/auth/logout" and method == "POST" then
+        -- NO AUTH CHECK - anyone should be able to logout
         auth.handle_logout()
     else
         ngx.status = 404
