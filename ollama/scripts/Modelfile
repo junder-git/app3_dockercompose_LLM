@@ -17,7 +17,7 @@ PARAMETER repeat_last_n 64
 PARAMETER num_ctx 2048
 PARAMETER num_predict 512
 PARAMETER seed 0
-PARAMETER num_gpu 8
+PARAMETER num_gpu 12
 PARAMETER num_thread 4
 
 # System message
