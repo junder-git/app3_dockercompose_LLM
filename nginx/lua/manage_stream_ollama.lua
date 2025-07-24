@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_stream_ollama.lua - SHARED CHAT API AND STREAMING
+-- nginx/lua/manage_stream_ollama.lua - SHARED CHAT API AND STREAMING - FIXED
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -182,7 +182,7 @@ function M.handle_chat_api(user_type)
 end
 
 -- =============================================
--- SHARED CHAT STREAMING HANDLER
+-- SHARED CHAT STREAMING HANDLER - FIXED SSE FORMAT
 -- =============================================
 
 function M.handle_chat_stream_common(stream_context)
@@ -258,10 +258,12 @@ function M.handle_chat_stream_common(stream_context)
         end
     end
     
-    -- Stream callback function
+    -- Stream callback function - FIXED TO USE CORRECT SSE FORMAT
     local function stream_callback(chunk)
         if chunk.content and chunk.content ~= "" then
+            -- Send content as 'type': 'content' for compatibility with frontend
             ngx.print("data: " .. cjson.encode({
+                type = "content",
                 content = chunk.content,
                 done = false
             }) .. "\n\n")
@@ -269,7 +271,9 @@ function M.handle_chat_stream_common(stream_context)
         end
         
         if chunk.done then
+            -- Send completion signal
             ngx.print("data: " .. cjson.encode({
+                type = "complete",
                 content = "",
                 done = true
             }) .. "\n\n")
@@ -285,8 +289,8 @@ function M.handle_chat_stream_common(stream_context)
     
     if not success then
         ngx.print("data: " .. cjson.encode({
-            error = true,
-            content = "Error: " .. (error_msg or "Unknown streaming error"),
+            type = "error",
+            error = error_msg or "Unknown streaming error",
             done = true
         }) .. "\n\n")
         ngx.flush(true)

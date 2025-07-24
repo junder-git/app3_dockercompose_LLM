@@ -7,15 +7,6 @@ local auth = require "manage_auth"
 
 local M = {}
 
--- =============================================================================
--- nginx/lua/is_guest.lua - SIMPLIFIED GUEST CHAT HANDLERS (NO SESSION CREATION)
--- =============================================================================
-
-local cjson = require "cjson"
-local auth = require "manage_auth"
-
-local M = {}
-
 -- =============================================
 -- GUEST MESSAGE COUNT UPDATE WITH SLOT LOOKUP
 -- =============================================
@@ -138,7 +129,7 @@ local function handle_guest_logout()
 end
 
 -- =============================================
--- GUEST OLLAMA STREAMING HANDLER
+-- GUEST OLLAMA STREAMING HANDLER - FIXED
 -- =============================================
 
 local function handle_ollama_chat_stream()
