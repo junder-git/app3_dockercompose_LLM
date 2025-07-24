@@ -328,7 +328,7 @@ function M.call_ollama_streaming(messages, options, callback)
             seed = options.seed or MODEL_SEED,
             use_mmap = false,
             num_gpu = OLLAMA_GPU_LAYERS,
-            num_thread = 4
+            num_thread = 6
         }
     }
     

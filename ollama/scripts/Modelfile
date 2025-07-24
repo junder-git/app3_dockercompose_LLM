@@ -14,11 +14,11 @@ PARAMETER top_p 0.9
 PARAMETER top_k 40
 PARAMETER repeat_penalty 1.1
 PARAMETER repeat_last_n 64
-PARAMETER num_ctx 1024
-PARAMETER num_predict 512
+PARAMETER num_ctx 512
+PARAMETER num_predict 256
 PARAMETER seed 0
 PARAMETER num_gpu 12
-PARAMETER num_thread 4
+PARAMETER num_thread 6
 
 # System message
 SYSTEM """You are Devstral, a helpful AI assistant specialized in software development and coding tasks."""
