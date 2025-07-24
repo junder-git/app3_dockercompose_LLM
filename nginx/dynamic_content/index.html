@@ -1,102 +1,18 @@
-<!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }}</title>
-    <link href="/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="/css/is_public.css" rel="stylesheet">
-</head>
-<body>
-    {{ nav }}
-
-    <main class="hero-section">
-        <canvas id="bg-canvas"></canvas>
-        <div class="hero-content">
-            <h1 class="hero-title">ai.junder.uk</h1>
-            <p class="hero-subtitle">
-                Advanced coding model, powered by Devstral.<br>
-                Transform your ideas into code. <br> <br>
-                <button class="btn btn-primary btn-lg me-3" id="chatters" onclick="startGuestSession()">
-                    <i class="bi bi-chat-dots"></i> Start chat
-                </button> <br>
-                <small class="text-muted">
-                    <i class="bi bi-info-circle"></i> 
-                    No login: 10 messages, 10 minutes
-                </small>
-            </p>
-        </div>
-    </main>
-    <!-- Scripts -->
-    <script src="/js/lib/bootstrap.min.js"></script>
-    <script src="/js/lib/jquery.min.js"></script>
-    <script src="/js/is_shared.js"></script>
-    <script src="/js/is_none.js"></script>
-    <script>
-        // Neural net animation
-        const canvas = document.getElementById('bg-canvas');
-        const ctx = canvas.getContext('2d');
-        let points = [];
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        function createPoints() {
-            points = [];
-            const density = 100;
-            for (let i = 0; i < density; i++) {
-                points.push({
-                    x: Math.random() * canvas.width,
-                    y: Math.random() * canvas.height,
-                    vx: (Math.random() - 0.5) * 0.5,
-                    vy: (Math.random() - 0.5) * 0.5
-                });
-            }
-        }
-
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            for (let i = 0; i < points.length; i++) {
-                let p = points[i];
-                p.x += p.vx;
-                p.y += p.vy;
-
-                if (p.x < 0 || p.x > canvas.width) p.vx = -p.vx;
-                if (p.y < 0 || p.y > canvas.height) p.vy = -p.vy;
-
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-                ctx.fill();
-            }
-
-            for (let i = 0; i < points.length; i++) {
-                for (let j = i + 1; j < points.length; j++) {
-                    let dx = points[i].x - points[j].x;
-                    let dy = points[i].y - points[j].y;
-                    let dist = Math.sqrt(dx * dx + dy * dy);
-
-                    if (dist < 120) {
-                        ctx.beginPath();
-                        ctx.moveTo(points[i].x, points[i].y);
-                        ctx.lineTo(points[j].x, points[j].y);
-                        ctx.strokeStyle = 'rgba(0, 200, 255, 0.2)';
-                        ctx.stroke();
-                    }
-                }
-            }
-
-            requestAnimationFrame(animate);
-        }
-
-        createPoints();
-        animate();
-    </script>
-</body>
-</html>
+<!-- index.html - Index page content -->
+<div class="hero-section">
+    <canvas id="bg-canvas"></canvas>
+    <div class="hero-content">
+        <h1 class="hero-title">ai.junder.uk</h1>
+        <p class="hero-subtitle">
+            Advanced coding model, powered by Devstral.<br>
+            Transform your ideas into code. <br> <br>
+            <button class="btn btn-primary btn-lg me-3" id="chatters" data-action="start-guest-session">
+                <i class="bi bi-chat-dots"></i> Start chat
+            </button> <br>
+            <small class="text-muted">
+                <i class="bi bi-info-circle"></i> 
+                No login: 10 messages, 10 minutes
+            </small>
+        </p>
+    </div>
+</div>

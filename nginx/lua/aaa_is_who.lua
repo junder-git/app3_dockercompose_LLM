@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - FIXED: USE EXISTING auth.check() FUNCTION
+-- nginx/lua/aaa_is_who.lua - UPDATED FOR NEW TEMPLATE SYSTEM
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -155,7 +155,7 @@ function M.handle_ollama_chat_api()
 end
 
 -- =============================================
--- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY) - REMOVED CHECK ENDPOINT
+-- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY)
 -- =============================================
 
 function M.handle_auth_api()
@@ -196,40 +196,37 @@ function M.handle_guest_api()
 end
 
 -- =============================================
--- ERROR PAGE HANDLERS (KEPT IN is_who FOR CENTRAL HANDLING)
+-- ERROR PAGE HANDLERS - USING ERROR PARTIALS WITH BASE TEMPLATE
 -- =============================================
 
 function M.handle_404_page()
     local template = require "manage_template"
     local context = {
         page_title = "404 - Page Not Found",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = "guest",
         dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     }
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/404.html", context)
+    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/404.html", "is_none", "error", context)
 end
 
 function M.handle_429_page()
     local template = require "manage_template"
     local context = {
-        page_title = "429 - Guest reached max sessions",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
+        page_title = "429 - Guest Slots Full",
         username = "guest", 
         dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     }
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/429.html", context)
+    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/429.html", "is_none", "error", context)
 end
 
 function M.handle_50x_page()
     local template = require "manage_template"
     local context = {
         page_title = "Server Error",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
         username = "guest",
         dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     }
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/50x.html", context)
+    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/50x.html", "is_none", "error", context)
 end
 
 return M

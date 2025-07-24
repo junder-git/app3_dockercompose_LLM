@@ -6,36 +6,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }}</title>
     
-    <!-- Common CSS -->
+    <!-- Static CSS -->
     <link href="/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/is_public.css">
+    
+    <!-- External libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <!-- Navigation - always present -->
+    <!-- Navigation - inlined -->
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill"></i> ai.junder.uk</a>
             <div class="navbar-nav ms-auto">
-                <!-- User display -->
                 <span class="navbar-text">{{ username }}</span>
-            
-                <!-- Dash button -->
                 {{ dash_buttons }}
             </div>
         </div>
     </nav>
     
-    <!-- Main content area - overridden by child templates -->
+    <!-- Main content area -->
     <main>
         {{ content }}
     </main>
     
-    <!-- Common JavaScript libraries -->
+    <!-- Static JavaScript libraries -->
     <script src="/js/lib/bootstrap.min.js"></script>
     <script src="/js/lib/jquery.min.js"></script>
     
-    <!-- Page-specific JavaScript -->
+    <!-- Dynamic JavaScript from cache -->
     {{ js }}
 </body>
 </html>
