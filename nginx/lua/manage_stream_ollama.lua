@@ -322,7 +322,7 @@ function M.call_ollama_streaming(messages, options, callback)
             repeat_penalty = options.repeat_penalty or MODEL_REPEAT_PENALTY,
             repeat_last_n = options.repeat_last_n or MODEL_REPEAT_LAST_N,
             seed = options.seed or MODEL_SEED,
-            mmap = false,
+            use_mmap = false,
             num_gpu = OLLAMA_GPU_LAYERS,
             num_thread = 4
         }
