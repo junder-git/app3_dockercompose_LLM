@@ -1,9 +1,10 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - UPDATED FOR NEW TEMPLATE SYSTEM
+-- nginx/lua/aaa_is_who.lua - UPDATED TO USE PROPER TEMPLATING SYSTEM
 -- =============================================================================
 
 local jwt = require "resty.jwt"
 local auth = require "manage_auth"
+local views = require "manage_views"
 local cjson = require "cjson"
 
 local JWT_SECRET = os.getenv("JWT_SECRET")
@@ -55,7 +56,7 @@ function M.require_guest()
 end
 
 -- =====================================================================
--- MAIN ROUTING HANDLER - HANDLES REDIRECTS AND DELEGATES TO MODULES
+-- MAIN ROUTING HANDLER - UPDATED TO USE VIEWS MODULE
 -- =====================================================================
 
 function M.route_to_handler(route_type)
@@ -67,15 +68,26 @@ function M.route_to_handler(route_type)
         return
     end
     
-    -- NEW ROUTING LOGIC: Based on what each user type can see
+    -- ROUTING LOGIC: Based on what each user type can see, using views module
     if user_type == "is_admin" then
         -- Can see: /chat, /dash, / 
         -- Redirect login/register to dash
         if route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        local is_admin = require "is_admin"
-        return is_admin.handle_route(route_type)
+        
+        -- Route to appropriate view handler
+        if route_type == "index" then
+            return views.handle_index_page()
+        elseif route_type == "chat" then
+            return views.handle_chat_page_admin()
+        elseif route_type == "dash" then
+            return views.handle_dash_page_admin()
+        else
+            -- Delegate to is_admin module for API endpoints
+            local is_admin = require "is_admin"
+            return is_admin.handle_route(route_type)
+        end
         
     elseif user_type == "is_approved" then
         -- Can see: /chat, /dash, / 
@@ -83,8 +95,19 @@ function M.route_to_handler(route_type)
         if route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        local is_approved = require "is_approved"
-        return is_approved.handle_route(route_type)
+        
+        -- Route to appropriate view handler
+        if route_type == "index" then
+            return views.handle_index_page()
+        elseif route_type == "chat" then
+            return views.handle_chat_page_approved()
+        elseif route_type == "dash" then
+            return views.handle_dash_page_approved()
+        else
+            -- Delegate to is_approved module for API endpoints
+            local is_approved = require "is_approved"
+            return is_approved.handle_route(route_type)
+        end
         
     elseif user_type == "is_pending" then
         -- Can see: /, /dash (pending shows as dash)
@@ -92,15 +115,37 @@ function M.route_to_handler(route_type)
         if route_type == "chat" or route_type == "login" or route_type == "register" then
             return ngx.redirect("/dash")
         end
-        local is_pending = require "is_pending"
-        return is_pending.handle_route(route_type)
+        
+        -- Route to appropriate view handler
+        if route_type == "index" then
+            return views.handle_index_page()
+        elseif route_type == "dash" then
+            return views.handle_dash_page_pending()
+        else
+            -- Delegate to is_pending module for API endpoints
+            local is_pending = require "is_pending"
+            return is_pending.handle_route(route_type)
+        end
         
     elseif user_type == "is_guest" then
         if route_type == "dash" then
             return ngx.redirect("/")
         end
-        local is_guest = require "is_guest"
-        return is_guest.handle_route(route_type)
+        
+        -- Route to appropriate view handler
+        if route_type == "index" then
+            return views.handle_index_page()
+        elseif route_type == "chat" then
+            return views.handle_chat_page_guest()
+        elseif route_type == "login" then
+            return views.handle_login_page()
+        elseif route_type == "register" then
+            return views.handle_register_page()
+        else
+            -- Delegate to is_guest module for API endpoints
+            local is_guest = require "is_guest"
+            return is_guest.handle_route(route_type)
+        end
         
     elseif user_type == "is_none" then
         -- Can see: /, /login, /register
@@ -108,12 +153,39 @@ function M.route_to_handler(route_type)
         if route_type == "chat" or route_type == "dash" then
             return ngx.redirect("/")
         end
-        local is_none = require "is_none"
-        return is_none.handle_route(route_type)
+        
+        -- Route to appropriate view handler
+        if route_type == "index" then
+            return views.handle_index_page()
+        elseif route_type == "login" then
+            return views.handle_login_page()
+        elseif route_type == "register" then
+            return views.handle_register_page()
+        else
+            -- Delegate to is_none module for API endpoints
+            local is_none = require "is_none"
+            return is_none.handle_route(route_type)
+        end
     end
     
     -- Fallback redirect
     return ngx.redirect("/")
+end
+
+-- =====================================================================
+-- ERROR PAGE HANDLERS - USE VIEWS MODULE
+-- =====================================================================
+
+function M.handle_404()
+    return views.handle_404_page()
+end
+
+function M.handle_429()
+    return views.handle_429_page()
+end
+
+function M.handle_50x()
+    return views.handle_50x_page()
 end
 
 -- =====================================================================
@@ -193,6 +265,15 @@ end
 function M.handle_guest_api()
     local is_none = require "is_none"
     is_none.handle_guest_session_api()
+end
+
+-- =============================================
+-- COMPATIBILITY FUNCTIONS (IF NEEDED BY OTHER MODULES)
+-- =============================================
+
+-- Expose auth.check for other modules that might need it
+function M.check()
+    return auth.check()
 end
 
 return M
