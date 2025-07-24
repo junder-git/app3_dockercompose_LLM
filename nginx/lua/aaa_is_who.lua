@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - UPDATED TO USE PROPER TEMPLATING SYSTEM
+-- nginx/lua/aaa_is_who.lua - UPDATED FOR SIMPLIFIED GUEST SYSTEM
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -12,7 +12,7 @@ local JWT_SECRET = os.getenv("JWT_SECRET")
 local M = {}
 
 -- =============================================
--- CORE USER TYPE DETERMINATION
+-- CORE USER TYPE DETERMINATION - NO CHANGES NEEDED
 -- =============================================
 
 function M.set_user()
@@ -25,7 +25,7 @@ function M.set_user()
 end
 
 -- =============================================
--- ACCESS CONTROL HELPERS
+-- ACCESS CONTROL HELPERS - NO CHANGES NEEDED
 -- =============================================
 
 function M.require_admin()
@@ -56,7 +56,7 @@ function M.require_guest()
 end
 
 -- =====================================================================
--- MAIN ROUTING HANDLER - UPDATED TO USE VIEWS MODULE
+-- MAIN ROUTING HANDLER - UPDATED TO USE SIMPLIFIED GUEST SYSTEM
 -- =====================================================================
 
 function M.route_to_handler(route_type)
@@ -227,7 +227,7 @@ function M.handle_ollama_chat_api()
 end
 
 -- =============================================
--- SIMPLE API ROUTING FUNCTIONS (DELEGATES ONLY)
+-- SIMPLE API ROUTING FUNCTIONS - UPDATED FOR SIMPLIFIED GUEST SYSTEM
 -- =============================================
 
 function M.handle_auth_api()
@@ -246,7 +246,7 @@ function M.handle_auth_api()
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({ 
             error = "Auth endpoint not found",
-            message = "Only login and logout endpoints available",
+            message = "Only login, logout, and user-info endpoints available",
             available_endpoints = {
                 "POST /api/auth/login - User login",
                 "POST /api/auth/logout - User logout"
@@ -266,6 +266,7 @@ function M.handle_admin_api()
 end
 
 function M.handle_guest_api()
+    -- Use is_none module for guest session creation
     local is_none = require "is_none"
     is_none.handle_guest_session_api()
 end

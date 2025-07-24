@@ -1,463 +1,269 @@
 -- =============================================================================
--- nginx/lua/is_none.lua - IMPORT SHARED FUNCTIONS FROM manage_auth
+-- nginx/lua/is_none.lua - GUEST SESSION CREATION WITH SERVER-SIDE REDIRECT FIX
 -- =============================================================================
 
-local template = require "manage_template"
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 
--- Import required modules
-local auth = require "manage_auth"
-
--- Configuration
+local JWT_SECRET = os.getenv("JWT_SECRET")
 local MAX_GUEST_SESSIONS = 2
 local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
-local GUEST_CHAT_RETENTION = 259200  -- 3 days
 local CHALLENGE_TIMEOUT = 8  -- 8 seconds for challenge response
-local CHALLENGE_COOLDOWN = 0  -- 0 seconds between challenges
-local INACTIVE_THRESHOLD = 3  -- 3secs to be considered inactive
+local INACTIVE_THRESHOLD = 30  -- 30 seconds to be considered inactive
 
-local JWT_SECRET = os.getenv("JWT_SECRET")
+local M = {}
 
 -- =============================================
--- HELPER FUNCTIONS - IMPORT FROM manage_auth
+-- GUEST NAME GENERATION
 -- =============================================
 
--- Use shared Redis functions from manage_auth
-local redis_to_lua = auth.redis_to_lua
-local connect_redis = auth.connect_redis
+local ADJECTIVES = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural", "Cosmic"}
+local ANIMALS = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 
-local USERNAME_POOLS = {
-    adjectives = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Cosmic", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural"},
-    animals = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
-}
-
-local function get_guest_accounts()
-    local now = ngx.time()
-    return {
-        {
-            username = "guest_user_1",
-            password = "nkcukfulnckfckufnckdgjvjgv",
-            token = jwt:sign(JWT_SECRET, {
-                header = { typ = "JWT", alg = "HS256" },
-                payload = {
-                    username = "guest_user_1",
-                    user_type = "is_guest",
-                    iat = now,
-                    exp = now + GUEST_SESSION_DURATION
-                }
-            })
-        },
-        {
-            username = "guest_user_2", 
-            password = "ymbkclhfpbdfbsdfwdsbwfdsbp",
-            token = jwt:sign(JWT_SECRET, {
-                header = { typ = "JWT", alg = "HS256" },
-                payload = {
-                    username = "guest_user_2",
-                    user_type = "is_guest",
-                    iat = now,
-                    exp = now + GUEST_SESSION_DURATION
-                }
-            })
-        }
-    }
+local function generate_guest_name()
+    local adjective = ADJECTIVES[math.random(#ADJECTIVES)]
+    local animal = ANIMALS[math.random(#ANIMALS)]
+    local number = math.random(100, 999)
+    return adjective .. animal .. number
 end
 
--- Generate navigation buttons for public users
-local function get_nav_buttons()
-    return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-end
+-- =============================================
+-- LUA SHARED MEMORY FOR GUEST SESSIONS AND CHALLENGES
+-- =============================================
 
-local function get_guest_stats()
-    local red = connect_redis()
-    if not red then 
-        return {
-            active_sessions = 0,
-            max_sessions = MAX_GUEST_SESSIONS,
-            available_slots = MAX_GUEST_SESSIONS,
-            challenges_active = 0
-        }
-    end
-
-    local active_count = 0
-    local challenges_active = 0
-    local guest_accounts = get_guest_accounts()
+-- Get guest slot status with challenge detection
+local function get_guest_slot_status()
+    local active_sessions = 0
+    local available_slot = nil
+    local sessions = {}
+    local challengeable_slot = nil
     
-    for _, account in ipairs(guest_accounts) do
-        local session_key = "guest_active_session:" .. account.username
-        local session_data = redis_to_lua(red:get(session_key))
+    -- Check both guest slots
+    for i = 1, MAX_GUEST_SESSIONS do
+        local slot_key = "guest_session_" .. i
+        local session_data = ngx.shared.guest_sessions:get(slot_key)
         
         if session_data then
             local ok, session = pcall(cjson.decode, session_data)
-            if ok and session.expires_at and ngx.time() < session.expires_at then
-                active_count = active_count + 1
+            if ok and session.expires_at > ngx.time() then
+                -- Session is still valid
+                active_sessions = active_sessions + 1
+                sessions[i] = session
+                
+                -- Check if user is inactive (potential challenge target)
+                local inactive_time = ngx.time() - (session.last_activity or session.created_at)
+                if inactive_time > INACTIVE_THRESHOLD and not challengeable_slot then
+                    challengeable_slot = i
+                end
             else
-                -- Clean expired session
-                red:del(session_key)
+                -- Session expired, clear it
+                ngx.shared.guest_sessions:delete(slot_key)
+                if not available_slot then
+                    available_slot = i
+                end
             end
-        end
-        
-        local challenge_key = "guest_challenge:" .. account.username
-        local challenge_data = redis_to_lua(red:get(challenge_key))
-        if challenge_data then
-            local ok, challenge = pcall(cjson.decode, challenge_data)
-            if ok and challenge.expires_at and ngx.time() < challenge.expires_at then
-                challenges_active = challenges_active + 1
-            else
-                red:del(challenge_key)
+        else
+            -- Slot is empty
+            if not available_slot then
+                available_slot = i
             end
         end
     end
     
-    red:close()
-    
     return {
-        active_sessions = active_count,
-        max_sessions = MAX_GUEST_SESSIONS,
-        available_slots = MAX_GUEST_SESSIONS - active_count,
-        challenges_active = challenges_active
+        active_sessions = active_sessions,
+        available_slots = MAX_GUEST_SESSIONS - active_sessions,
+        available_slot = available_slot,
+        challengeable_slot = challengeable_slot,
+        slots_full = active_sessions >= MAX_GUEST_SESSIONS,
+        sessions = sessions
     }
 end
 
-local function generate_display_username()
-    local red = connect_redis()
-    if not red then
-        local pool = USERNAME_POOLS
-        return pool.adjectives[math.random(#pool.adjectives)] ..
-               pool.animals[math.random(#pool.animals)] ..
-               tostring(math.random(100, 999))
-    end
-
-    local pool = USERNAME_POOLS
-    local max_attempts, attempts = 3, 0
-
-    while attempts < max_attempts do
-        local adjective = pool.adjectives[math.random(#pool.adjectives)]
-        local animal = pool.animals[math.random(#pool.animals)]
-        local number = math.random(100, 999)
-        local candidate = adjective .. animal .. number
-        local key = "guest_username_blacklist:" .. candidate
-
-        if not redis_to_lua(red:get(key)) then
-            red:set(key, "1")
-            red:expire(key, GUEST_CHAT_RETENTION + 3600)
-            red:close()
-            return candidate
-        end
-
-        attempts = attempts + 1
-    end
-
-    local adjective = pool.adjectives[math.random(#pool.adjectives)]
-    local animal = pool.animals[math.random(#pool.animals)]
-    local fallback = adjective .. animal .. tostring(ngx.time()):sub(-4)
-    local key = "guest_username_blacklist:" .. fallback
-    red:set(key, "1")
-    red:expire(key, GUEST_CHAT_RETENTION + 3600)
-    red:close()
-    return fallback
-end
-
 -- =============================================
--- CHALLENGE SYSTEM FUNCTIONS
+-- CHALLENGE SYSTEM
 -- =============================================
 
-local function create_guest_challenge(username)
-    local red = connect_redis()
-    if not red then return false, "Redis unavailable" end
+local function create_challenge(slot_number)
+    if not slot_number then
+        return false, "No slot number provided"
+    end
     
-    local challenge_id = "challenge_" .. username .. "_" .. ngx.time() .. "_" .. math.random(1000, 9999)
-    local challenge_key = "guest_challenge:" .. username
+    local challenge_key = "guest_challenge_" .. slot_number
+    local existing_challenge = ngx.shared.guest_sessions:get(challenge_key)
     
-    -- Check if challenge already exists for this guest user
-    local existing_challenge = redis_to_lua(red:get(challenge_key))
     if existing_challenge then
         local ok, challenge_data = pcall(cjson.decode, existing_challenge)
         if ok and challenge_data.expires_at > ngx.time() then
-            red:close()
-            return false, "Challenge already active for " .. username
+            return false, "Challenge already active for slot " .. slot_number
         end
     end
     
+    local challenge_id = "challenge_" .. slot_number .. "_" .. ngx.time() .. "_" .. math.random(1000, 9999)
     local challenge = {
         challenge_id = challenge_id,
-        username = username,
+        slot_number = slot_number,
         created_at = ngx.time(),
         expires_at = ngx.time() + CHALLENGE_TIMEOUT,
         status = "pending"
     }
     
-    red:set(challenge_key, cjson.encode(challenge))
-    red:expire(challenge_key, CHALLENGE_TIMEOUT + 5)
-    red:close()
+    ngx.shared.guest_sessions:set(challenge_key, cjson.encode(challenge), CHALLENGE_TIMEOUT + 5)
     
-    ngx.log(ngx.INFO, "🚨 Guest challenge created for " .. username)
+    ngx.log(ngx.INFO, "🚨 Challenge created for slot " .. slot_number)
     return true, challenge_id
 end
 
-local function get_guest_challenge(username)
-    local red = connect_redis()
-    if not red then return nil end
+local function get_challenge_status(slot_number)
+    if not slot_number then
+        return nil
+    end
     
-    local challenge_key = "guest_challenge:" .. username
-    local challenge_data = redis_to_lua(red:get(challenge_key))
+    local challenge_key = "guest_challenge_" .. slot_number
+    local challenge_data = ngx.shared.guest_sessions:get(challenge_key)
     
     if not challenge_data then
-        red:close()
         return nil
     end
     
     local ok, challenge = pcall(cjson.decode, challenge_data)
     if not ok then
-        red:del(challenge_key)
-        red:close()
+        ngx.shared.guest_sessions:delete(challenge_key)
         return nil
     end
     
     if challenge.expires_at <= ngx.time() then
-        ngx.log(ngx.WARN, "🚨 Challenge expired for " .. username .. " - auto-kicking inactive user")
+        -- Challenge expired - inactive user gets auto-kicked when new session is created
+        ngx.log(ngx.WARN, "🚨 Challenge expired for slot " .. slot_number .. " - slot will be overwritten")
         
-        red:del(challenge_key)
+        -- Clean up expired challenge (session will be overwritten naturally)
+        ngx.shared.guest_sessions:delete(challenge_key)
         
-        local session_key = "guest_active_session:" .. username
-        local session_data = redis_to_lua(red:get(session_key))
-        if session_data then
-            local session_ok, session = pcall(cjson.decode, session_data)
-            if session_ok then
-                red:del("guest_session:" .. session.username)
-                red:del("username:" .. session.username)
-                ngx.log(ngx.WARN, "👢 Auto-kicked inactive user '" .. (session.display_username or session.username) .. "' (no challenge response)")
-            end
-            red:del(session_key)
-        end
-        
-        red:close()
         return nil
     end
     
-    red:close()
     return challenge
 end
 
-local function respond_to_challenge(username, response, responder_ip)
-    local red = connect_redis()
-    if not red then return false, "Redis unavailable" end
+local function respond_to_challenge(slot_number, response)
+    if not slot_number then
+        return false, "No slot number provided"
+    end
     
-    local challenge_key = "guest_challenge:" .. username
-    local challenge_data = redis_to_lua(red:get(challenge_key))
+    local challenge_key = "guest_challenge_" .. slot_number
+    local challenge_data = ngx.shared.guest_sessions:get(challenge_key)
     
     if not challenge_data then
-        red:close()
         return false, "No active challenge"
     end
     
     local ok, challenge = pcall(cjson.decode, challenge_data)
     if not ok then
-        red:del(challenge_key)
-        red:close()
+        ngx.shared.guest_sessions:delete(challenge_key)
         return false, "Invalid challenge data"
     end
     
     if challenge.expires_at <= ngx.time() then
-        red:del(challenge_key)
-        red:close()
+        ngx.shared.guest_sessions:delete(challenge_key)
         return false, "Challenge expired"
     end
     
     challenge.response = response
-    challenge.responder_ip = responder_ip
     challenge.responded_at = ngx.time()
     challenge.status = response == "accept" and "accepted" or "rejected"
     
-    red:set(challenge_key, cjson.encode(challenge))
-    red:expire(challenge_key, 60)
-    red:close()
+    ngx.shared.guest_sessions:set(challenge_key, cjson.encode(challenge), 60)
     
-    ngx.log(ngx.INFO, "✅ Challenge response for " .. username .. ": " .. response .. " by " .. responder_ip)
+    ngx.log(ngx.INFO, "✅ Challenge response for slot " .. slot_number .. ": " .. response)
     return true, challenge.status
 end
 
 -- =============================================
--- SESSION MANAGEMENT FUNCTIONS
+-- GUEST SESSION CREATION WITH CHALLENGE SUPPORT
 -- =============================================
 
-local function find_available_guest_slot_or_challenge()
-    local red = connect_redis()
-    if not red then return nil, "Service unavailable" end
-    local guest_accounts = get_guest_accounts()
+local function create_guest_session()
+    local status = get_guest_slot_status()
     
-    -- Check each guest account
-    for _, account in ipairs(guest_accounts) do
-        local session_key = "guest_active_session:" .. account.username
-        local session_data = redis_to_lua(red:get(session_key))
-        
-        -- If no active session, this slot is available
-        if not session_data then
-            red:close()
-            return account, nil
-        end
-        
-        -- Check if session is expired
-        local ok, session = pcall(cjson.decode, session_data)
-        if ok and session.expires_at and ngx.time() >= session.expires_at then
-            -- Clean up expired session
-            red:del(session_key)
-            red:del("guest_session:" .. session.username)
-            red:del("username:" .. session.username)
-            red:del("guest_challenge:" .. account.username)
-            ngx.log(ngx.INFO, "🧹 Auto-cleaned expired session for " .. account.username)
-            red:close()
-            return account, nil
-        end
-        
-        -- Check if there's an active challenge that expired
-        local challenge = get_guest_challenge(account.username)
-        if not challenge then
-            -- No challenge, but session exists, check if it's still valid
-            local session_check = redis_to_lua(red:get(session_key))
-            if not session_check then
-                ngx.log(ngx.INFO, "🎯 Slot " .. account.username .. " freed by expired challenge cleanup")
-                red:close()
-                return account, nil
-            end
-        end
-    end
-    
-    -- All slots are occupied, need to challenge one
-    -- Toggle between guest_user_1 and guest_user_2
-    local toggle_dict = ngx.shared.guest_toggle
-    local last = toggle_dict:get("last_slot") or 1
-    local j = (last == 1) and 2 or 1
-    toggle_dict:set("last_slot", j)
-    
-    local target_account = guest_accounts[j]
-    ngx.log(ngx.INFO, "🎲 All slots occupied - will challenge " .. target_account.username)
-    red:close()
-    return target_account, "challengeable"
-end
-
-local function create_secure_guest_session_with_challenge()
-    local account, slot_status = find_available_guest_slot_or_challenge()
-    
-    if not slot_status then
-        -- Slot is available, create session immediately
-        local red = connect_redis()
-        if not red then
-            ngx.status = 503
-            ngx.header.content_type = 'application/json'
-            ngx.say(cjson.encode({
-                success = false,
-                error = "redis_connection_failed",
-                message = "Database connection failed"
-            }))
-            return
-        end
-        
-        local display_name = generate_display_username()
+    if not status.slots_full then
+        -- Normal path - slot available
+        local slot_number = status.available_slot
+        local guest_username = "guest_user_" .. slot_number
+        local display_name = generate_guest_name()
         local now = ngx.time()
         local expires_at = now + GUEST_SESSION_DURATION
         
+        -- Create session data
         local session = {
-            username = account.username,
-            user_type = "is_guest",
-            jwt_token = account.token,
-            session_id = display_name,
-            display_username = display_name,
+            slot = slot_number,
+            username = guest_username,
+            display_name = display_name,
+            created_at = now,
+            expires_at = expires_at,
+            message_count = 0,
+            max_messages = GUEST_MESSAGE_LIMIT,
+            last_activity = now
+        }
+        
+        -- Store in Lua shared memory (overwrites any existing session in this slot)
+        local slot_key = "guest_session_" .. slot_number
+        local success, err = ngx.shared.guest_sessions:set(slot_key, cjson.encode(session), GUEST_SESSION_DURATION + 60)
+        
+        if not success then
+            return nil, "Failed to store session: " .. (err or "unknown")
+        end
+        
+        -- Create JWT token with ONLY client-facing data
+        local payload = {
+            display_username = display_name, -- What the client sees (QuickFox123)
             created_at = now,
             expires_at = expires_at,
             message_count = 0,
             max_messages = GUEST_MESSAGE_LIMIT,
             last_activity = now,
-            priority = 3,
-            chat_storage = "redis",
-            chat_retention_until = now + GUEST_CHAT_RETENTION
+            iat = now,
+            exp = expires_at
         }
         
-        local session_key = "guest_active_session:" .. account.username
-        red:set(session_key, cjson.encode(session))
-        red:expire(session_key, GUEST_SESSION_DURATION)
+        local token = jwt:sign(JWT_SECRET, {
+            header = { typ = "JWT", alg = "HS256" },
+            payload = payload
+        })
         
-        local user_session_key = "guest_session:" .. account.username
-        red:set(user_session_key, cjson.encode(session))
-        red:expire(user_session_key, GUEST_SESSION_DURATION)
+        ngx.log(ngx.INFO, "✅ Guest session created: " .. display_name .. " -> " .. guest_username .. " (slot " .. slot_number .. ")")
         
-        local user_key = "username:" .. account.username
-        local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
-                                    account.password:gsub("'", "'\"'\"'"), JWT_SECRET)
-        local handle = io.popen(hash_cmd)
-        local hashed = handle:read("*a"):gsub("\n", "")
-        handle:close()
-        
-        red:hset(user_key, "username:", account.username)
-        red:hset(user_key, "password_hash:", hashed)
-        red:hset(user_key, "user_type:", "is_guest")
-        red:hset(user_key, "created_at:", os.date("!%Y-%m-%dT%H:%M:%SZ"))
-        red:hset(user_key, "last_active", os.date("!%Y-%m-%dT%H:%M:%SZ"))
-        red:close()
-        
-        ngx.header["Set-Cookie"] = "access_token=" .. account.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
-        
-        ngx.log(ngx.INFO, "✅ GUEST SESSION CREATION SUCCESS")
-        ngx.log(ngx.INFO, "Created session: " .. display_name .. " -> " .. account.username)
-        
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
+        return {
             success = true,
             username = display_name,
-            internal_username = account.username,
-            session_id = display_name,
-            token = account.token,
+            internal_username = guest_username,
             expires_at = expires_at,
             message_limit = GUEST_MESSAGE_LIMIT,
             session_duration = GUEST_SESSION_DURATION,
-            priority = 3,
-            storage_type = "redis",
-            chat_retention_days = math.floor(GUEST_CHAT_RETENTION / 86400),
-            redirect = "/chat"
-        }))
-        return
+            token = token,
+            slot = slot_number
+        }, nil
         
-    elseif slot_status == "challengeable" then
-        -- Need to challenge the current user
-        local success, challenge_id = create_guest_challenge(account.username)
+    elseif status.challengeable_slot then
+        -- Challenge path - need to challenge inactive user
+        local slot_number = status.challengeable_slot
+        local success, challenge_id = create_challenge(slot_number)
         
         if success then
-            ngx.status = 202
-            ngx.header.content_type = 'application/json'
-            
-            ngx.say(cjson.encode({
-                success = false,
+            return {
                 challenge_required = true,
                 challenge_id = challenge_id,
-                username = account.username,
-                message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected.",
-                timeout = CHALLENGE_TIMEOUT
-            }))
-            
-            return
+                slot_number = slot_number,
+                timeout = CHALLENGE_TIMEOUT,
+                message = "An inactive user is using this slot. They have " .. CHALLENGE_TIMEOUT .. " seconds to respond or will be disconnected."
+            }, nil
         else
-            ngx.status = 500
-            ngx.header.content_type = 'application/json'
-            ngx.say(cjson.encode({
-                success = false,
-                error = "challenge_creation_failed",
-                message = "Unable to challenge inactive user. Please try again."
-            }))
-            return
+            return nil, "Failed to create challenge: " .. (challenge_id or "unknown")
         end
+        
     else
-        -- All slots occupied and challenges active
-        ngx.status = 429
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            success = false,
-            error = "all_slots_busy",
-            message = "All guest sessions are occupied and challenges are active. Please try again in a few moments."
-        }))
-        return
+        -- All slots busy with active users
+        return nil, "All guest sessions are occupied with active users"
     end
 end
 
@@ -465,110 +271,347 @@ end
 -- API HANDLERS
 -- =============================================
 
-local function handle_guest_session_api()
-    local function send_json(status, tbl)
-        ngx.status = status
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode(tbl))
-        ngx.exit(status)
+local function handle_create_session()
+    local session_data, error_msg = create_guest_session()
+    
+    if not session_data then
+        if error_msg == "All guest sessions are occupied with active users" then
+            ngx.status = 429
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "slots_full",
+                message = "All guest sessions are occupied with active users. Please try again in a few minutes."
+            }))
+        else
+            ngx.status = 503
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "service_error",
+                message = error_msg or "Failed to create guest session"
+            }))
+        end
+        return
     end
     
+    if session_data.challenge_required then
+        -- Challenge is required - return challenge info
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode(session_data))
+        return
+    end
+    
+    -- CRITICAL FIX: Normal session creation - SET COOKIE BEFORE REDIRECT
+    -- Set the JWT cookie first
+    ngx.header["Set-Cookie"] = "access_token=" .. session_data.token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
+    
+    ngx.log(ngx.INFO, "🍪 Cookie set for guest: " .. session_data.username)
+    
+    -- FIXED: Use HTTP 302 redirect instead of JSON response
+    ngx.status = 302
+    ngx.header["Location"] = "/chat"
+    ngx.header.content_type = 'text/html'
+    
+    -- Optional: Simple HTML for browsers that don't follow redirects immediately
+    ngx.say([[
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta http-equiv="refresh" content="0;url=/chat">
+            <title>Redirecting...</title>
+        </head>
+        <body>
+            <p>Guest session created! Redirecting to chat...</p>
+            <script>window.location.href = '/chat';</script>
+        </body>
+        </html>
+    ]])
+end
+
+local function handle_challenge_status()
+    local slot_number = tonumber(ngx.var.arg_slot)
+    if not slot_number then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "slot parameter required" }))
+        return
+    end
+    
+    local challenge = get_challenge_status(slot_number)
+    if challenge then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = true,
+            challenge_active = true,
+            challenge = challenge,
+            remaining_time = challenge.expires_at - ngx.time()
+        }))
+    else
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = true,
+            challenge_active = false,
+            message = "No active challenge"
+        }))
+    end
+end
+
+local function handle_challenge_response()
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    if not body then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Request body required" }))
+        return
+    end
+    
+    local ok, data = pcall(cjson.decode, body)
+    if not ok then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "Invalid JSON" }))
+        return
+    end
+    
+    local slot_number = data.slot_number
+    local response = data.response
+    
+    if not slot_number or not response then
+        ngx.status = 400
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({ error = "slot_number and response required" }))
+        return
+    end
+    
+    local success, result = respond_to_challenge(slot_number, response)
+    if success then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = true,
+            challenge_result = result,
+            message = result == "accepted" and "Challenge accepted" or "Challenge rejected"
+        }))
+    else
+        ngx.status = 500
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = result,
+            message = "Challenge response failed"
+        }))
+    end
+end
+
+local function handle_guest_stats()
+    local status = get_guest_slot_status()
+    
+    -- Count active challenges
+    local challenges_active = 0
+    for i = 1, MAX_GUEST_SESSIONS do
+        if get_challenge_status(i) then
+            challenges_active = challenges_active + 1
+        end
+    end
+    
+    ngx.status = 200
+    ngx.header.content_type = 'application/json'
+    ngx.say(cjson.encode({
+        success = true,
+        stats = {
+            active_sessions = status.active_sessions,
+            max_sessions = MAX_GUEST_SESSIONS,
+            available_slots = status.available_slots,
+            challenges_active = challenges_active,
+            registration_available = not status.slots_full
+        }
+    }))
+end
+
+-- =============================================
+-- MAIN API HANDLER FOR IS_NONE USERS
+-- =============================================
+
+function M.handle_guest_session_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
     if uri == "/api/guest/create-session" and method == "POST" then
-        create_secure_guest_session_with_challenge()
-        
+        handle_create_session()
     elseif uri == "/api/guest/challenge-status" and method == "GET" then
-        local username = ngx.var.arg_username
-        if not username then
-            send_json(400, { error = "username parameter required" })
-        end
-        
-        local challenge = get_guest_challenge(username)
-        if challenge then
-            send_json(200, {
-                success = true,
-                challenge_active = true,
-                challenge = challenge,
-                remaining_time = challenge.expires_at - ngx.time()
-            })
-        else
-            send_json(200, {
-                success = true,
-                challenge_active = false,
-                message = "No active challenge"
-            })
-        end
-        
+        handle_challenge_status()
     elseif uri == "/api/guest/challenge-response" and method == "POST" then
-        ngx.req.read_body()
-        local body = ngx.req.get_body_data()
-        if not body then
-            send_json(400, { error = "Request body required" })
-        end
-        
-        local ok, data = pcall(cjson.decode, body)
-        if not ok then
-            send_json(400, { error = "Invalid JSON" })
-        end
-        
-        local username = data.username
-        local response = data.response
-        local responder_ip = ngx.var.remote_addr
-        
-        if not username or not response then
-            send_json(400, { error = "username and response required" })
-        end
-        
-        local success, result = respond_to_challenge(username, response, responder_ip)
-        if success then
-            send_json(200, {
-                success = true,
-                challenge_result = result,
-                message = result == "accepted" and "Challenge accepted" or "Challenge rejected"
-            })
-        else
-            send_json(500, {
-                success = false,
-                error = result,
-                message = "Challenge response failed"
-            })
-        end
-        
+        handle_challenge_response()
     elseif uri == "/api/guest/stats" and method == "GET" then
-        local stats = get_guest_stats()
-        send_json(200, {
-            success = true,
-            stats = stats
-        })
-        
+        handle_guest_stats()
     else
-        send_json(404, { error = "API endpoint not found" })
+        ngx.status = 404
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = "Endpoint not found",
+            available_endpoints = {
+                "POST /api/guest/create-session",
+                "GET /api/guest/challenge-status?slot=N",
+                "POST /api/guest/challenge-response",
+                "GET /api/guest/stats"
+            }
+        }))
     end
 end
 
 -- =============================================
--- MODULE EXPORTS
+-- HELPER FUNCTIONS FOR OTHER MODULES
 -- =============================================
 
-return {   
-    -- API handlers
-    handle_guest_session_api = handle_guest_session_api,
+function M.get_guest_stats()
+    local status = get_guest_slot_status()
+    local challenges_active = 0
+    for i = 1, MAX_GUEST_SESSIONS do
+        if get_challenge_status(i) then
+            challenges_active = challenges_active + 1
+        end
+    end
     
-    -- Helper functions that might be needed by other modules
-    get_guest_stats = get_guest_stats,
+    return {
+        active_sessions = status.active_sessions,
+        max_sessions = MAX_GUEST_SESSIONS,
+        available_slots = status.available_slots,
+        challenges_active = challenges_active
+    }
+end
+
+function M.get_session(slot_number)
+    if not slot_number then
+        return nil
+    end
     
-    -- Session management functions
-    create_secure_guest_session_with_challenge = create_secure_guest_session_with_challenge,
-    find_available_guest_slot_or_challenge = find_available_guest_slot_or_challenge,
+    local slot_key = "guest_session_" .. slot_number
+    local session_data = ngx.shared.guest_sessions:get(slot_key)
     
-    -- Challenge system functions
-    create_guest_challenge = create_guest_challenge,
-    get_guest_challenge = get_guest_challenge,
-    respond_to_challenge = respond_to_challenge,
+    if not session_data then
+        return nil
+    end
     
-    -- Utility functions
-    get_guest_accounts = get_guest_accounts,
-    generate_display_username = generate_display_username,
-}
+    local ok, session = pcall(cjson.decode, session_data)
+    if not ok then
+        return nil
+    end
+    
+    if session.expires_at <= ngx.time() then
+        ngx.shared.guest_sessions:delete(slot_key)
+        return nil
+    end
+    
+    return session
+end
+
+function M.update_message_count(slot_number, current_count)
+    if not slot_number then
+        return false, "No slot number provided"
+    end
+    
+    local slot_key = "guest_session_" .. slot_number
+    local session_data = ngx.shared.guest_sessions:get(slot_key)
+    
+    if not session_data then
+        return false, "Session not found"
+    end
+    
+    local ok, session = pcall(cjson.decode, session_data)
+    if not ok then
+        return false, "Invalid session data"
+    end
+    
+    if session.expires_at <= ngx.time() then
+        ngx.shared.guest_sessions:delete(slot_key)
+        return false, "Session expired"
+    end
+    
+    local new_count = (current_count or session.message_count or 0) + 1
+    
+    if new_count > session.max_messages then
+        return false, "Message limit exceeded"
+    end
+    
+    -- Update session in shared memory
+    session.message_count = new_count
+    session.last_activity = ngx.time()
+    
+    ngx.shared.guest_sessions:set(slot_key, cjson.encode(session), GUEST_SESSION_DURATION + 60)
+    
+    -- Create new JWT with updated count
+    local token = ngx.var.cookie_access_token
+    if token then
+        local jwt_obj = jwt:verify(JWT_SECRET, token)
+        if jwt_obj.verified then
+            local new_payload = {}
+            for k, v in pairs(jwt_obj.payload) do
+                new_payload[k] = v
+            end
+            new_payload.message_count = new_count
+            new_payload.last_activity = ngx.time()
+            
+            local new_token = jwt:sign(JWT_SECRET, {
+                header = { typ = "JWT", alg = "HS256" },
+                payload = new_payload
+            })
+            
+            -- Update cookie
+            ngx.header["Set-Cookie"] = "access_token=" .. new_token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" .. GUEST_SESSION_DURATION
+        end
+    end
+    
+    ngx.log(ngx.INFO, "Guest message count updated: " .. new_count .. "/" .. session.max_messages .. " (slot " .. slot_number .. ")")
+    
+    return true, new_count
+end
+
+function M.update_session_activity(slot_number)
+    if not slot_number then
+        return false
+    end
+    
+    local slot_key = "guest_session_" .. slot_number
+    local session_data = ngx.shared.guest_sessions:get(slot_key)
+    
+    if not session_data then
+        return false
+    end
+    
+    local ok, session = pcall(cjson.decode, session_data)
+    if not ok then
+        return false
+    end
+    
+    if session.expires_at <= ngx.time() then
+        ngx.shared.guest_sessions:delete(slot_key)
+        return false
+    end
+    
+    -- Update last activity
+    session.last_activity = ngx.time()
+    ngx.shared.guest_sessions:set(slot_key, cjson.encode(session), GUEST_SESSION_DURATION + 60)
+    
+    return true
+end
+
+-- =============================================
+-- ROUTE HANDLER
+-- =============================================
+
+function M.handle_route(route_type)
+    if route_type == "guest_api" then
+        return M.handle_guest_session_api()
+    else
+        ngx.status = 404
+        return ngx.say("Route not found for anonymous users: " .. tostring(route_type))
+    end
+end
+
+return M

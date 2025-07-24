@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED: PROPER REDIS HANDLING AND DEBUGGING
+-- nginx/lua/manage_auth.lua - CLEAN PRODUCTION VERSION
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -36,7 +36,7 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
--- FIXED: Get user function with proper Redis handling and no colon handling
+-- Get user function with proper Redis handling
 local function get_user(username)
     if not username or username == "" then
         ngx.log(ngx.WARN, "get_user called with empty username")
@@ -50,20 +50,16 @@ local function get_user(username)
     end
     
     local user_key = "username:" .. username
-    ngx.log(ngx.INFO, "get_user: Looking for key: " .. user_key)
-    
     local user_data = red:hgetall(user_key)
     
-    -- FIXED: Check if Redis returned an empty array (key doesn't exist)
+    -- Check if Redis returned an empty array (key doesn't exist)
     if not user_data or #user_data == 0 then
-        ngx.log(ngx.WARN, "get_user: No data found for key: " .. user_key)
+        ngx.log(ngx.WARN, "User not found: " .. user_key)
         red:close()
         return nil
     end
     
-    ngx.log(ngx.INFO, "get_user: Raw Redis data: " .. cjson.encode(user_data))
-    
-    -- Convert Redis hash to Lua table - SIMPLIFIED: No colon handling needed
+    -- Convert Redis hash to Lua table
     local user = {}
     for i = 1, #user_data, 2 do
         local key = user_data[i]
@@ -73,25 +69,21 @@ local function get_user(username)
     
     red:close()
     
-    ngx.log(ngx.INFO, "get_user: Parsed user data: " .. cjson.encode(user))
-    
     -- Validate required fields
     if not user.username or not user.password_hash then
-        ngx.log(ngx.WARN, "get_user: Missing required fields for user: " .. username)
+        ngx.log(ngx.WARN, "Missing required fields for user: " .. username)
         return nil
     end
     
     return user
 end
 
--- FIXED: Password verification with exact same method as Redis init script
+-- Password verification with exact same method as Redis init script
 local function verify_password(password, stored_hash)
     if not password or not stored_hash then
         ngx.log(ngx.WARN, "verify_password: Missing password or hash")
         return false
     end
-    
-    ngx.log(ngx.INFO, "verify_password: Verifying password for stored hash: " .. stored_hash)
     
     -- CRITICAL: Use exact same method as redis/init-redis.sh
     -- Redis script: printf '%s%s' $ADMIN_PASSWORD $JWT_SECRET | openssl dgst -sha256 -hex | awk '{print $2}'
@@ -101,18 +93,11 @@ local function verify_password(password, stored_hash)
     local hash = handle:read("*a"):gsub("\n", "")
     handle:close()
     
-    ngx.log(ngx.INFO, "verify_password: Input password: " .. password)
-    ngx.log(ngx.INFO, "verify_password: JWT_SECRET: " .. JWT_SECRET)
-    ngx.log(ngx.INFO, "verify_password: Hash command: " .. hash_cmd)
-    ngx.log(ngx.INFO, "verify_password: Generated hash: " .. hash)
-    ngx.log(ngx.INFO, "verify_password: Stored hash:   " .. stored_hash)
-    ngx.log(ngx.INFO, "verify_password: Match: " .. tostring(hash == stored_hash))
-    
     return hash == stored_hash
 end
 
 -- =============================================
--- AUTH CHECK FUNCTION - CORE LOGIC (SIMPLIFIED)
+-- AUTH CHECK FUNCTION - CORE LOGIC WITH GUEST HANDLING
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
@@ -129,9 +114,48 @@ local function check()
     end
     
     local username = jwt_obj.payload.username
-    local user_type_claim = jwt_obj.payload.user_type
+    local display_username = jwt_obj.payload.display_username
     
-    -- For ALL users (including guests), check Redis
+    -- GUEST USER HANDLING: If JWT has display_username but no username, it's a guest
+    if display_username and not username then
+        -- This is a guest JWT - find which guest user slot is active
+        local is_none = require "is_none"
+        
+        -- Check both guest slots to find the active one for this display name
+        for slot = 1, 2 do
+            local session = is_none.get_session(slot)
+            if session and session.display_name == display_username and session.expires_at > ngx.time() then
+                -- Found the active guest session
+                local guest_username = "guest_user_" .. slot
+                
+                -- Get the guest user data from Redis
+                local user_data = get_user(guest_username)
+                if user_data then
+                    -- Update session activity in Lua shared memory
+                    is_none.update_session_activity(slot)
+                    
+                    -- Return guest auth info with display name
+                    user_data.display_username = display_username
+                    user_data.slot = slot
+                    return "is_guest", guest_username, user_data
+                end
+            end
+        end
+        
+        -- Guest session not found or expired
+        ngx.log(ngx.WARN, "Guest JWT for non-existent session: " .. display_username)
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
+    end
+    
+    -- REGULAR USER HANDLING: JWT has username
+    if not username or username == "" then
+        ngx.log(ngx.WARN, "JWT token missing username - clearing invalid cookie")
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
+    end
+    
+    -- For regular users, check Redis
     local user_data = get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
@@ -140,10 +164,10 @@ local function check()
         return "is_none", nil, nil
     end
     
-    -- Update user activity
+    -- Update user activity (now safe since username is validated)
     local red = connect_redis()
     if red then
-        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
+        red:hset("username:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
         red:close()
     end
     
@@ -168,9 +192,8 @@ local function check()
     return "is_none", nil, nil
 end
 
-
 -- =============================================
--- LOGIN HANDLER WITH DETAILED DEBUGGING
+-- LOGIN HANDLER
 -- =============================================
 local function handle_login()
     ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
@@ -182,8 +205,6 @@ local function handle_login()
         ngx.log(ngx.WARN, "Login: No request body")
         send_json(400, { error = "No request body" })
     end
-    
-    ngx.log(ngx.INFO, "Login: Request body: " .. body)
     
     local ok, data = pcall(cjson.decode, body)
     if not ok then
@@ -201,6 +222,7 @@ local function handle_login()
     
     ngx.log(ngx.INFO, "Login: Attempting login for username: " .. username)
     
+    local user_data = get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "Login: User not found: " .. username)
         send_json(401, { error = "Invalid credentials" })

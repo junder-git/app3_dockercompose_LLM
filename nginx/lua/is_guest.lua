@@ -1,142 +1,129 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - FIXED: DISPLAY NAME AND LOGOUT FUNCTIONALITY
+-- nginx/lua/is_guest.lua - COMPLETE GUEST USER HANDLER WITH CHALLENGE SYSTEM
 -- =============================================================================
 
-local template = require "manage_template"
 local cjson = require "cjson"
-
--- Import required modules
 local auth = require "manage_auth"
 
--- Configuration
-local MAX_GUEST_SESSIONS = 2
-local GUEST_SESSION_DURATION = 600  -- 10 minutes
-local GUEST_MESSAGE_LIMIT = 10
+local M = {}
+
+-- =============================================================================
+-- nginx/lua/is_guest.lua - SIMPLIFIED GUEST CHAT HANDLERS (NO SESSION CREATION)
+-- =============================================================================
+
+local cjson = require "cjson"
+local auth = require "manage_auth"
+
+local M = {}
 
 -- =============================================
--- HELPER FUNCTIONS - IMPORT FROM manage_auth
+-- GUEST MESSAGE COUNT UPDATE WITH SLOT LOOKUP
 -- =============================================
-
--- Use shared Redis functions from manage_auth
-local redis_to_lua = auth.redis_to_lua
-local connect_redis = auth.connect_redis
-
--- FIXED: Get the current guest user's display name (not internal username)
-local function get_guest_display_name()
-    local user_type, username, user_data = auth.check()
-    if user_type == "is_guest" and user_data then
-        -- FIXED: Return display_username, not the internal username
-        return user_data.display_username or "guest"
-    end
-    return "guest"
-end
-
-local function get_chat_features()
-    return [[
-        <div class="user-features guest-features">
-            <div class="alert alert-warning">
-                <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
-                <p class="mb-1">10 messages • 10 minutes • localStorage only</p>
-                <a href="/register" class="btn btn-warning btn-sm">Register for unlimited</a>
-            </div>
-        </div>
-    ]]
-end
-
-local function get_guest_stats()
-    local red = connect_redis()
-    if not red then 
-        return {
-            active_sessions = 0,
-            max_sessions = MAX_GUEST_SESSIONS,
-            available_slots = MAX_GUEST_SESSIONS,
-            challenges_active = 0
-        }
-    end
-
-    local active_count = 0
-    local challenges_active = 0
-    
-    -- Check guest_user_1 and guest_user_2
-    for i = 1, MAX_GUEST_SESSIONS do
-        local username = "guest_user_" .. i
-        local session_key = "guest_active_session:" .. username
-        local session_data = redis_to_lua(red:get(session_key))
-        
-        if session_data then
-            local ok, session = pcall(cjson.decode, session_data)
-            if ok and session.expires_at and ngx.time() < session.expires_at then
-                active_count = active_count + 1
-            else
-                -- Clean expired session
-                red:del(session_key)
-            end
-        end
-        
-        local challenge_key = "guest_challenge:" .. username
-        local challenge_data = redis_to_lua(red:get(challenge_key))
-        if challenge_data then
-            local ok, challenge = pcall(cjson.decode, challenge_data)
-            if ok and challenge.expires_at and ngx.time() < challenge.expires_at then
-                challenges_active = challenges_active + 1
-            else
-                red:del(challenge_key)
-            end
-        end
-    end
-    
-    red:close()
-    
-    return {
-        active_sessions = active_count,
-        max_sessions = MAX_GUEST_SESSIONS,
-        available_slots = MAX_GUEST_SESSIONS - active_count,
-        challenges_active = challenges_active
-    }
-end
 
 local function update_guest_message_count(user_data)
-    if not user_data or not user_data.username then
-        return false
+    if not user_data or not user_data.display_username then
+        return false, "Not a guest user"
     end
     
-    local red = connect_redis()
-    if not red then return false end
+    -- Get guest system to update message count using slot lookup
+    local is_none = require "is_none"
     
-    user_data.message_count = (user_data.message_count or 0) + 1
-    user_data.last_activity = ngx.time()
+    -- Find the slot by checking shared memory for this display name
+    local slot_number = nil
     
-    local session_key = "guest_active_session:" .. user_data.username
-    local user_session_key = "guest_session:" .. user_data.username
+    -- Check both slots to find which one has this display name
+    for i = 1, 2 do
+        local session = is_none.get_session(i)
+        if session and session.display_name == user_data.display_username then
+            slot_number = i
+            break
+        end
+    end
     
-    red:set(session_key, cjson.encode(user_data))
-    red:expire(session_key, GUEST_SESSION_DURATION)
+    if not slot_number then
+        return false, "Guest session not found in shared memory"
+    end
     
-    red:set(user_session_key, cjson.encode(user_data))
-    red:expire(user_session_key, GUEST_SESSION_DURATION)
-    
-    red:close()
-    return true
-end
--- =============================================
--- API HANDLERS - USE SHARED MODULES
--- =============================================
-
-local function handle_chat_api()
-    -- Use shared chat API handler from manage_stream_ollama
-    local stream_ollama = require "manage_stream_ollama"
-    return stream_ollama.handle_chat_api("is_guest")
+    return is_none.update_message_count(slot_number, user_data.message_count)
 end
 
--- FIXED: Guest logout handler using manage_auth
+-- =============================================
+-- GUEST CHAT API HANDLERS
+-- =============================================
+
+local function handle_chat_history()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_guest" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = "Guest access required"
+        }))
+        return
+    end
+    
+    -- Guests don't have persistent history - return empty
+    ngx.status = 200
+    ngx.header.content_type = 'application/json'
+    ngx.say(cjson.encode({
+        success = true,
+        messages = {},
+        storage_type = "localStorage",
+        note = "Guest users use localStorage only - no server history",
+        message_count = user_data.message_count or 0,
+        max_messages = user_data.max_messages or 10
+    }))
+end
+
+local function handle_clear_chat()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_guest" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = "Guest access required"
+        }))
+        return
+    end
+    
+    ngx.status = 200
+    ngx.header.content_type = 'application/json'
+    ngx.say(cjson.encode({
+        success = true,
+        message = "Guest chat uses localStorage only - clear from browser"
+    }))
+end
+
+-- =============================================
+-- GUEST LOGOUT HANDLER WITH SLOT CLEANUP
+-- =============================================
+
 local function handle_guest_logout()
-    -- FIXED: Use the shared logout handler from manage_auth
     local user_type, username, user_data = auth.check()
     
     if user_type == "is_guest" then
-        ngx.log(ngx.INFO, "🔚 Guest logout requested for: " .. (user_data and user_data.display_username or username or "unknown"))
+        ngx.log(ngx.INFO, "🔚 Guest logout requested for: " .. (username or "unknown"))
         
-        -- Use the shared logout from manage_auth which handles guest cleanup
+        -- Clean up guest session from shared memory
+        if user_data and user_data.display_username then
+            local is_none = require "is_none"
+            
+            -- Find and cleanup the slot
+            for i = 1, 2 do
+                local session = is_none.get_session(i)
+                if session and session.display_name == user_data.display_username then
+                    is_none.cleanup_session(i)
+                    ngx.log(ngx.INFO, "🧹 Cleaned up guest slot " .. i .. " for " .. user_data.display_username)
+                    break
+                end
+            end
+        end
+        
+        -- Use the shared logout from manage_auth
         auth.handle_logout()
         return
     else
@@ -150,14 +137,8 @@ local function handle_guest_logout()
     end
 end
 
--- Import guest session management from is_none
-local function handle_guest_api()
-    local is_none = require "is_none"
-    return is_none.handle_guest_session_api()
-end
-
 -- =============================================
--- OLLAMA STREAMING HANDLER - USE SHARED MODULE
+-- GUEST OLLAMA STREAMING HANDLER
 -- =============================================
 
 local function handle_ollama_chat_stream()
@@ -176,16 +157,22 @@ local function handle_ollama_chat_stream()
     -- Guest-specific pre-stream check function
     local function guest_pre_stream_check(message, request_data)
         local current_count = user_data.message_count or 0
+        local max_messages = user_data.max_messages or 10
         
-        if current_count >= (user_data.max_messages or GUEST_MESSAGE_LIMIT) then
-            return false, "Guest message limit reached (" .. (user_data.max_messages or GUEST_MESSAGE_LIMIT) .. " messages). Register for unlimited access."
+        if current_count >= max_messages then
+            return false, "Guest message limit reached (" .. max_messages .. " messages). Register for unlimited access."
         end
         
         if user_data.expires_at and ngx.time() >= user_data.expires_at then
             return false, "Guest session expired. Please start a new session."
         end
         
-        update_guest_message_count(user_data)
+        -- Update message count in shared memory and JWT
+        local success, new_count = update_guest_message_count(user_data)
+        if not success then
+            return false, "Failed to update message count: " .. (new_count or "unknown error")
+        end
+        
         return true, nil
     end
     
@@ -195,7 +182,7 @@ local function handle_ollama_chat_stream()
         user_type = "is_guest",
         username = username,
         user_data = user_data,
-        include_history = false,
+        include_history = false,  -- Guests don't have server history
         history_limit = 0,
         pre_stream_check = guest_pre_stream_check,
         default_options = {
@@ -209,21 +196,98 @@ local function handle_ollama_chat_stream()
 end
 
 -- =============================================
+-- GUEST CHAT API HANDLER
+-- =============================================
+
+function M.handle_chat_api()
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/chat/history" and method == "GET" then
+        handle_chat_history()
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        handle_clear_chat()
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        return handle_ollama_chat_stream()
+    else
+        -- Delegate to shared chat API handler
+        local stream_ollama = require "manage_stream_ollama"
+        return stream_ollama.handle_chat_api("is_guest")
+    end
+end
+
+-- =============================================
+-- GUEST HELPER FUNCTIONS
+-- =============================================
+
+local function get_guest_display_name()
+    local user_type, username, user_data = auth.check()
+    if user_type == "is_guest" and user_data then
+        return user_data.display_username or "Guest User"
+    end
+    return "Guest User"
+end
+
+local function get_chat_features()
+    local user_type, username, user_data = auth.check()
+    local message_count = 0
+    local max_messages = 10
+    
+    if user_data then
+        message_count = user_data.message_count or 0
+        max_messages = user_data.max_messages or 10
+    end
+    
+    return string.format([[
+        <div class="user-features guest-features">
+            <div class="alert alert-warning">
+                <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
+                <p class="mb-1">%d/%d messages • Time limited • localStorage only</p>
+                <div class="guest-actions">
+                    <a href="/register" class="btn btn-warning btn-sm me-2">Register for unlimited</a>
+                    <button class="btn btn-outline-light btn-sm" onclick="downloadGuestHistory()">Download History</button>
+                </div>
+            </div>
+        </div>
+    ]], message_count, max_messages)
+end
+
+local function get_guest_stats()
+    local is_none = require "is_none"
+    return is_none.get_guest_stats()
+end
+
+-- =============================================
+-- ROUTE HANDLER (FOR NON-VIEW ROUTES)
+-- =============================================
+
+function M.handle_route(route_type)
+    if route_type == "chat_api" then
+        return M.handle_chat_api()
+    elseif route_type == "guest_logout" then
+        return handle_guest_logout()
+    else
+        ngx.status = 404
+        return ngx.say("Guest route not found: " .. tostring(route_type))
+    end
+end
+
+-- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
 return { 
     -- API handlers
-    handle_guest_api = handle_guest_api,
-    handle_chat_api = handle_chat_api,
+    handle_chat_api = M.handle_chat_api,
     handle_ollama_chat_stream = handle_ollama_chat_stream,
-    handle_guest_logout = handle_guest_logout,  -- FIXED: Export logout handler
+    handle_guest_logout = handle_guest_logout,
+    handle_route = M.handle_route,
     
     -- Session management functions
     get_guest_stats = get_guest_stats,
     update_guest_message_count = update_guest_message_count,
     
     -- Helper functions
-    get_guest_display_name = get_guest_display_name,  -- FIXED: Export display name function
+    get_guest_display_name = get_guest_display_name,
     get_chat_features = get_chat_features
 }

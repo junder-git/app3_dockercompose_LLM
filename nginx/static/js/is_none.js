@@ -1,10 +1,6 @@
 // =============================================================================
-// nginx/static/js/is_none.js - GUEST SESSION CREATION AND CHALLENGE SYSTEM
+// nginx/static/js/is_none.js - UPDATED FOR SERVER-SIDE REDIRECT
 // =============================================================================
-
-// Global variables for challenge handling
-let challengeCheckInterval;
-let challengeTimeoutId;
 
 // Main Guest Session Manager for is_none users
 class GuestSessionManager {
@@ -12,6 +8,7 @@ class GuestSessionManager {
         this.challengeModal = null;
         this.countdownInterval = null;
         this.isCreatingSession = false;
+        this.currentChallengeSlot = null;
         this.init();
     }
 
@@ -31,7 +28,7 @@ class GuestSessionManager {
 
             console.log('🎮 Starting guest session...');
             
-            const button = document.getElementById("chatters");
+            const button = document.querySelector('button[onclick="startGuestSession()"]');
             if (button) {
                 button.disabled = true;
                 button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
@@ -40,28 +37,46 @@ class GuestSessionManager {
             this.isCreatingSession = true;
             
             try {
+                // CRITICAL: Use fetch with manual redirect handling
+                // This allows us to handle both JSON responses (challenges) and redirects (success)
                 const response = await fetch('/api/guest/create-session', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include'
+                    credentials: 'include',
+                    redirect: 'manual' // IMPORTANT: Don't auto-follow redirects
                 });
 
+                console.log('📡 Response status:', response.status, response.type);
+
+                if (response.status === 302 || response.type === 'opaqueredirect') {
+                    // SUCCESS: Server sent redirect with cookie
+                    console.log('✅ Guest session created successfully - following redirect');
+                    this.showSuccessMessage('Guest session created! Redirecting to chat...');
+                    
+                    // Follow the redirect manually
+                    setTimeout(() => {
+                        window.location.href = '/chat';
+                    }, 500);
+                    return;
+                }
+
+                // Handle JSON responses (challenges or errors)
                 const data = await response.json();
                 
-                if (response.status === 202 && data.challenge_required) {
-                    // Challenge required - another user is inactive
+                if (data.challenge_required) {
+                    console.log('🚨 Challenge required:', data);
                     this.handleChallengeRequired(data);
                 } else if (data.success) {
-                    // Normal session creation - slot was available
-                    console.log('✅ Guest session created:', data.username);
-                    this.showSuccessMessage(`Guest session created as ${data.username}! Redirecting...`);
+                    // Fallback: JSON success response (shouldn't happen with server-side redirect)
+                    console.log('✅ Guest session created via JSON:', data.display_username || data.username);
+                    this.showSuccessMessage(`Guest session created! Redirecting...`);
                     
                     setTimeout(() => {
                         window.location.href = data.redirect || '/chat';
                     }, 1000);
-                } else if (data.error === 'all_slots_busy') {
-                    // All slots busy with active challenges
-                    this.showErrorMessage('All guest sessions are busy with active users. Please try again in a few moments.');
+                } else if (data.error === 'slots_full') {
+                    // All slots busy with active users
+                    this.showErrorMessage('All guest sessions are busy with active users. Please try again in a few minutes.');
                 } else {
                     // Other errors
                     console.error('❌ Guest session failed:', data);
@@ -141,8 +156,11 @@ class GuestSessionManager {
     handleChallengeRequired(challengeData) {
         console.log('🚨 Challenge required:', challengeData);
         
+        // Store the slot number for polling
+        this.currentChallengeSlot = challengeData.slot_number;
+        
         // Update modal content
-        document.getElementById('challenge-title').textContent = `Challenging ${challengeData.username}`;
+        document.getElementById('challenge-title').textContent = `Challenging slot ${challengeData.slot_number}`;
         document.getElementById('challenge-message').textContent = challengeData.message;
         document.getElementById('challenge-timer').textContent = challengeData.timeout;
         
@@ -153,7 +171,7 @@ class GuestSessionManager {
         this.startChallengeCountdown(challengeData.timeout);
         
         // Start polling for challenge status
-        this.pollChallengeStatus(challengeData.username, challengeData.challenge_id);
+        this.pollChallengeStatus(challengeData.slot_number);
     }
 
     startChallengeCountdown(totalSeconds) {
@@ -196,18 +214,18 @@ class GuestSessionManager {
         }
     }
 
-    async pollChallengeStatus(username, challengeId) {
+    async pollChallengeStatus(slotNumber) {
         let pollCount = 0;
         const maxPolls = 10; // 10 seconds total (8 second timeout + 2 second buffer)
         
         const poll = async () => {
             if (pollCount >= maxPolls) {
-                this.handleChallengeTimeout(username);
+                this.handleChallengeTimeout();
                 return;
             }
             
             try {
-                const response = await fetch(`/api/guest/challenge-status?username=${username}`, {
+                const response = await fetch(`/api/guest/challenge-status?slot=${slotNumber}`, {
                     credentials: 'include'
                 });
 
@@ -215,14 +233,14 @@ class GuestSessionManager {
                     const data = await response.json();
                     
                     if (!data.challenge_active) {
-                        // Challenge completed - slot is free
-                        this.handleChallengeCompleted(username);
+                        // Challenge completed - slot is free, retry session creation
+                        this.handleChallengeCompleted();
                         return;
                     }
                     
                     if (data.challenge && data.challenge.status !== 'pending') {
                         // User responded to challenge
-                        this.handleChallengeResponse(data.challenge, username);
+                        this.handleChallengeResponse(data.challenge);
                         return;
                     }
                 }
@@ -240,38 +258,19 @@ class GuestSessionManager {
         poll();
     }
 
-    async handleChallengeTimeout(username) {
-        console.log('⏰ Challenge timeout - attempting to claim slot');
+    handleChallengeTimeout() {
+        console.log('⏰ Challenge timeout - slot should be freed, retrying session creation');
         
-        try {
-            const response = await fetch('/api/guest/force-claim', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ username: username })
-            });
-
-            const data = await response.json();
-            
-            if (data.success) {
-                this.hideChallengeModal();
-                this.showSuccessMessage(`Slot claimed! Inactive user was disconnected. Redirecting...`);
-                
-                setTimeout(() => {
-                    window.location.href = data.redirect || '/chat';
-                }, 1500);
-            } else {
-                this.hideChallengeModal();
-                this.showErrorMessage(data.message || 'Failed to claim slot');
-            }
-        } catch (error) {
-            console.error('Error claiming slot:', error);
-            this.hideChallengeModal();
-            this.showErrorMessage('Error claiming slot: ' + error.message);
-        }
+        this.hideChallengeModal();
+        this.showInfoMessage('Challenge timeout - slot freed! Creating your session...');
+        
+        // Retry session creation after timeout
+        setTimeout(() => {
+            window.startGuestSession();
+        }, 1000);
     }
 
-    handleChallengeCompleted(username) {
+    handleChallengeCompleted() {
         console.log('✅ Challenge completed - slot freed');
         this.hideChallengeModal();
         this.showInfoMessage('Slot freed! Creating your session...');
@@ -282,7 +281,7 @@ class GuestSessionManager {
         }, 1000);
     }
 
-    handleChallengeResponse(challenge, username) {
+    handleChallengeResponse(challenge) {
         console.log('📞 Challenge response received:', challenge.status);
         
         this.hideChallengeModal();
@@ -301,17 +300,7 @@ class GuestSessionManager {
         console.log('❌ Challenge cancelled by user');
         this.stopCountdown();
         this.hideChallengeModal();
-        
-        // Clear any polling intervals
-        if (challengeCheckInterval) {
-            clearInterval(challengeCheckInterval);
-            challengeCheckInterval = null;
-        }
-        
-        if (challengeTimeoutId) {
-            clearTimeout(challengeTimeoutId);
-            challengeTimeoutId = null;
-        }
+        this.currentChallengeSlot = null;
     }
 
     hideChallengeModal() {
@@ -411,7 +400,7 @@ class GuestStatsDisplay {
                         <div class="col-md-6">
                             <p><strong>Session Duration:</strong> 10 minutes</p>
                             <p><strong>Message Limit:</strong> 10 messages</p>
-                            <p><strong>Active Challenges:</strong> ${stats.challenges_active}</p>
+                            <p><strong>Active Challenges:</strong> ${stats.challenges_active || 0}</p>
                         </div>
                     </div>
                     
