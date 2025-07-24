@@ -195,38 +195,4 @@ function M.handle_guest_api()
     is_none.handle_guest_session_api()
 end
 
--- =============================================
--- ERROR PAGE HANDLERS - USING ERROR PARTIALS WITH BASE TEMPLATE
--- =============================================
-
-function M.handle_404_page()
-    local template = require "manage_template"
-    local context = {
-        page_title = "404 - Page Not Found",
-        username = "guest",
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/404.html", "is_none", "error", context)
-end
-
-function M.handle_429_page()
-    local template = require "manage_template"
-    local context = {
-        page_title = "429 - Guest Slots Full",
-        username = "guest", 
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/429.html", "is_none", "error", context)
-end
-
-function M.handle_50x_page()
-    local template = require "manage_template"
-    local context = {
-        page_title = "Server Error",
-        username = "guest",
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/50x.html", "is_none", "error", context)
-end
-
 return M

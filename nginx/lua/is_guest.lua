@@ -31,14 +31,6 @@ local function get_guest_display_name()
     return "guest"
 end
 
--- FIXED: Generate proper navigation buttons with logout functionality
-local function get_nav_buttons(display_name)
-    display_name = display_name or get_guest_display_name()
-    return string.format(
-        '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
-    )
-end
-
 local function get_chat_features()
     return [[
         <div class="user-features guest-features">
@@ -126,79 +118,6 @@ local function update_guest_message_count(user_data)
     red:close()
     return true
 end
-
--- =============================================
--- PAGE HANDLERS - GUESTS CAN SEE ALL PAGES
--- =============================================
-
-local function handle_index_page()
-    local user_type, username, user_data = auth.check()
-    -- FIXED: Use display name instead of internal username
-    local display_name = (user_data and user_data.display_username) or "guest"
-    
-    local context = {
-        page_title = "ai.junder.uk - Guest Session",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,  -- FIXED: Show display name
-        dash_buttons = get_nav_buttons(display_name)
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
-end
-
-local function handle_chat_page()
-    local user_type, username, user_data = auth.check()
-    
-    if user_type ~= "is_guest" then
-        ngx.log(ngx.WARN, "Non-guest user accessing guest chat: " .. (user_type or "none"))
-        return ngx.redirect("/")
-    end
-    
-    -- FIXED: Use display name instead of internal username
-    local display_name = (user_data and user_data.display_username) or "guest"
-    
-    local context = {
-        page_title = "Guest Chat - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,  -- FIXED: Show display name
-        dash_buttons = get_nav_buttons(display_name),
-        chat_features = get_chat_features(),
-        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/chat.html", context)
-end
-
-local function handle_login_page()
-    local display_name = get_guest_display_name()
-    
-    local context = {
-        page_title = "Login - ai.junder.uk (Guest Session Active)",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,  -- FIXED: Show display name
-        dash_buttons = get_nav_buttons(display_name),
-        auth_title = "Login to Full Account",
-        auth_subtitle = "End guest session and login to your full account"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
-end
-
-local function handle_register_page()
-    local display_name = get_guest_display_name()
-    
-    local context = {
-        page_title = "Register - ai.junder.uk (Guest Session Active)",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = display_name,  -- FIXED: Show display name
-        dash_buttons = get_nav_buttons(display_name),
-        auth_title = "Create Full Account",
-        auth_subtitle = "End guest session and create a permanent account"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
-end
-
 -- =============================================
 -- API HANDLERS - USE SHARED MODULES
 -- =============================================
@@ -290,42 +209,10 @@ local function handle_ollama_chat_stream()
 end
 
 -- =============================================
--- MAIN ROUTE HANDLER - GUESTS CAN SEE ALL ROUTES
--- =============================================
-
-local function handle_route(route_type)
-    if route_type == "index" then
-        handle_index_page()
-    elseif route_type == "chat" then
-        handle_chat_page()
-    elseif route_type == "login" then
-        handle_login_page()
-    elseif route_type == "register" then
-        handle_register_page()
-    elseif route_type == "chat_api" then
-        handle_chat_api()
-    elseif route_type == "guest_logout" then
-        handle_guest_logout()
-    else
-        ngx.status = 404
-        return ngx.exec("@custom_404")
-    end
-end
-
--- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
-return {
-    -- Main route handler
-    handle_route = handle_route,
-    
-    -- Page handlers
-    handle_index_page = handle_index_page,
-    handle_chat_page = handle_chat_page,
-    handle_login_page = handle_login_page,
-    handle_register_page = handle_register_page,
-    
+return { 
     -- API handlers
     handle_guest_api = handle_guest_api,
     handle_chat_api = handle_chat_api,
@@ -338,6 +225,5 @@ return {
     
     -- Helper functions
     get_guest_display_name = get_guest_display_name,  -- FIXED: Export display name function
-    get_nav_buttons = get_nav_buttons,
     get_chat_features = get_chat_features
 }

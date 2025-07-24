@@ -549,100 +549,15 @@ local function handle_guest_session_api()
 end
 
 -- =============================================
--- PAGE HANDLERS - SIMPLIFIED, NO GUEST SESSION LOGIC
--- =============================================
-
-local function handle_index_page()
-    -- Simple static index page - no guest session logic here
-    local context = {
-        page_title = "ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons()
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/index.html", context)
-end
-
-local function handle_chat_page()
-    -- When is_none users try to access chat, attempt to create guest session
-    create_secure_guest_session_with_challenge()
-end
-
-local function handle_login_page()
-    local context = {
-        page_title = "Login - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Welcome Back",
-        auth_subtitle = "Sign in to access Devstral AI"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/login.html", context)
-end
-
-local function handle_register_page()
-    local context = {
-        page_title = "Register - ai.junder.uk",
-        nav = "/usr/local/openresty/nginx/dynamic_content/nav.html",
-        username = "guest",
-        dash_buttons = get_nav_buttons(),
-        auth_title = "Create Account",
-        auth_subtitle = "Join the Devstral AI community"
-    }
-    
-    template.render_template("/usr/local/openresty/nginx/dynamic_content/register.html", context)
-end
-
-
--- =============================================
--- MAIN ROUTE HANDLER - is_none can see: /, /login, /register
--- =============================================
-local function handle_route(route_type)
-    if route_type == "index" then
-        handle_index_page()
-    elseif route_type == "login" then
-        handle_login_page()
-    elseif route_type == "register" then
-        handle_register_page()
-    elseif route_type == "chat" then
-        handle_chat_page()
-    elseif route_type == "chat_api" then
-        -- API access without auth should return 401
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Authentication required",
-            message = "Please login or start a guest session"
-        }))
-        return ngx.exit(401)
-    else
-        ngx.status = 404
-        return ngx.exec("@custom_404")
-    end
-end
-
--- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
-return {
-    -- Main route handler
-    handle_route = handle_route,
-    
+return {   
     -- API handlers
     handle_guest_session_api = handle_guest_session_api,
     
-    -- Page handlers
-    handle_index_page = handle_index_page,
-    handle_chat_page = handle_chat_page,
-    handle_login_page = handle_login_page,
-    handle_register_page = handle_register_page,
-    
     -- Helper functions that might be needed by other modules
     get_guest_stats = get_guest_stats,
-    get_nav_buttons = get_nav_buttons,
     
     -- Session management functions
     create_secure_guest_session_with_challenge = create_secure_guest_session_with_challenge,
@@ -656,6 +571,4 @@ return {
     -- Utility functions
     get_guest_accounts = get_guest_accounts,
     generate_display_username = generate_display_username,
-    connect_redis = connect_redis,
-    redis_to_lua = redis_to_lua
 }
