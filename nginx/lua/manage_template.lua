@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_template.lua - JS CACHE ONLY (CSS STATIC)
+-- nginx/lua/manage_template.lua - JS CACHE ONLY (CSS STATIC) - FIXED PATHS
 -- =============================================================================
 
 -- Configuration
@@ -7,7 +7,8 @@ local TEMPLATE_CACHE = {}
 local JS_CACHE = {}
 local CACHE_INITIALIZED = false
 
-local JS_BASE_PATH = "/usr/local/openresty/nginx/static/js/"
+-- FIXED: Use the correct JS path from Dockerfile
+local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
 
 -- =============================================
 -- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP
