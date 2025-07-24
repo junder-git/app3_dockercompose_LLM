@@ -20,7 +20,7 @@ local function get_nav_buttons(user_type, username, user_data)
     elseif user_type == "is_pending" then
         return '<button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "is_guest" then
-        local display_name = (user_data and user_data.display_username) or username or "guest"
+        local display_name = get_display_username(user_type, username, user_data)
         return '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
     else -- is_none
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
@@ -29,10 +29,13 @@ end
 
 -- Get display username (for guests, use display_username; for others, use username)
 local function get_display_username(user_type, username, user_data)
-    if user_type == "is_guest" and user_data and user_data.display_username then
+    if user_type == "is_guest" then
         return user_data.display_username
     end
-    return username or "guest"
+    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" then
+        return username
+    end
+    return "guest"
 end
 
 -- =============================================
@@ -40,9 +43,7 @@ end
 -- =============================================
 
 function M.handle_index_page()
-    local user_type, username, user_data = auth.check()
-    local display_name = get_display_username(user_type, username, user_data)
-    
+    local user_type, username, user_data = auth.check()    
     -- For is_none users, we need to show the guest session creation button
     local start_chat_button = ""
     if user_type == "is_none" then
@@ -61,7 +62,7 @@ function M.handle_index_page()
     
     local context = {
         page_title = "ai.junder.uk - Advanced AI Chat",
-        username = display_name,
+        username = get_display_username(user_type, username, user_data),
         dash_buttons = get_nav_buttons(user_type, username, user_data),
         start_chat_button = start_chat_button
     }

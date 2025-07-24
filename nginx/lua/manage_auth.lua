@@ -36,7 +36,7 @@ local function send_json(status, tbl)
     ngx.exit(status)
 end
 
--- FIXED: Get user function with proper Redis handling and debugging
+-- FIXED: Get user function with proper Redis handling and no colon handling
 local function get_user(username)
     if not username or username == "" then
         ngx.log(ngx.WARN, "get_user called with empty username")
@@ -63,17 +63,11 @@ local function get_user(username)
     
     ngx.log(ngx.INFO, "get_user: Raw Redis data: " .. cjson.encode(user_data))
     
-    -- Convert Redis hash to Lua table
+    -- Convert Redis hash to Lua table - SIMPLIFIED: No colon handling needed
     local user = {}
     for i = 1, #user_data, 2 do
         local key = user_data[i]
         local value = redis_to_lua(user_data[i + 1])
-        
-        -- FIXED: Handle keys with trailing colons from your Redis structure
-        if string.sub(key, -1) == ":" then
-            key = string.sub(key, 1, -2)  -- Remove trailing colon
-        end
-        
         user[key] = value
     end
     
@@ -90,7 +84,7 @@ local function get_user(username)
     return user
 end
 
--- FIXED: Password verification with detailed logging
+-- FIXED: Password verification with exact same method as Redis init script
 local function verify_password(password, stored_hash)
     if not password or not stored_hash then
         ngx.log(ngx.WARN, "verify_password: Missing password or hash")
@@ -99,13 +93,17 @@ local function verify_password(password, stored_hash)
     
     ngx.log(ngx.INFO, "verify_password: Verifying password for stored hash: " .. stored_hash)
     
-    -- Use the same hashing method as your setup script
+    -- CRITICAL: Use exact same method as redis/init-redis.sh
+    -- Redis script: printf '%s%s' $ADMIN_PASSWORD $JWT_SECRET | openssl dgst -sha256 -hex | awk '{print $2}'
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local hash = handle:read("*a"):gsub("\n", "")
     handle:close()
     
+    ngx.log(ngx.INFO, "verify_password: Input password: " .. password)
+    ngx.log(ngx.INFO, "verify_password: JWT_SECRET: " .. JWT_SECRET)
+    ngx.log(ngx.INFO, "verify_password: Hash command: " .. hash_cmd)
     ngx.log(ngx.INFO, "verify_password: Generated hash: " .. hash)
     ngx.log(ngx.INFO, "verify_password: Stored hash:   " .. stored_hash)
     ngx.log(ngx.INFO, "verify_password: Match: " .. tostring(hash == stored_hash))
