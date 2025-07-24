@@ -6,7 +6,7 @@ local cjson = require "cjson"
 local jwt = require "resty.jwt"
 
 local JWT_SECRET = os.getenv("JWT_SECRET")
-local MAX_GUEST_SESSIONS = 2
+local MAX_GUEST_SESSIONS = 1
 local GUEST_SESSION_DURATION = 600  -- 10 minutes
 local GUEST_MESSAGE_LIMIT = 10
 local CHALLENGE_TIMEOUT = 8  -- 8 seconds for challenge response
