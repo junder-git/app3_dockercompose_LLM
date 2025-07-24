@@ -112,6 +112,64 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
+-- AUTH CHECK FUNCTION - CORE LOGIC (SIMPLIFIED)
+-- =============================================
+local function check()
+    local token = ngx.var.cookie_access_token
+    if not token then
+        return "is_none", nil, nil
+    end
+    
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj.verified then
+        ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
+        -- Clear the invalid cookie
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
+    end
+    
+    local username = jwt_obj.payload.username
+    local user_type_claim = jwt_obj.payload.user_type
+    
+    -- For ALL users (including guests), check Redis
+    local user_data = get_user(username)
+    if not user_data then
+        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
+        -- Clear the stale cookie
+        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        return "is_none", nil, nil
+    end
+    
+    -- Update user activity
+    local red = connect_redis()
+    if red then
+        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
+        red:close()
+    end
+    
+    -- Return user type based on Redis data (using is_* format)
+    if user_data.user_type == "is_admin" then
+        return "is_admin", username, user_data
+    end
+    if user_data.user_type == "is_approved" then
+        return "is_approved", username, user_data
+    end
+    if user_data.user_type == "is_pending" then
+        return "is_pending", username, user_data
+    end
+    if user_data.user_type == "is_guest" then
+        return "is_guest", username, user_data
+    end
+    if user_data.user_type == "is_none" then
+        return "is_none", "guest", nil
+    end
+    
+    -- Default fallback
+    return "is_none", nil, nil
+end
+
+
+-- =============================================
 -- LOGIN HANDLER WITH DETAILED DEBUGGING
 -- =============================================
 local function handle_login()
@@ -233,63 +291,6 @@ local function handle_logout()
         logged_out_user = logout_user,
         logged_out_type = logout_type
     })
-end
-
--- =============================================
--- AUTH CHECK FUNCTION - CORE LOGIC (SIMPLIFIED)
--- =============================================
-local function check()
-    local token = ngx.var.cookie_access_token
-    if not token then
-        return "is_none", nil, nil
-    end
-    
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
-        -- Clear the invalid cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    local username = jwt_obj.payload.username
-    local user_type_claim = jwt_obj.payload.user_type
-    
-    -- For ALL users (including guests), check Redis
-    local user_data = get_user(username)
-    if not user_data then
-        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
-        -- Clear the stale cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    -- Update user activity
-    local red = connect_redis()
-    if red then
-        red:hset("username:" .. username, "last_active:", os.date("!%Y-%m-%dT%TZ"))
-        red:close()
-    end
-    
-    -- Return user type based on Redis data (using is_* format)
-    if user_data.user_type == "is_admin" then
-        return "is_admin", username, user_data
-    end
-    if user_data.user_type == "is_approved" then
-        return "is_approved", username, user_data
-    end
-    if user_data.user_type == "is_pending" then
-        return "is_pending", username, user_data
-    end
-    if user_data.user_type == "is_guest" then
-        return "is_guest", username, user_data
-    end
-    if user_data.user_type == "is_none" then
-        return "is_none", "guest", nil
-    end
-    
-    -- Default fallback
-    return "is_none", nil, nil
 end
 
 -- =============================================
