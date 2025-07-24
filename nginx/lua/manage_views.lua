@@ -11,6 +11,17 @@ local M = {}
 -- HELPER FUNCTIONS
 -- =============================================
 
+-- Get display username (for guests, use display_username; for others, use username)
+local function get_display_username(user_type, username, user_data)
+    if user_type == "is_guest" then
+        return user_data.display_username
+    end
+    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" then
+        return username
+    end
+    return "guest"
+end
+
 -- Generate navigation buttons based on user type
 local function get_nav_buttons(user_type, username, user_data)
     if user_type == "is_admin" then
@@ -25,17 +36,6 @@ local function get_nav_buttons(user_type, username, user_data)
     else -- is_none
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
     end
-end
-
--- Get display username (for guests, use display_username; for others, use username)
-local function get_display_username(user_type, username, user_data)
-    if user_type == "is_guest" then
-        return user_data.display_username
-    end
-    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" then
-        return username
-    end
-    return "guest"
 end
 
 -- =============================================
