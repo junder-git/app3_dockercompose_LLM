@@ -10,6 +10,42 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+generate_modelfile() {
+    local modelfile_path="$1"
+    
+    log "Generating dynamic Modelfile at: $modelfile_path"
+    
+    cat > "$modelfile_path" << EOF
+FROM /root/.ollama/models/Devstral-Small-2507-Q4_K_M.gguf
+
+# Template for chat completion
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+
+# Model parameters from environment variables
+PARAMETER temperature ${MODEL_TEMPERATURE}
+PARAMETER top_p ${MODEL_TOP_P}
+PARAMETER top_k ${MODEL_TOP_K}
+PARAMETER min_p ${MODEL_MIN_P}
+PARAMETER repeat_penalty ${MODEL_REPEAT_PENALTY}
+PARAMETER repeat_last_n ${MODEL_REPEAT_LAST_N}
+PARAMETER num_ctx ${MODEL_NUM_CTX}
+PARAMETER num_predict ${MODEL_NUM_PREDICT}
+PARAMETER seed ${MODEL_SEED}
+PARAMETER num_gpu ${OLLAMA_GPU_LAYERS}
+PARAMETER num_thread ${OLLAMA_NUM_THREAD}
+
+# System message
+SYSTEM """You are Devstral, a helpful AI assistant specialized in software development and coding tasks."""
+EOF
+
+    log "Modelfile generated successfully"
+}
+
 check_model_exists() {
     local model_name="$1"
     log "Checking if model '$model_name' already exists..."
@@ -50,6 +86,9 @@ main() {
     # Give the server a moment to start
     log "Waiting for Ollama server to start..."
     sleep 5
+    
+    # Generate the Modelfile with current environment variables
+    generate_modelfile "$MODELFILE_PATH"
     
     # Check if model already exists
     if check_model_exists "$MODEL_NAME"; then

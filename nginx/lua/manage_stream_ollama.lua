@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_stream_ollama.lua - SHARED CHAT API AND STREAMING - FIXED
+-- nginx/lua/manage_stream_ollama.lua - COMPLETE ENV VAR INTEGRATION
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -7,18 +7,22 @@ local http = require "resty.http"
 
 local M = {}
 
--- Get environment variables (no defaults - must be in .env)
+-- Get ALL environment variables (no defaults - must be in .env)
 local MODEL_URL = os.getenv("MODEL_URL")
 local MODEL_NAME = os.getenv("MODEL_NAME")
 local MODEL_TEMPERATURE = tonumber(os.getenv("MODEL_TEMPERATURE"))
 local MODEL_TOP_P = tonumber(os.getenv("MODEL_TOP_P"))
 local MODEL_TOP_K = tonumber(os.getenv("MODEL_TOP_K"))
+local MODEL_MIN_P = tonumber(os.getenv("MODEL_MIN_P"))
 local MODEL_NUM_CTX = tonumber(os.getenv("MODEL_NUM_CTX"))
 local MODEL_NUM_PREDICT = tonumber(os.getenv("MODEL_NUM_PREDICT"))
 local MODEL_REPEAT_PENALTY = tonumber(os.getenv("MODEL_REPEAT_PENALTY"))
 local MODEL_REPEAT_LAST_N = tonumber(os.getenv("MODEL_REPEAT_LAST_N"))
 local MODEL_SEED = tonumber(os.getenv("MODEL_SEED"))
 local OLLAMA_GPU_LAYERS = tonumber(os.getenv("OLLAMA_GPU_LAYERS"))
+local OLLAMA_NUM_THREAD = tonumber(os.getenv("OLLAMA_NUM_THREAD"))
+local OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE")
+local OLLAMA_USE_MMAP = os.getenv("OLLAMA_USE_MMAP") == "true"
 
 -- Default system prompt for Devstral
 local SYSTEM_PROMPT = [[You are Devstral, a helpful AI programming assistant.
@@ -182,7 +186,7 @@ function M.handle_chat_api(user_type)
 end
 
 -- =============================================
--- SHARED CHAT STREAMING HANDLER - FIXED SSE FORMAT
+-- SHARED CHAT STREAMING HANDLER - EXTENDED TIMEOUT
 -- =============================================
 
 function M.handle_chat_stream_common(stream_context)
@@ -250,7 +254,7 @@ function M.handle_chat_stream_common(stream_context)
         content = message
     })
     
-    -- Use stream context options or defaults
+    -- Use stream context options or defaults from env
     local options = {}
     if stream_context.default_options then
         for k, v in pairs(stream_context.default_options) do
@@ -299,12 +303,15 @@ function M.handle_chat_stream_common(stream_context)
     ngx.log(ngx.INFO, "✅ Chat stream completed for " .. (stream_context.user_type or "unknown"))
 end
 
--- Main Ollama streaming function
+-- =============================================
+-- MAIN OLLAMA STREAMING FUNCTION - COMPLETE ENV INTEGRATION
+-- =============================================
+
 function M.call_ollama_streaming(messages, options, callback)
     ngx.log(ngx.INFO, "call_ollama_streaming(): Using Ollama adapter for streaming")
     
     local httpc = http.new()
-    httpc:set_timeout(600000) -- 10 minute timeout
+    httpc:set_timeout(600000) -- 10 minute timeout - EXTENDED
     
     -- Parse URL
     local url_parts = parse_url(MODEL_URL)
@@ -312,27 +319,29 @@ function M.call_ollama_streaming(messages, options, callback)
     -- Format messages for Ollama
     local formatted_messages = M.format_messages(messages)
     
-    -- Build Ollama API request with env parameters
+    -- Build Ollama API request using your specified payload format
     local request_data = {
         model = MODEL_NAME,
         messages = formatted_messages,
         stream = true,
+        keep_alive = OLLAMA_KEEP_ALIVE,
+        use_mmap = OLLAMA_USE_MMAP,
         options = {
             temperature = options.temperature or MODEL_TEMPERATURE,
-            top_p = options.top_p or MODEL_TOP_P,
-            top_k = options.top_k or MODEL_TOP_K,
             num_predict = options.num_predict or options.max_tokens or MODEL_NUM_PREDICT,
             num_ctx = options.num_ctx or MODEL_NUM_CTX,
+            top_p = options.top_p or MODEL_TOP_P,
+            top_k = options.top_k or MODEL_TOP_K,
+            min_p = options.min_p or MODEL_MIN_P,
             repeat_penalty = options.repeat_penalty or MODEL_REPEAT_PENALTY,
             repeat_last_n = options.repeat_last_n or MODEL_REPEAT_LAST_N,
             seed = options.seed or MODEL_SEED,
-            use_mmap = false,
             num_gpu = OLLAMA_GPU_LAYERS,
-            num_thread = 6
+            num_thread = OLLAMA_NUM_THREAD
         }
     }
     
-    ngx.log(ngx.DEBUG, "Ollama request data: " .. cjson.encode(request_data))
+    ngx.log(ngx.INFO, "Ollama request payload: " .. cjson.encode(request_data))
     
     -- Connect to Ollama
     local ok, err = httpc:connect(url_parts.host, url_parts.port)
