@@ -9,7 +9,7 @@ COPY scripts/init-ollama.sh /root/.ollama/scripts/init-ollama.sh
 RUN chmod +x /root/.ollama/scripts/init-ollama.sh
 
 # Copy the Modelfile template
-COPY scripts/Modelfile /root/.ollama/scripts/Modelfile
+#COPY scripts/Modelfile /root/.ollama/scripts/Modelfile
 
 # Set the entrypoint to our initialization script
 ENTRYPOINT ["/root/.ollama/scripts/init-ollama.sh"]
