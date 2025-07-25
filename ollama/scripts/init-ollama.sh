@@ -16,7 +16,7 @@ generate_modelfile() {
     log "Generating dynamic Modelfile at: $modelfile_path"
     
     cat > "$modelfile_path" << EOF
-FROM /root/.ollama/models/Devstral-Small-2507-Q4_K_M.gguf
+FROM ${MODEL_GGUF_PATH}
 
 # Template for chat completion
 TEMPLATE """{{ if .System }}<|im_start|>system

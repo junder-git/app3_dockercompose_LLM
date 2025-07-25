@@ -10,6 +10,7 @@ local M = {}
 -- Get ALL environment variables (no defaults - must be in .env)
 local MODEL_URL = os.getenv("MODEL_URL")
 local MODEL_NAME = os.getenv("MODEL_NAME")
+local MODEL_GGUF_PATH = os.getenv("MODEL_GGUF_PATH")
 local MODEL_TEMPERATURE = tonumber(os.getenv("MODEL_TEMPERATURE"))
 local MODEL_TOP_P = tonumber(os.getenv("MODEL_TOP_P"))
 local MODEL_TOP_K = tonumber(os.getenv("MODEL_TOP_K"))
