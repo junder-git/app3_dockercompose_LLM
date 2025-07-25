@@ -325,8 +325,8 @@ function M.call_ollama_streaming(messages, options, callback)
         model = MODEL_NAME,
         messages = formatted_messages,
         stream = true,
-        keep_alive = OLLAMA_KEEP_ALIVE,
-        use_mmap = OLLAMA_USE_MMAP,
+        keep_alive = "999h",
+        use_mmap = false,
         options = {
             -- Modelfile parameters (can be overridden at runtime)
             temperature = options.temperature or MODEL_TEMPERATURE,
