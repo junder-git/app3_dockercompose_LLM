@@ -3,6 +3,103 @@
 // =============================================================================
 
 // =============================================================================
+// TEXT FORMATTING UTILITIES - FIX MARKDOWN ISSUES BEFORE PROCESSING
+// =============================================================================
+
+// Text formatter to fix formatting issues before markdown processing
+function formatTextForMarkdown(text) {
+    if (!text) return '';
+    
+    // Step 1: Fix code block issues
+    let formatted = text
+        // Fix broken code blocks (missing closing backticks)
+        .replace(/```([^`\n]*)\n([^`]*?)(?=\n\d+\.|\n[A-Z]|$)/g, '```$1\n$2\n```\n')
+        // Fix incomplete code blocks at the end
+        .replace(/```([^\n]*)\n([^`]*?)$/g, '```$1\n$2\n```')
+        // Fix single backticks that should be code blocks
+        .replace(/`([^`\n]{50,}?)`/g, '\n```\n$1\n```\n')
+        
+    // Step 2: Fix spacing around numbered lists
+        .replace(/(\d+\.)\s*([A-Z])/g, '\n$1 $2')
+        .replace(/(\n\d+\.\s.*?)([A-Z][^.\n]{20,})/g, '$1\n\n$2')
+        
+    // Step 3: Add newlines around code blocks
+        .replace(/([.!?])\s*```/g, '$1\n\n```')
+        .replace(/```\s*([A-Z])/g, '```\n\n$1')
+        
+    // Step 4: Fix file names and paths
+        .replace(/([a-zA-Z0-9_-]+\.[a-zA-Z]{2,4})([A-Z])/g, '$1\n\n$2')
+        .replace(/(Create `[^`]+`)/g, '\n$1')
+        
+    // Step 5: Add spacing around paragraphs
+        .replace(/([.!?])\s*([A-Z][^.!?\n]{30,})/g, '$1\n\n$2')
+        
+    // Step 6: Clean up excessive newlines
+        .replace(/\n{4,}/g, '\n\n\n')
+        .replace(/^\n+/, '')
+        .replace(/\n+$/, '')
+        
+    // Step 7: Fix common concatenation issues
+        .replace(/([a-z])([A-Z][a-z])/g, '$1 $2')
+        .replace(/(\w)(Create|Now|You|The|This)/g, '$1\n\n$2')
+        
+    return formatted;
+}
+
+// Enhanced marked.js setup with better formatting
+function setupMarkedWithFormatting() {
+    if (!window.marked) return;
+    
+    // Configure marked with better options
+    marked.setOptions({
+        breaks: true,           // Convert \n to <br>
+        gfm: true,             // GitHub Flavored Markdown
+        headerIds: false,      // Don't add IDs to headers
+        mangle: false,         // Don't mangle text
+        sanitize: false,       // Don't sanitize HTML
+        smartLists: true,      // Better list formatting
+        smartypants: false,    // Don't convert quotes/dashes
+        xhtml: false           // Don't close tags
+    });
+    
+    // Custom renderer for better code block formatting
+    const renderer = new marked.Renderer();
+    
+    // Better code block rendering
+    renderer.code = function(code, language) {
+        const validLang = language && language.match(/^[a-zA-Z0-9_+-]*$/);
+        const lang = validLang ? language : '';
+        const escapedCode = code
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+            
+        return `<pre><code class="language-${lang}">${escapedCode}</code></pre>\n`;
+    };
+    
+    // Better paragraph rendering with proper spacing
+    renderer.paragraph = function(text) {
+        return `<p>${text}</p>\n`;
+    };
+    
+    // Better list rendering
+    renderer.listitem = function(text) {
+        return `<li>${text}</li>\n`;
+    };
+    
+    marked.use({ renderer });
+}
+
+// Function to process streamed text
+function processStreamedText(rawText) {
+    // First format the text
+    const formatted = formatTextForMarkdown(rawText);
+    
+    // Then convert to markdown
+    return window.marked ? marked.parse(formatted) : formatted;
+}
+
+// =============================================================================
 // SHARED CHAT FUNCTIONALITY - SSE HANDLING, UI HELPERS, ETC.
 // =============================================================================
 
@@ -248,7 +345,9 @@ class SharedChatBase {
     updateStreamingMessage(messageDiv, content) {
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
-            const parsedContent = window.marked ? marked.parse(content) : content;
+            // Format the text BEFORE passing to marked.parse
+            const formattedContent = formatTextForMarkdown(content);
+            const parsedContent = window.marked ? marked.parse(formattedContent) : formattedContent;
             streamingEl.innerHTML = parsedContent + '<span class="cursor blink">▋</span>';
             
             const messagesContainer = document.getElementById('chat-messages');
@@ -266,7 +365,9 @@ class SharedChatBase {
         
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
-            const parsedContent = window.marked ? marked.parse(finalContent) : finalContent;
+            // Format the text BEFORE passing to marked.parse
+            const formattedContent = formatTextForMarkdown(finalContent);
+            const parsedContent = window.marked ? marked.parse(formattedContent) : formattedContent;
             streamingEl.innerHTML = parsedContent;
             
             // Save to appropriate storage (overridden by subclasses)
@@ -698,6 +799,9 @@ let sharedInterface = null;
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Initializing shared interface...');
     
+    // Initialize markdown formatting
+    setupMarkedWithFormatting();
+    
     // Single initialization point
     sharedInterface = new SharedInterface();
     
@@ -705,6 +809,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.sharedInterface = sharedInterface;
     window.SharedChatBase = SharedChatBase;
     window.SharedModalUtils = SharedModalUtils;
+    window.formatTextForMarkdown = formatTextForMarkdown;
+    window.processStreamedText = processStreamedText;
     
     // Page-specific setup
     if (document.querySelector('.hero-section')) {
