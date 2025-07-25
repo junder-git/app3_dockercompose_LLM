@@ -233,7 +233,12 @@ class SharedChatBase {
                         console.log('📊 Parsed SSE data:', data);
                         
                         if (data.type === 'content' && data.content) {
-                            accumulated += data.content;
+                            // Add space only if accumulated doesn't end with whitespace
+                            if (accumulated && !accumulated.endsWith(' ') && !accumulated.endsWith('\n')) {
+                                accumulated += ' ' + data.content;
+                            } else {
+                                accumulated += data.content;
+                            }
                             this.updateStreamingMessage(aiMessage, accumulated);
                             console.log('📝 Content received:', data.content);
                         }
@@ -287,8 +292,20 @@ class SharedChatBase {
         
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
-            // Simply process with marked.js - let it handle the formatting
-            const parsedContent = window.marked ? marked.parse(finalContent) : finalContent;
+            // Simple cleanup before markdown processing
+            let cleanedContent = finalContent
+                // Fix missing spaces between words
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+                // Fix missing spaces after punctuation
+                .replace(/([.!?])([A-Z])/g, '$1 $2')
+                // Fix missing spaces around common patterns
+                .replace(/(\w)(```)/g, '$1\n\n$2')
+                .replace(/(```)([\w])/g, '$1\n$2')
+                // Fix numbered lists
+                .replace(/(\d+)\.(\w)/g, '$1. $2');
+            
+            // Process with marked.js
+            const parsedContent = window.marked ? marked.parse(cleanedContent) : cleanedContent;
             streamingEl.innerHTML = parsedContent;
             
             // Save to appropriate storage (overridden by subclasses)
