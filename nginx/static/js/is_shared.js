@@ -183,92 +183,138 @@ class SharedChatBase {
     }
 
     // =============================================================================
-    // SHARED SSE STREAM PROCESSING - USED BY ALL USER TYPES
+    // SHARED SSE STREAM PROCESSING - USING EVENTSOURCE-PARSER
     // =============================================================================
     async processSSEStream(response, aiMessage) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let processedLines = new Set();
+        console.log('📺 Starting SSE stream processing with eventsource-parser');
+        
         let accumulated = '';
-
-        console.log('📺 Starting SSE stream processing');
-
-        while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) {
-                console.log('✅ Stream reader finished');
-                break;
-            }
-
-            const chunk = decoder.decode(value, { stream: true });
-            buffer += chunk;
-            
-            let newlineIndex;
-            while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                const line = buffer.slice(0, newlineIndex).trim();
-                buffer = buffer.slice(newlineIndex + 1);
+        
+        // Create the parser
+        const parser = this.createEventSourceParser((event) => {
+            if (event.type === 'event') {
+                console.log('📦 Parser event received:', event.data);
                 
-                if (line === '') continue;
-                
-                if (processedLines.has(line)) {
-                    continue;
+                if (event.data === '[DONE]') {
+                    console.log('✅ Stream completed with [DONE]');
+                    this.finishStreaming(aiMessage, accumulated);
+                    return;
                 }
-                processedLines.add(line);
                 
-                console.log('📦 Processing SSE line:', line);
-                
-                if (line.startsWith('data: ')) {
-                    const jsonStr = line.slice(6).trim();
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('📊 Parsed SSE data:', data);
                     
-                    if (jsonStr === '[DONE]') {
-                        console.log('✅ Stream completed with [DONE]');
-                        this.finishStreaming(aiMessage, accumulated);
-                        return accumulated;
-                    }
-
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        console.log('📊 Parsed SSE data:', data);
-                        
-                        if (data.type === 'content' && data.content) {
-                            // Add space only if accumulated doesn't end with whitespace
-                            if (accumulated && !accumulated.endsWith(' ') && !accumulated.endsWith('\n')) {
+                    if (data.type === 'content' && data.content) {
+                        // Smart spacing logic
+                        if (accumulated && data.content) {
+                            const lastChar = accumulated.slice(-1);
+                            const firstChar = data.content.charAt(0);
+                            
+                            // Add newline before code blocks
+                            if (data.content.startsWith('```')) {
+                                accumulated += '\n\n' + data.content;
+                            }
+                            // Add newline after code blocks
+                            else if (accumulated.endsWith('```')) {
+                                accumulated += '\n\n' + data.content;
+                            }
+                            // Add space if last char is alphanumeric and first char is alphanumeric
+                            else if (/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9]/.test(firstChar)) {
                                 accumulated += ' ' + data.content;
-                            } else {
+                            }
+                            // Don't add space if already ends with whitespace or punctuation
+                            else {
                                 accumulated += data.content;
                             }
-                            this.updateStreamingMessage(aiMessage, accumulated);
-                            console.log('📝 Content received:', data.content);
+                        } else {
+                            accumulated += data.content;
                         }
                         
-                        if (data.type === 'complete' || data.done === true) {
-                            console.log('✅ Stream completed with complete flag');
-                            this.finishStreaming(aiMessage, accumulated);
-                            return accumulated;
-                        }
-                        
-                        if (data.type === 'error') {
-                            console.error('❌ Stream error:', data.error);
-                            const errorMsg = '*Error: ' + data.error + '*';
-                            this.updateStreamingMessage(aiMessage, errorMsg);
-                            this.finishStreaming(aiMessage, errorMsg);
-                            return errorMsg;
-                        }
-                        
-                    } catch (parseError) {
-                        console.warn('⚠️ JSON parse error:', parseError, 'for:', jsonStr);
+                        this.updateStreamingMessage(aiMessage, accumulated);
+                        console.log('📝 Content received:', data.content);
+                    }
+                    
+                    if (data.type === 'complete' || data.done === true) {
+                        console.log('✅ Stream completed with complete flag');
+                        this.finishStreaming(aiMessage, accumulated);
+                        return;
+                    }
+                    
+                    if (data.type === 'error') {
+                        console.error('❌ Stream error:', data.error);
+                        const errorMsg = '*Error: ' + data.error + '*';
+                        this.updateStreamingMessage(aiMessage, errorMsg);
+                        this.finishStreaming(aiMessage, errorMsg);
+                        return;
+                    }
+                    
+                } catch (parseError) {
+                    console.warn('⚠️ JSON parse error:', parseError, 'for:', event.data);
+                }
+            }
+        });
+        
+        // Read the response stream and feed to parser
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    console.log('✅ Stream reader finished');
+                    break;
+                }
+                
+                const chunk = decoder.decode(value, { stream: true });
+                console.log('📦 Raw chunk received:', chunk);
+                
+                // Feed the chunk to the parser
+                parser.feed(chunk);
+            }
+        } catch (error) {
+            console.error('❌ Stream reading error:', error);
+            const errorMsg = '*Stream error: ' + error.message + '*';
+            this.updateStreamingMessage(aiMessage, errorMsg);
+            this.finishStreaming(aiMessage, errorMsg);
+        }
+        
+        console.log('🏁 Stream processing completed');
+        return accumulated;
+    }
+    
+    // Create parser function (will be replaced if eventsource-parser is available)
+    createEventSourceParser(onParse) {
+        // Use eventsource-parser if available
+        if (typeof createParser !== 'undefined') {
+            return createParser(onParse);
+        }
+        
+        // Simple fallback implementation
+        console.warn('⚠️ eventsource-parser not found, using fallback parser');
+        let buffer = '';
+        
+        return {
+            feed: (chunk) => {
+                buffer += chunk;
+                
+                let newlineIndex;
+                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                    const line = buffer.slice(0, newlineIndex).trim();
+                    buffer = buffer.slice(newlineIndex + 1);
+                    
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6).trim();
+                        onParse({
+                            type: 'event',
+                            data: data
+                        });
                     }
                 }
             }
-            
-            await new Promise(resolve => setTimeout(resolve, 1));
-        }
-
-        console.log('🏁 Stream ended without [DONE], finishing with accumulated content');
-        this.finishStreaming(aiMessage, accumulated);
-        return accumulated;
+        };
     }
 
     updateStreamingMessage(messageDiv, content) {
