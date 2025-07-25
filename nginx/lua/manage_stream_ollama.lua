@@ -328,15 +328,18 @@ function M.call_ollama_streaming(messages, options, callback)
         keep_alive = OLLAMA_KEEP_ALIVE,
         use_mmap = OLLAMA_USE_MMAP,
         options = {
+            -- Modelfile parameters (can be overridden at runtime)
             temperature = options.temperature or MODEL_TEMPERATURE,
-            num_predict = options.num_predict or options.max_tokens or MODEL_NUM_PREDICT,
-            num_ctx = options.num_ctx or MODEL_NUM_CTX,
             top_p = options.top_p or MODEL_TOP_P,
             top_k = options.top_k or MODEL_TOP_K,
             min_p = options.min_p or MODEL_MIN_P,
             repeat_penalty = options.repeat_penalty or MODEL_REPEAT_PENALTY,
             repeat_last_n = options.repeat_last_n or MODEL_REPEAT_LAST_N,
+            num_ctx = options.num_ctx or MODEL_NUM_CTX,
+            num_predict = options.num_predict or options.max_tokens or MODEL_NUM_PREDICT,
             seed = options.seed or MODEL_SEED,
+            
+            -- Runtime-only parameters (not in Modelfile)
             num_gpu = OLLAMA_GPU_LAYERS,
             num_thread = OLLAMA_NUM_THREAD
         }
