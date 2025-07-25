@@ -138,53 +138,26 @@ main() {
     log "Model: $MODEL_NAME"
     log "Modelfile: $MODELFILE_PATH"
     
-    # Check if GGUF file exists BEFORE starting server
-    log "Checking if GGUF file exists at: $MODEL_GGUF_PATH"
-    if [ ! -f "$MODEL_GGUF_PATH" ]; then
-        log "ERROR: GGUF file not found at $MODEL_GGUF_PATH"
-        log "Available files in /root/.ollama/models/:"
-        ls -la /root/.ollama/models/ || log "Directory does not exist"
-        log "CRITICAL: Cannot create model without GGUF file. Exiting..."
-        exit 1
-    else
-        log "✅ GGUF file found: $MODEL_GGUF_PATH"
-        log "File size: $(du -h "$MODEL_GGUF_PATH" | cut -f1)"
-    fi
-    
     log "Starting Ollama server..."
     
     # Start Ollama server in background
     ollama serve &
     OLLAMA_PID=$!
     
-    # Wait for server to be ready with retries
+    # Give the server a moment to start
     log "Waiting for Ollama server to start..."
-    for i in $(seq 1 30); do
-        if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
-            log "✅ Ollama server is ready after $i attempts"
-            break
-        fi
-        if [ $i -eq 30 ]; then
-            log "ERROR: Ollama server failed to start after 30 attempts"
-            kill $OLLAMA_PID 2>/dev/null || true
-            exit 1
-        fi
-        log "Attempt $i: Waiting for Ollama server..."
-        sleep 2
-    done
+    sleep 5
     
     # Generate the Modelfile with environment variables
     if ! generate_modelfile "$MODELFILE_PATH"; then
         log "ERROR: Failed to generate Modelfile"
-        kill $OLLAMA_PID 2>/dev/null || true
-        exit 1
     fi
     
     # Check if model already exists
     if check_model_exists "$MODEL_NAME"; then
         log "Model initialization complete - using existing model"
     else
-        # Create the model with better error handling
+        # Create the model - continue even if it fails
         log "Creating model '$MODEL_NAME'..."
         if create_model "$MODEL_NAME" "$MODELFILE_PATH"; then
             log "✅ Model '$MODEL_NAME' created successfully!"
@@ -197,8 +170,8 @@ main() {
                 log "WARNING: Model not found in ollama list after creation"
             fi
         else
-            log "ERROR: Model creation failed, but keeping server running"
-            log "This might be due to missing GGUF file or invalid parameters"
+            log "WARNING: Model creation failed, but keeping server running"
+            log "Server will continue to run for manual debugging"
         fi
     fi
     
