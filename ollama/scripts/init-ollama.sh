@@ -95,6 +95,8 @@ PARAMETER repeat_last_n ${repeat_last_n}
 PARAMETER num_ctx ${num_ctx}
 PARAMETER num_predict ${num_predict}
 PARAMETER seed ${seed}
+PARAMETER use_mmap false
+PARAMETER use_mlock true
 
 # System message
 SYSTEM """You are Devstral, a helpful AI assistant specialized in software development and coding tasks."""

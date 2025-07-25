@@ -2,6 +2,7 @@ services:
   ollama:
     build: ./ollama
     container_name: devstral-ollama
+    privileged: true
     environment:
       - OLLAMA_HOST=${OLLAMA_HOST}
       - OLLAMA_ORIGINS=${OLLAMA_ORIGINS}
@@ -10,6 +11,8 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
       - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION}
       - OLLAMA_MMAP=${OLLAMA_MMAP}
+      - OLLAMA_USE_MMAP=${OLLAMA_USE_MMAP}
+      - OLLAMA_NOPRUNE=${OLLAMA_NOPRUNE}
       - OLLAMA_NUM_GPU=${OLLAMA_GPU_LAYERS}
       - OLLAMA_NUM_THREAD=${OLLAMA_NUM_THREAD}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
