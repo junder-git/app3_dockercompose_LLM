@@ -138,9 +138,29 @@ main() {
     log "Model: $MODEL_NAME"
     log "Modelfile: $MODELFILE_PATH"
     
+    # Export Ollama environment variables before starting server
+    log "Setting Ollama environment variables..."
+    export OLLAMA_HOST="${OLLAMA_HOST}"
+    export OLLAMA_ORIGINS="${OLLAMA_ORIGINS}"
+    export OLLAMA_MODELS="${OLLAMA_MODELS}"
+    export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL}"
+    export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS}"
+    export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION}"
+    export OLLAMA_MMAP="${OLLAMA_MMAP}"
+    export OLLAMA_NUM_GPU="${OLLAMA_GPU_LAYERS}"
+    export OLLAMA_NUM_THREAD="${OLLAMA_NUM_THREAD}"
+    export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE}"
+    
+    log "Ollama environment variables set:"
+    log "  OLLAMA_HOST: ${OLLAMA_HOST}"
+    log "  OLLAMA_MMAP: ${OLLAMA_MMAP}"
+    log "  OLLAMA_NUM_GPU: ${OLLAMA_GPU_LAYERS}"
+    log "  OLLAMA_NUM_THREAD: ${OLLAMA_NUM_THREAD}"
+    log "  OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE}"
+    
     log "Starting Ollama server..."
     
-    # Start Ollama server in background
+    # Start Ollama server in background with exported environment
     ollama serve &
     OLLAMA_PID=$!
     
