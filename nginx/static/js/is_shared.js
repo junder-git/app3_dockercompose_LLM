@@ -206,30 +206,8 @@ class SharedChatBase {
                     console.log('📊 Parsed SSE data:', data);
                     
                     if (data.type === 'content' && data.content) {
-                        // Smart spacing logic
-                        if (accumulated && data.content) {
-                            const lastChar = accumulated.slice(-1);
-                            const firstChar = data.content.charAt(0);
-                            
-                            // Add newline before code blocks
-                            if (data.content.startsWith('```')) {
-                                accumulated += '\n\n' + data.content;
-                            }
-                            // Add newline after code blocks
-                            else if (accumulated.endsWith('```')) {
-                                accumulated += '\n\n' + data.content;
-                            }
-                            // Add space if last char is alphanumeric and first char is alphanumeric
-                            else if (/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9]/.test(firstChar)) {
-                                accumulated += ' ' + data.content;
-                            }
-                            // Don't add space if already ends with whitespace or punctuation
-                            else {
-                                accumulated += data.content;
-                            }
-                        } else {
-                            accumulated += data.content;
-                        }
+                        // Simple concatenation - let the model handle spacing
+                        accumulated += data.content;
                         
                         this.updateStreamingMessage(aiMessage, accumulated);
                         console.log('📝 Content received:', data.content);
