@@ -1,68 +1,6 @@
 // =============================================================================
 // nginx/static/js/is_guest.js - COMPLETE GUEST CHAT WITH CHALLENGES AND LOCALSTORAGE
 // =============================================================================
-
-// Guest Chat Storage - localStorage only
-const GuestChatStorage = {
-    STORAGE_KEY: 'guest_chat_history',
-    MAX_MESSAGES: 50,
-
-    saveMessage(role, content) {
-        try {
-            const messages = this.getMessages();
-            const message = {
-                role: role,
-                content: content,
-                timestamp: new Date().toISOString(),
-                id: Date.now() + '_' + Math.random().toString(36).substr(2, 9)
-            };
-
-            messages.push(message);
-            if (messages.length > this.MAX_MESSAGES) {
-                messages.splice(0, messages.length - this.MAX_MESSAGES);
-            }
-
-            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(messages));
-            return true;
-        } catch (error) {
-            console.warn('Failed to save guest message:', error);
-            return false;
-        }
-    },
-
-    getMessages() {
-        try {
-            const stored = localStorage.getItem(this.STORAGE_KEY);
-            return stored ? JSON.parse(stored) : [];
-        } catch (error) {
-            console.warn('Failed to load guest messages:', error);
-            return [];
-        }
-    },
-
-    clearMessages() {
-        try {
-            localStorage.removeItem(this.STORAGE_KEY);
-            return true;
-        } catch (error) {
-            console.warn('Failed to clear guest messages:', error);
-            return false;
-        }
-    },
-
-    exportMessages() {
-        const messages = this.getMessages();
-        const exportData = {
-            exportType: 'guest_chat_history',
-            exportedAt: new Date().toISOString(),
-            messageCount: messages.length,
-            messages: messages,
-            note: 'Guest session - stored in browser localStorage only'
-        };
-        return JSON.stringify(exportData, null, 2);
-    }
-};
-
 // =============================================================================
 // GUEST CHAT CLASS - EXTENDS SharedChatBase
 // =============================================================================
@@ -105,27 +43,6 @@ class GuestChat extends SharedChatBase {
         
         this.messageCount = 0;
         console.log('🗑️ Guest chat history cleared from localStorage');
-    }
-
-    loadGuestHistory() {
-        const messages = GuestChatStorage.getMessages();
-        if (messages.length > 0) {
-            const welcomePrompt = document.getElementById('welcome-prompt');
-            if (welcomePrompt) welcomePrompt.style.display = 'none';
-            
-            // Clear any existing messages first
-            const messagesContainer = this.getMessagesContainer();
-            if (messagesContainer) {
-                const existingMessages = messagesContainer.querySelectorAll('.message');
-                existingMessages.forEach(msg => msg.remove());
-            }
-            
-            // Add all stored messages
-            messages.forEach(msg => {
-                this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true);
-            });
-            console.log('📱 Loaded', messages.length, 'messages from localStorage');
-        }
     }
 }
 

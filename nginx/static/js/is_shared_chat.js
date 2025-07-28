@@ -276,24 +276,33 @@ class SharedChatBase {
             return null;
         }
 
-        // Hide welcome prompt
+        // Hide welcome prompt for user messages
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt && sender === 'user') {
             welcomePrompt.style.display = 'none';
         }
 
+        // Prevent duplicate empty AI messages
+        if (
+            sender === 'ai' &&
+            !isStreaming &&
+            (!content || content.trim() === '')
+        ) {
+            console.warn('🛑 Skipping blank AI message');
+            return null;
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = `message message-${sender}`;
-        
-        // Create header
+
+        // Header section
         const headerDiv = document.createElement('div');
         headerDiv.className = 'message-header';
-        
+
         const avatarDiv = document.createElement('div');
         avatarDiv.className = `message-avatar avatar-${sender}`;
-        
+
         const labelSpan = document.createElement('span');
-        
         if (sender === 'user') {
             avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
             labelSpan.textContent = 'You';
@@ -301,35 +310,42 @@ class SharedChatBase {
             avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
             labelSpan.textContent = 'AI Assistant';
         }
-        
+
         headerDiv.appendChild(avatarDiv);
         headerDiv.appendChild(labelSpan);
-        
-        // Create content
+
+        // Content section
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        
+
         if (sender === 'user') {
             contentDiv.innerHTML = window.marked ? marked.parse(content) : content;
+
             if (!skipStorage && this.saveMessage) {
                 this.saveMessage('user', content);
             }
-        } else {                
-            if (!isStreaming && content.trim() && !skipStorage && this.saveMessage) {
+        } else if (isStreaming) {
+            const streamDiv = document.createElement('div');
+            streamDiv.className = 'streaming-content';
+            contentDiv.appendChild(streamDiv);
+        } else {
+            contentDiv.innerHTML = window.marked ? marked.parse(content) : content;
+
+            if (content.trim() && !skipStorage && this.saveMessage) {
                 this.saveMessage('assistant', content);
             }
         }
-        
+
         messageDiv.appendChild(headerDiv);
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
-        
-        
+
         this.scrollToBottom();
+
         console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
-        
         return messageDiv;
     }
+
 
     // =============================================================================
     // SEND MESSAGE - DELEGATES TO SSE MANAGER
