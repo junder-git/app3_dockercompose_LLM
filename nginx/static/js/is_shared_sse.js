@@ -122,20 +122,15 @@ class SSEStreamProcessor {
     }
     
     updateStreamingMessage(messageDiv, content) {
-        // Use code-aware streaming if available
-        if (this.chatInstance && this.chatInstance.codeProcessor) {
-            this.chatInstance.codeProcessor.updateStreamingMessageWithArtifacts(messageDiv, content);
-        } else {
-            // Fallback to basic streaming
-            const streamingEl = messageDiv.querySelector('.streaming-content');
-            if (streamingEl) {
-                const processedContent = window.processMarkdownSafely ? 
-                    window.processMarkdownSafely(content) : content;
-                streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
-                
-                if (this.chatInstance && this.chatInstance.smartScroll) {
-                    this.chatInstance.smartScroll();
-                }
+        // Fallback to basic streaming
+        const streamingEl = messageDiv.querySelector('.streaming-content');
+        if (streamingEl) {
+            const processedContent = window.processMarkdownSafely ? 
+                window.processMarkdownSafely(content) : content;
+            streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
+            
+            if (this.chatInstance && this.chatInstance.smartScroll) {
+                this.chatInstance.smartScroll();
             }
         }
     }
@@ -144,51 +139,23 @@ class SSEStreamProcessor {
         console.log('🏁 Finishing stream with content length:', finalContent.length);
         
         const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            // Finish any streaming code artifacts
-            if (this.chatInstance && this.chatInstance.codeArtifacts && this.chatInstance.codeArtifacts.isStreaming()) {
-                const streamingArtifactId = this.chatInstance.codeArtifacts.getCurrentStreamingArtifact();
-                
-                // Extract final code content
-                const codeBlockMatch = finalContent.match(/```(\w+)?\n([\s\S]*?)```/g);
-                if (codeBlockMatch) {
-                    const lastCodeBlock = codeBlockMatch[codeBlockMatch.length - 1];
-                    const codeMatch = lastCodeBlock.match(/```(\w+)?\n([\s\S]*?)```/);
-                    if (codeMatch) {
-                        const codeContent = codeMatch[2];
-                        this.chatInstance.codeArtifacts.updateArtifact(streamingArtifactId, codeContent, true);
-                    }
-                }
-                
-                this.chatInstance.codeArtifacts.finishStreaming(streamingArtifactId);
-            }
-            
+        if (streamingEl) {          
             // Process final content
             let parsedContent;
-            if (this.chatInstance && this.chatInstance.codeProcessor) {
-                parsedContent = this.chatInstance.codeProcessor.processMarkdownWithArtifacts(finalContent);
-                // Setup handlers for artifact buttons
-                this.chatInstance.codeProcessor.setupCodeArtifactHandlers(messageDiv);
-            } else {
-                parsedContent = window.processMarkdownSafely ? 
-                    window.processMarkdownSafely(finalContent) : finalContent;
-            }
-            
+            parsedContent = window.processMarkdownSafely ? 
+                window.processMarkdownSafely(finalContent) : finalContent;
             streamingEl.innerHTML = parsedContent;
-            
             // Save message if chat instance supports it
             if (this.chatInstance && this.chatInstance.saveMessage && finalContent.trim()) {
                 this.chatInstance.saveMessage('assistant', finalContent);
             }
         }
-        
         // Update chat state
         if (this.chatInstance) {
             this.chatInstance.isTyping = false;
             if (this.chatInstance.updateButtons) {
                 this.chatInstance.updateButtons(false);
             }
-            
             // Scroll to latest message
             setTimeout(() => {
                 if (this.chatInstance.scrollToLatestMessage) {

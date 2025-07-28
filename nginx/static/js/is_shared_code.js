@@ -189,52 +189,7 @@ class CodePanelManager {
 // MARKDOWN PROCESSING WITH CODE ARTIFACT HANDLING
 // =============================================================================
 
-class CodeMarkdownProcessor {
-    constructor(artifactManager) {
-        this.artifactManager = artifactManager;
-    }
-    
-    processMarkdownWithArtifacts(content) {
-        if (!window.marked || !content) return content;
-        
-        try {
-            // Process markdown but intercept code blocks
-            let processed = content;
-            
-            // Pattern to match code blocks: ```language\ncode\n```
-            const codeBlockPattern = /```(\w+)?\n([\s\S]*?)```/g;
-            let match;
-            let offset = 0;
-            
-            // Reset regex index to avoid issues with global regex
-            codeBlockPattern.lastIndex = 0;
-            
-            while ((match = codeBlockPattern.exec(content)) !== null) {
-                const fullMatch = match[0];
-                const language = match[1] || '';
-                const codeContent = match[2];
-                const lineCount = codeContent.split('\n').length;
-                console.log(`🔍 Processing code block: ${lineCount} lines, language: ${language || 'none'}`);
-                // Small code block - create custom inline display with copy button
-                const inlineCodeBlock = this.createInlineCodeBlock(codeContent, language, lineCount);
-                const startIndex = match.index + offset;
-                const endIndex = startIndex + fullMatch.length;
-                
-                processed = processed.substring(0, startIndex) + 
-                            inlineCodeBlock + 
-                            processed.substring(endIndex);
-                
-                offset += inlineCodeBlock.length - fullMatch.length;
-                console.log(`📄 Created inline code block (${lineCount} lines)`);
-            }
-            
-            return marked.parse(processed);
-        } catch (error) {
-            console.warn('⚠️ Markdown processing error:', error);
-            return content;
-        }
-    }
-    
+class CodeMarkdownProcessor {   
     createInlineCodeBlock(codeContent, language = '', lineCount = 0) {
         // Generate unique ID for this code block
         const blockId = `inline-code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -303,46 +258,6 @@ class CodeMarkdownProcessor {
         return div.innerHTML;
     }
     
-    createCodeButtonPlaceholder(artifactId, language = '', isStreaming = false) {
-        const artifact = this.artifactManager.getArtifact(artifactId);
-        const displayName = language ? `${language} code` : 'Code';
-        const lines = artifact ? artifact.content.split('\n').length : 0;
-        const streamingIndicator = isStreaming ? ' (streaming...)' : '';
-        
-        return `<div class="code-artifact-button" data-artifact-id="${artifactId}" data-language="${language}">
-            <div class="code-artifact-info">
-                <i class="bi bi-file-earmark-code"></i>
-                <span class="code-artifact-name">${artifactId}${streamingIndicator}</span>
-                <span class="code-artifact-meta">${displayName} • ${lines} lines</span>
-            </div>
-            <div class="code-artifact-action">
-                <i class="bi bi-eye"></i> View
-            </div>
-        </div>`;
-    }
-    
-    setupCodeArtifactHandlers(messageDiv) {
-        const artifactButtons = messageDiv.querySelectorAll('.code-artifact-button');
-        artifactButtons.forEach(button => {
-            const artifactId = button.dataset.artifactId;
-            const language = button.dataset.language;
-            
-            // Remove any existing listeners to prevent duplicates
-            button.replaceWith(button.cloneNode(true));
-            const newButton = messageDiv.querySelector(`[data-artifact-id="${artifactId}"]`);
-            
-            if (newButton) {
-                newButton.addEventListener('click', () => {
-                    console.log(`🖱️ Code artifact button clicked: ${artifactId}`);
-                    this.artifactManager.displayArtifact(artifactId);
-                });
-            }
-        });
-        
-        // Apply syntax highlighting to any new inline code blocks
-        this.applySyntaxHighlighting(messageDiv);
-    }
-    
     applySyntaxHighlighting(container = document) {
         // Apply Prism.js syntax highlighting to code blocks
         if (window.Prism) {
@@ -359,79 +274,6 @@ class CodeMarkdownProcessor {
             });
         } else {
             console.warn('⚠️ Prism.js not available for syntax highlighting');
-        }
-    }
-    
-    updateStreamingMessageWithArtifacts(messageDiv, content) {
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            // Check if we're inside a code block that's being streamed
-            const openCodeBlock = content.lastIndexOf('```');
-            const closeCodeBlock = content.indexOf('```', openCodeBlock + 3);
-            
-            // We're streaming inside a code block if there's an unmatched opening ```
-            if (openCodeBlock !== -1 && closeCodeBlock === -1) {
-                const beforeCode = content.substring(0, openCodeBlock);
-                const afterTripleBacktick = content.substring(openCodeBlock + 3);
-                const newlineIndex = afterTripleBacktick.indexOf('\n');
-                
-                if (newlineIndex !== -1) {
-                    const language = afterTripleBacktick.substring(0, newlineIndex).trim();
-                    const codeContent = afterTripleBacktick.substring(newlineIndex + 1);
-                    
-                    // Only create/update pending block once per code block
-                    if (!this.artifactManager.pendingCodeBlock || 
-                        this.artifactManager.pendingCodeBlock.language !== language) {
-                        this.artifactManager.createPendingCodeBlock(language);
-                        // Immediately show pending content in code panel
-                        this.artifactManager.displayArtifact('pending');
-                        console.log(`📋 Started streaming to pending code block (${language})`);
-                    }
-                    
-                    // Update pending content and code panel
-                    this.artifactManager.updatePendingCodeBlock(codeContent);
-                    
-                    // Check line count for artifact creation threshold
-                    const lineCount = codeContent.split('\n').length;
-                    
-                    // Process the content before the code block + show placeholder based on size
-                    const processedBeforeCode = this.processMarkdownWithArtifacts(beforeCode);
-                    let streamingPlaceholder;
-                    // Small code block - show inline with streaming indicator and syntax highlighting
-                    const prismLanguage = this.normalizePrismLanguage(language);
-                    streamingPlaceholder = `<div class="code-streaming-inline">
-                        <div class="inline-code-header">
-                            <span class="inline-code-info">
-                                <i class="bi bi-file-earmark-code"></i>
-                                ${language || 'Code'} • ${lineCount} lines • Streaming...
-                            </span>
-                            <span class="streaming-indicator-text">
-                                <i class="bi bi-arrow-right"></i> Also in code panel
-                            </span>
-                        </div>
-                        <div class="inline-code-content">
-                            <pre><code class="language-${prismLanguage} prism-highlighted">${this.escapeHtml(codeContent)}</code></pre>
-                        </div>
-                    </div>`;                    
-                    streamingEl.innerHTML = processedBeforeCode + streamingPlaceholder + '<span class="cursor blink">▋</span>';
-                } else {
-                    // Still determining language, just show regular markdown
-                    const processedContent = this.processMarkdownWithArtifacts(content);
-                    streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
-                }
-            } else {
-                // Regular markdown content (no active code block)
-                const processedContent = this.processMarkdownWithArtifacts(content);
-                streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
-            }
-            
-            // Setup handlers for any new artifact buttons
-            this.setupCodeArtifactHandlers(messageDiv);
-            
-            // Smart scroll if available
-            if (window.sharedChatInstance && window.sharedChatInstance.smartScroll) {
-                window.sharedChatInstance.smartScroll();
-            }
         }
     }
 }

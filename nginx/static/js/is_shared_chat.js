@@ -13,7 +13,7 @@ function setupMarkedWithFormatting() {
     }
     
     marked.setOptions({
-        breaks: true,
+        breaks: false,
         gfm: true,
         headerIds: false,
         mangle: false,
@@ -400,7 +400,6 @@ class SharedChatBase {
         }
         
         // Clear code artifacts and hide panel
-        this.codePanel.hideCode();
         
         this.messageCount = 0;
         
