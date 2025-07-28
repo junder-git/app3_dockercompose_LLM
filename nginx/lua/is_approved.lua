@@ -245,45 +245,15 @@ function M.handle_ollama_chat_stream()
 end
 
 -- =============================================
--- APPROVED USER CHAT API HANDLER
--- =============================================
-
-function M.handle_chat_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/chat/history" and method == "GET" then
-        handle_chat_history()
-    elseif uri == "/api/chat/clear" and method == "POST" then
-        handle_clear_chat()
-    elseif uri == "/api/chat/export" and method == "GET" then
-        handle_export_chat()
-    elseif uri == "/api/chat/search" and method == "GET" then
-        handle_search_chat()
-    elseif uri == "/api/chat/stats" and method == "GET" then
-        handle_chat_stats()
-    elseif uri == "/api/chat/stream" and method == "POST" then
-        return handle_ollama_chat_stream()
-    else
-        -- Delegate to shared chat API handler
-        local stream_ollama = require "manage_stream_ollama"
-        return stream_ollama.handle_chat_api("is_approved")
-    end
-end
-
--- =============================================
--- ROUTE HANDLER (FOR NON-VIEW ROUTES)
+-- ROUTE HANDLER (FOR NON-CHAT ROUTES)
 -- =============================================
 
 function M.handle_route(route_type)
-    -- This function handles non-view routes for approved users
+    -- This function handles non-chat routes for approved users
     -- Views are handled by manage_views.lua
-    if route_type == "chat_api" then
-        return M.handle_chat_api()
-    else
-        ngx.status = 404
-        return ngx.say("Approved user route not found: " .. tostring(route_type))
-    end
+    -- Chat API routing is now handled by aaa_is_who.lua
+    ngx.status = 404
+    return ngx.say("Approved user route not found: " .. tostring(route_type))
 end
 
 return M

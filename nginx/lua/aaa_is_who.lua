@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - UPDATED WITH ENHANCED CHAT API ROUTING
+-- nginx/lua/aaa_is_who.lua - CENTRALIZED CHAT API ROUTING
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -189,7 +189,7 @@ function M.handle_50x()
 end
 
 -- =====================================================================
--- ENHANCED OLLAMA API HANDLERS WITH FULL CHAT API ROUTING
+-- CENTRALIZED CHAT API ROUTING - ALL ENDPOINTS HANDLED HERE
 -- =====================================================================
 
 function M.handle_ollama_chat_api()
@@ -210,33 +210,133 @@ function M.handle_ollama_chat_api()
     
     ngx.log(ngx.INFO, "🔄 Chat API request: " .. method .. " " .. uri .. " (user: " .. user_type .. ")")
     
-    -- Route to appropriate user-specific chat handler
-    if user_type == "is_admin" then
-        local is_admin = require "is_admin"
-        return is_admin.handle_chat_api()
-    elseif user_type == "is_approved" then
-        local is_approved = require "is_approved"
-        return is_approved.handle_chat_api()
-    elseif user_type == "is_guest" then
-        local is_guest = require "is_guest"
-        return is_guest.handle_chat_api()
-    elseif user_type == "is_pending" then
-        -- Pending users shouldn't have chat access
-        ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Access denied",
-            message = "Account pending approval - no chat access"
-        }))
-        return ngx.exit(403)
+    -- CENTRALIZED ROUTING: Handle all chat endpoints here
+    if uri == "/api/chat/history" and method == "GET" then
+        -- Chat history - admin and approved only
+        if user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_chat_history()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_chat_history()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat history not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
+    elseif uri == "/api/chat/clear" and method == "POST" then
+        -- Clear chat - admin and approved only
+        if user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_clear_chat()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_clear_chat()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat clear not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
+    elseif uri == "/api/chat/export" and method == "GET" then
+        -- Export chat - admin and approved only
+        if user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_export_chat()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_export_chat()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat export not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
+    elseif uri == "/api/chat/search" and method == "GET" then
+        -- Search chat - admin and approved only
+        if user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_search_chat()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_search_chat()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat search not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
+    elseif uri == "/api/chat/stats" and method == "GET" then
+        -- Chat stats - approved users only (admin can use admin API for stats)
+        if user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_chat_stats()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat stats not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
+    elseif uri == "/api/chat/stream" and method == "POST" then
+        -- Chat streaming - admin, approved, and guest
+        if user_type == "is_admin" then
+            local is_admin = require "is_admin"
+            return is_admin.handle_ollama_chat_stream()
+        elseif user_type == "is_approved" then
+            local is_approved = require "is_approved"
+            return is_approved.handle_ollama_chat_stream()
+        elseif user_type == "is_guest" then
+            local is_guest = require "is_guest"
+            return is_guest.handle_ollama_chat_stream()
+        else
+            ngx.status = 403
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                error = "Access denied",
+                message = "Chat streaming not available for " .. user_type
+            }))
+            return ngx.exit(403)
+        end
+        
     else
-        ngx.status = 403
+        -- Unknown chat endpoint
+        ngx.status = 404
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
-            error = "Access denied",
-            message = "Invalid user type: " .. tostring(user_type)
+            error = "Chat API endpoint not found",
+            requested = method .. " " .. uri,
+            user_type = user_type,
+            available_endpoints = {
+                "GET /api/chat/history - Chat history (admin/approved)",
+                "POST /api/chat/clear - Clear chat (admin/approved)",
+                "GET /api/chat/export - Export chat (admin/approved)",
+                "GET /api/chat/search - Search chat (admin/approved)",
+                "GET /api/chat/stats - Chat stats (approved)",
+                "POST /api/chat/stream - Chat streaming (admin/approved/guest)"
+            }
         }))
-        return ngx.exit(403)
+        return ngx.exit(404)
     end
 end
 

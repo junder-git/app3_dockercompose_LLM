@@ -168,6 +168,48 @@ function M.handle_search_chat()
 end
 
 -- =============================================
+-- ADMIN CHAT STREAMING WITH HISTORY SAVING
+-- =============================================
+
+function M.handle_ollama_chat_stream()
+    local user_type, username, user_data = auth.check()
+    
+    if user_type ~= "is_admin" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Access denied",
+            message = "Admin access required"
+        }))
+        return ngx.exit(403)
+    end
+    
+    -- Use shared Ollama streaming from manage_stream_ollama
+    local stream_ollama = require "manage_stream_ollama"
+    local stream_context = {
+        user_type = "is_admin",
+        username = username,
+        user_data = user_data,
+        include_history = true,
+        history_limit = 100,
+        default_options = {
+            model = os.getenv("MODEL_NAME") or "devstral",
+            temperature = tonumber(os.getenv("MODEL_TEMPERATURE")) or 0.7,
+            max_tokens = tonumber(os.getenv("MODEL_NUM_PREDICT")) or 4096  -- Highest limit for admins
+        },
+        -- Custom message handler to save to Redis
+        on_user_message = function(message)
+            chat_history.save_message(username, "user", message)
+        end,
+        on_assistant_message = function(message)
+            chat_history.save_message(username, "assistant", message)
+        end
+    }
+    
+    return stream_ollama.handle_chat_stream_common(stream_context)
+end
+
+-- =============================================
 -- ADMIN API HANDLERS (EXISTING)
 -- =============================================
 
@@ -524,48 +566,6 @@ function M.handle_clear_guest_sessions()
 end
 
 -- =============================================
--- ADMIN CHAT STREAMING WITH HISTORY SAVING
--- =============================================
-
-function M.handle_ollama_chat_stream()
-    local user_type, username, user_data = auth.check()
-    
-    if user_type ~= "is_admin" then
-        ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Access denied",
-            message = "Admin access required"
-        }))
-        return ngx.exit(403)
-    end
-    
-    -- Use shared Ollama streaming from manage_stream_ollama
-    local stream_ollama = require "manage_stream_ollama"
-    local stream_context = {
-        user_type = "is_admin",
-        username = username,
-        user_data = user_data,
-        include_history = true,
-        history_limit = 100,
-        default_options = {
-            model = os.getenv("MODEL_NAME") or "devstral",
-            temperature = tonumber(os.getenv("MODEL_TEMPERATURE")) or 0.7,
-            max_tokens = tonumber(os.getenv("MODEL_NUM_PREDICT")) or 4096  -- Highest limit for admins
-        },
-        -- Custom message handler to save to Redis
-        on_user_message = function(message)
-            chat_history.save_message(username, "user", message)
-        end,
-        on_assistant_message = function(message)
-            chat_history.save_message(username, "assistant", message)
-        end
-    }
-    
-    return stream_ollama.handle_chat_stream_common(stream_context)
-end
-
--- =============================================
 -- MAIN ADMIN API HANDLER
 -- =============================================
 
@@ -586,17 +586,17 @@ function M.handle_admin_api()
     local method = ngx.var.request_method
     
     if uri == "/api/admin/stats" and method == "GET" then
-        handle_admin_stats()
+        M.handle_admin_stats()
     elseif uri == "/api/admin/users/pending" and method == "GET" then
-        handle_pending_users()
+        M.handle_pending_users()
     elseif uri == "/api/admin/users" and method == "GET" then
-        handle_all_users()
+        M.handle_all_users()
     elseif uri == "/api/admin/users/approve" and method == "POST" then
-        handle_approve_user()
+        M.handle_approve_user()
     elseif uri == "/api/admin/users/reject" and method == "POST" then
-        handle_reject_user()
+        M.handle_reject_user()
     elseif uri == "/api/admin/clear-guest-sessions" and method == "POST" then
-        handle_clear_guest_sessions()
+        M.handle_clear_guest_sessions()
     else
         ngx.status = 404
         ngx.header.content_type = 'application/json'
@@ -616,41 +616,15 @@ function M.handle_admin_api()
 end
 
 -- =============================================
--- ADMIN CHAT API HANDLER
--- =============================================
-
-function M.handle_chat_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/chat/history" and method == "GET" then
-        handle_chat_history()
-    elseif uri == "/api/chat/clear" and method == "POST" then
-        handle_clear_chat()
-    elseif uri == "/api/chat/export" and method == "GET" then
-        handle_export_chat()
-    elseif uri == "/api/chat/search" and method == "GET" then
-        handle_search_chat()
-    elseif uri == "/api/chat/stream" and method == "POST" then
-        return handle_ollama_chat_stream()
-    else
-        -- Delegate to shared chat API handler
-        local stream_ollama = require "manage_stream_ollama"
-        return stream_ollama.handle_chat_api("is_admin")
-    end
-end
-
--- =============================================
--- ROUTE HANDLER (FOR NON-VIEW ROUTES)
+-- ROUTE HANDLER (FOR NON-CHAT ROUTES)
 -- =============================================
 
 function M.handle_route(route_type)
-    -- This function handles non-view routes for admin users
+    -- This function handles non-chat routes for admin users
     -- Views are handled by manage_views.lua
+    -- Chat API routing is now handled by aaa_is_who.lua
     if route_type == "admin_api" then
         return M.handle_admin_api()
-    elseif route_type == "chat_api" then
-        return M.handle_chat_api()
     else
         ngx.status = 404
         return ngx.say("Admin route not found: " .. tostring(route_type))
