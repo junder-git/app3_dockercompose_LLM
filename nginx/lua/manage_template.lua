@@ -353,14 +353,7 @@ end
 
 -- Enhanced render function that includes CSS versioning
 local function render_with_versioned_assets(template_path, user_type, page_type, context)
-    -- Add CSS version to context
-    if DEVELOPMENT_MODE then
-        -- In development, use timestamp for cache busting
-        context.css_version = os.time()
-    else
-        -- In production, use fixed version (change when you update CSS)
-        context.css_version = CSS_VERSION
-    end
+    context.css_version = os.time()
     
     -- Auto-inject appropriate JS assets (existing logic)
     context.js_files = get_js_files_for_context(user_type, page_type)
