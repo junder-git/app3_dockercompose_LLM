@@ -1,381 +1,9 @@
 // =============================================================================
-// nginx/static/js/is_shared.js - SHARED FUNCTIONALITY ACROSS ALL USER TYPES
+// nginx/static/js/is_shared.js - SHARED NON-CHAT FUNCTIONALITY ACROSS ALL USER TYPES
 // =============================================================================
 
 // =============================================================================
-// MARKDOWN SETUP - SIMPLE CONFIGURATION
-// =============================================================================
-
-// Enhanced marked.js setup
-function setupMarkedWithFormatting() {
-    if (!window.marked) return;
-    
-    // Configure marked with better options
-    marked.setOptions({
-        breaks: true,           // Convert \n to <br>
-        gfm: true,             // GitHub Flavored Markdown
-        headerIds: false,      // Don't add IDs to headers
-        mangle: false,         // Don't mangle text
-        sanitize: false,       // Don't sanitize HTML
-        smartLists: true,      // Better list formatting
-        smartypants: false,    // Don't convert quotes/dashes
-        xhtml: false           // Don't close tags
-    });
-}
-
-// =============================================================================
-// SHARED CHAT FUNCTIONALITY - SSE HANDLING, UI HELPERS, ETC.
-// =============================================================================
-
-// Shared Chat Base Class - Contains common functionality for all chat systems
-class SharedChatBase {
-    constructor() {
-        this.isTyping = false;
-        this.abortController = null;
-        this.messageCount = 0;
-    }
-
-    // =============================================================================
-    // SHARED EVENT LISTENERS SETUP
-    // =============================================================================
-    setupEventListeners() {
-        // Prevent form submission from refreshing page
-        const chatForm = document.getElementById('chat-form');
-        if (chatForm) {
-            chatForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.sendMessage();
-                return false;
-            });
-        }
-
-        const stopButton = document.getElementById('stop-button');
-        if (stopButton) {
-            stopButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.stopGeneration();
-            });
-        }
-
-        const clearButton = document.getElementById('clear-chat');
-        if (clearButton) {
-            clearButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.clearChat();
-            });
-        }
-        
-        // Proper Enter key handling for textarea
-        const textarea = document.getElementById('chat-input');
-        if (textarea) {
-            // Handle input changes for character count and auto-resize
-            textarea.addEventListener('input', (e) => {
-                this.updateCharCount();
-                this.autoResizeTextarea();
-            });
-            
-            // Enter key handling
-            textarea.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Shift+Enter: Allow new line
-                        return;
-                    } else {
-                        // Enter only: Send message
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        if (textarea.value.trim()) {
-                            this.sendMessage();
-                        }
-                        return false;
-                    }
-                }
-            });
-
-            // Auto-resize on load
-            this.autoResizeTextarea();
-        }
-
-        // Send button click handler
-        const sendButton = document.getElementById('send-button');
-        if (sendButton) {
-            sendButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const textarea = document.getElementById('chat-input');
-                if (textarea && textarea.value.trim()) {
-                    this.sendMessage();
-                }
-                return false;
-            });
-        }
-    }
-
-    setupSuggestionChips() {
-        document.querySelectorAll('.suggestion-chip').forEach(chip => {
-            chip.addEventListener('click', (e) => {
-                e.preventDefault();
-                const input = document.getElementById('chat-input');
-                if (input) {
-                    input.value = chip.dataset.prompt;
-                    input.focus();
-                    this.updateCharCount();
-                    this.autoResizeTextarea();
-                }
-            });
-        });
-    }
-
-    // =============================================================================
-    // SHARED UI HELPERS
-    // =============================================================================
-    updateCharCount() {
-        const textarea = document.getElementById('chat-input');
-        const countEl = document.getElementById('char-count');
-        
-        if (textarea && countEl) {
-            const count = textarea.value.length;
-            countEl.textContent = count;
-        }
-    }
-
-    autoResizeTextarea() {
-        const textarea = document.getElementById('chat-input');
-        if (textarea) {
-            textarea.style.height = 'auto';
-            
-            const maxHeight = 120; // 120px max height
-            const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-            textarea.style.height = newHeight + 'px';
-            
-            textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-        }
-    }
-
-    updateButtons(isTyping) {
-        const sendButton = document.getElementById('send-button');
-        const stopButton = document.getElementById('stop-button');
-        const chatInput = document.getElementById('chat-input');
-
-        if (sendButton) {
-            sendButton.style.display = isTyping ? 'none' : 'inline-flex';
-            sendButton.disabled = isTyping;
-        }
-        if (stopButton) {
-            stopButton.style.display = isTyping ? 'inline-flex' : 'none';
-            stopButton.disabled = !isTyping;
-        }
-        if (chatInput) {
-            chatInput.disabled = isTyping;
-        }
-    }
-
-    stopGeneration() {
-        console.log('⏹️ Stopping generation');
-        if (this.abortController) {
-            this.abortController.abort();
-        }
-        this.isTyping = false;
-        this.updateButtons(false);
-    }
-
-    // =============================================================================
-    // SHARED SSE STREAM PROCESSING - USING EVENTSOURCE-PARSER
-    // =============================================================================
-    async processSSEStream(response, aiMessage) {
-        console.log('📺 Starting SSE stream processing with eventsource-parser');
-        
-        let accumulated = '';
-        
-        // Create the parser
-        const parser = this.createEventSourceParser((event) => {
-            if (event.type === 'event') {
-                console.log('📦 Parser event received:', event.data);
-                
-                if (event.data === '[DONE]') {
-                    console.log('✅ Stream completed with [DONE]');
-                    this.finishStreaming(aiMessage, accumulated);
-                    return;
-                }
-                
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('📊 Parsed SSE data:', data);
-                    
-                    if (data.type === 'content' && data.content) {
-                        // Simple concatenation - let the model handle spacing
-                        accumulated += data.content;
-                        
-                        this.updateStreamingMessage(aiMessage, accumulated);
-                        console.log('📝 Content received:', data.content);
-                    }
-                    
-                    if (data.type === 'complete' || data.done === true) {
-                        console.log('✅ Stream completed with complete flag');
-                        this.finishStreaming(aiMessage, accumulated);
-                        return;
-                    }
-                    
-                    if (data.type === 'error') {
-                        console.error('❌ Stream error:', data.error);
-                        const errorMsg = '*Error: ' + data.error + '*';
-                        this.updateStreamingMessage(aiMessage, errorMsg);
-                        this.finishStreaming(aiMessage, errorMsg);
-                        return;
-                    }
-                    
-                } catch (parseError) {
-                    console.warn('⚠️ JSON parse error:', parseError, 'for:', event.data);
-                }
-            }
-        });
-        
-        // Read the response stream and feed to parser
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) {
-                    console.log('✅ Stream reader finished');
-                    break;
-                }
-                
-                const chunk = decoder.decode(value, { stream: true });
-                console.log('📦 Raw chunk received:', chunk);
-                
-                // Feed the chunk to the parser
-                parser.feed(chunk);
-            }
-        } catch (error) {
-            console.error('❌ Stream reading error:', error);
-            const errorMsg = '*Stream error: ' + error.message + '*';
-            this.updateStreamingMessage(aiMessage, errorMsg);
-            this.finishStreaming(aiMessage, errorMsg);
-        }
-        
-        console.log('🏁 Stream processing completed');
-        return accumulated;
-    }
-    
-    // Create parser function (will be replaced if eventsource-parser is available)
-    createEventSourceParser(onParse) {
-        // Use eventsource-parser if available
-        if (typeof createParser !== 'undefined') {
-            return createParser(onParse);
-        }
-        
-        // Simple fallback implementation
-        console.warn('⚠️ eventsource-parser not found, using fallback parser');
-        let buffer = '';
-        
-        return {
-            feed: (chunk) => {
-                buffer += chunk;
-                
-                let newlineIndex;
-                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                    const line = buffer.slice(0, newlineIndex).trim();
-                    buffer = buffer.slice(newlineIndex + 1);
-                    
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        onParse({
-                            type: 'event',
-                            data: data
-                        });
-                    }
-                }
-            }
-        };
-    }
-
-    updateStreamingMessage(messageDiv, content) {
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            // Show raw text during streaming (no markdown processing)
-            streamingEl.innerHTML = content + '<span class="cursor blink">▋</span>';
-            
-            const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) {
-                messagesContainer.scrollTo({
-                    top: messagesContainer.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }
-        }
-    }
-
-    finishStreaming(messageDiv, finalContent) {
-        console.log('🏁 Finishing stream with content length:', finalContent.length);
-        
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            // Simple cleanup before markdown processing
-            let cleanedContent = finalContent
-                // Fix missing spaces between words
-                .replace(/([a-z])([A-Z])/g, '$1 $2')
-                // Fix missing spaces after punctuation
-                .replace(/([.!?])([A-Z])/g, '$1 $2')
-                // Fix missing spaces around common patterns
-                .replace(/(\w)(```)/g, '$1\n\n$2')
-                .replace(/(```)([\w])/g, '$1\n$2')
-                // Fix numbered lists
-                .replace(/(\d+)\.(\w)/g, '$1. $2');
-            
-            // Process with marked.js
-            const parsedContent = window.marked ? marked.parse(cleanedContent) : cleanedContent;
-            streamingEl.innerHTML = parsedContent;
-            
-            // Save to appropriate storage (overridden by subclasses)
-            if (this.saveMessage && finalContent.trim()) {
-                this.saveMessage('assistant', finalContent);
-            }
-        }
-        
-        this.isTyping = false;
-        this.updateButtons(false);
-        
-        const messagesContainer = document.getElementById('chat-messages');
-        if (messagesContainer) {
-            messagesContainer.scrollTo({
-                top: messagesContainer.scrollHeight,
-                behavior: 'smooth'
-            });
-        }
-        
-        const input = document.getElementById('chat-input');
-        if (input) {
-            input.focus();
-        }
-    }
-
-    // =============================================================================
-    // SHARED MESSAGE HANDLING - OVERRIDE IN SUBCLASSES
-    // =============================================================================
-    addMessage(sender, content, isStreaming = false, skipStorage = false) {
-        // This should be overridden by subclasses to handle user-specific styling
-        console.warn('addMessage should be overridden by subclass');
-    }
-
-    async sendMessage() {
-        // This should be overridden by subclasses
-        console.warn('sendMessage should be overridden by subclass');
-    }
-
-    clearChat() {
-        // This should be overridden by subclasses
-        console.warn('clearChat should be overridden by subclass');
-    }
-}
-
-// =============================================================================
-// SHARED AUTHENTICATION AND NAVIGATION - REMOVED AUTH CHECKS
+// SHARED AUTHENTICATION AND NAVIGATION
 // =============================================================================
 
 class SharedInterface {
@@ -399,6 +27,24 @@ class SharedInterface {
         this.setupAuthForms();
         this.setupPasswordToggle();
         this.setupEventDelegation();
+    }
+
+    // Method to check authentication status (for subclasses)
+    async checkAuth() {
+        try {
+            const response = await fetch('/api/auth/status', {
+                credentials: 'include'
+            });
+            
+            if (response.ok) {
+                return await response.json();
+            }
+            
+            return { success: false, user_type: 'is_none' };
+        } catch (error) {
+            console.warn('Auth check failed:', error);
+            return { success: false, user_type: 'is_none' };
+        }
     }
 
     setupAuthForms() {
@@ -761,15 +407,11 @@ let sharedInterface = null;
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Initializing shared interface...');
     
-    // Initialize markdown formatting
-    setupMarkedWithFormatting();
-    
     // Single initialization point
     sharedInterface = new SharedInterface();
     
     // Make available globally for debugging
     window.sharedInterface = sharedInterface;
-    window.SharedChatBase = SharedChatBase;
     window.SharedModalUtils = SharedModalUtils;
     
     // Page-specific setup
@@ -840,16 +482,5 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection:', event.reason);
     if (sharedInterface) {
         sharedInterface.showError('An unexpected error occurred');
-    }
-});
-
-// Auto-resize textarea functionality for all pages
-document.addEventListener('DOMContentLoaded', () => {
-    const chatInput = document.getElementById('chat-input');
-    if (chatInput) {
-        chatInput.addEventListener('input', function() {
-            this.style.height = '';
-            this.style.height = this.scrollHeight + 'px';
-        });
     }
 });

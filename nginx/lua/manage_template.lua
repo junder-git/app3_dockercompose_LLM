@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_template.lua - JS CACHE ONLY (CSS STATIC) - FIXED PATHS
+-- nginx/lua/manage_template.lua - JS CACHE WITH is_shared_chat.js SUPPORT
 -- =============================================================================
 
 -- Configuration
@@ -11,17 +11,18 @@ local CACHE_INITIALIZED = false
 local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
 
 -- =============================================
--- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP
+-- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP INCLUDING NEW CHAT FILE
 -- =============================================
 
 local function load_js_assets()
     local js_files = {
-        "is_shared.js",
-        "is_admin.js", 
-        "is_approved.js",
-        "is_guest.js",
-        "is_none.js",
-        "is_pending.js"
+        "is_shared.js",         -- Core shared functionality (non-chat)
+        "is_shared_chat.js",    -- NEW: Dedicated chat functionality
+        "is_admin.js",          -- Admin-specific functionality
+        "is_approved.js",       -- Approved user functionality
+        "is_guest.js",          -- Guest user functionality
+        "is_none.js",           -- Anonymous user functionality
+        "is_pending.js"         -- Pending user functionality
     }
     
     ngx.log(ngx.INFO, "Loading JavaScript files into permanent cache...")
@@ -161,12 +162,17 @@ local function render_template(path, context, depth)
 end
 
 -- =============================================
--- CONVENIENCE FUNCTIONS
+-- CONVENIENCE FUNCTIONS - UPDATED FOR CHAT PAGES
 -- =============================================
 
 -- Helper function to get appropriate JS files for user type and page
 local function get_js_files_for_context(user_type, page_type)
-    local js_files = {"is_shared.js"}  -- Always include shared
+    local js_files = {"is_shared.js"}  -- Always include core shared functionality
+    
+    -- Add chat functionality for chat pages
+    if page_type == "chat" then
+        table.insert(js_files, "is_shared_chat.js")  -- Include chat functionality
+    end
     
     -- Add user-type specific JS
     local user_js_map = {
@@ -180,8 +186,6 @@ local function get_js_files_for_context(user_type, page_type)
     if user_js_map[user_type] then
         table.insert(js_files, user_js_map[user_type])
     end
-    
-    -- No page-specific JS needed - is_shared.js handles all pages
     
     return js_files
 end
