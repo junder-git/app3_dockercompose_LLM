@@ -1,6 +1,7 @@
 // =============================================================================
-// nginx/static/js/is_shared_code.js - CODE ARTIFACT MANAGEMENT SYSTEM
+// nginx/static/js/is_shared_code.js - ENHANCED WITH PRISM.JS AND EXPAND/COLLAPSE
 // =============================================================================
+
 // =============================================================================
 // CODE PANEL MANAGEMENT
 // =============================================================================
@@ -186,10 +187,27 @@ class CodePanelManager {
 }
 
 // =============================================================================
-// MARKDOWN PROCESSING WITH CODE ARTIFACT HANDLING
+// ENHANCED MARKDOWN PROCESSING WITH PRISM.JS AND EXPAND/COLLAPSE
 // =============================================================================
 
-class CodeMarkdownProcessor {   
+class CodeMarkdownProcessor {
+    constructor() {
+        this.expandedBlocks = new Set();
+        this.initializePrism();
+    }
+    
+    initializePrism() {
+        // Ensure Prism.js is loaded
+        if (typeof Prism === 'undefined') {
+            console.warn('⚠️ Prism.js not loaded - syntax highlighting disabled');
+            return;
+        }
+        
+        // Configure Prism for manual highlighting
+        Prism.manual = true;
+        console.log('🎨 Prism.js initialized for manual highlighting');
+    }
+    
     createInlineCodeBlock(codeContent, language = '', lineCount = 0) {
         // Generate unique ID for this code block
         const blockId = `inline-code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -197,24 +215,34 @@ class CodeMarkdownProcessor {
         // Normalize language name for Prism.js
         const prismLanguage = this.normalizePrismLanguage(language);
         
-        return `<div class="inline-code-block" data-code-id="${blockId}">
-            <div class="inline-code-header">
-                <span class="inline-code-info">
-                    <i class="bi bi-file-earmark-code"></i>
-                    ${language ? `${language} • ` : ''}${lineCount} lines
-                </span>
-                <button class="inline-code-copy-btn" onclick="copyInlineCode('${blockId}')">
-                    <i class="bi bi-clipboard"></i> Copy
-                </button>
+        // Determine if block should be collapsible (> 10 lines)
+        const isCollapsible = lineCount > 10;
+        const previewLines = isCollapsible ? codeContent.split('\n').slice(0, 5).join('\n') + '\n// ... ' + (lineCount - 5) + ' more lines' : codeContent;
+        
+        return `<div class="enhanced-code-block ${isCollapsible ? 'collapsible' : ''}" data-code-id="${blockId}" data-language="${prismLanguage}" data-full-code="${this.escapeHtml(codeContent)}">
+            <div class="code-block-header">
+                <div class="code-block-info">
+                    <i class="bi bi-file-earmark-code text-primary"></i>
+                    <span class="language-badge">${language || 'text'}</span>
+                    <span class="line-count">${lineCount} lines</span>
+                </div>
+                <div class="code-block-actions">
+                    ${isCollapsible ? `<button class="btn btn-sm btn-outline-secondary expand-btn" onclick="toggleCodeBlock('${blockId}')">
+                        <i class="bi bi-arrows-expand"></i> <span class="expand-text">Expand</span>
+                    </button>` : ''}
+                    <button class="btn btn-sm btn-outline-primary copy-btn" onclick="copyEnhancedCode('${blockId}')">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
             </div>
-            <div class="inline-code-content">
-                <pre><code class="language-${prismLanguage}">${this.escapeHtml(codeContent)}</code></pre>
+            <div class="code-block-content">
+                <pre class="code-pre"><code class="language-${prismLanguage} code-content">${this.escapeHtml(isCollapsible ? previewLines : codeContent)}</code></pre>
             </div>
         </div>`;
     }
     
     normalizePrismLanguage(language) {
-        if (!language) return 'none';
+        if (!language) return 'text';
         
         // Map common language aliases to Prism.js language names
         const languageMap = {
@@ -260,76 +288,222 @@ class CodeMarkdownProcessor {
     
     applySyntaxHighlighting(container = document) {
         // Apply Prism.js syntax highlighting to code blocks
-        if (window.Prism) {
-            // Find all code elements that haven't been highlighted yet
-            const codeElements = container.querySelectorAll('code[class*="language-"]:not(.prism-highlighted)');
-            codeElements.forEach(codeEl => {
+        if (typeof Prism === 'undefined') {
+            console.warn('⚠️ Prism.js not available for syntax highlighting');
+            return;
+        }
+        
+        // Find all code elements that haven't been highlighted yet
+        const codeElements = container.querySelectorAll('code[class*="language-"]:not(.prism-highlighted)');
+        codeElements.forEach(codeEl => {
+            try {
                 // Mark as highlighted to prevent re-processing
                 codeEl.classList.add('prism-highlighted');
                 
                 // Apply Prism highlighting
-                window.Prism.highlightElement(codeEl);
+                Prism.highlightElement(codeEl);
                 
                 console.log(`🎨 Applied syntax highlighting to ${codeEl.className}`);
-            });
-        } else {
-            console.warn('⚠️ Prism.js not available for syntax highlighting');
-        }
+            } catch (error) {
+                console.warn('⚠️ Failed to highlight code element:', error);
+            }
+        });
+        
+        // Also apply to enhanced code blocks
+        const enhancedBlocks = container.querySelectorAll('.enhanced-code-block:not(.prism-processed)');
+        enhancedBlocks.forEach(block => {
+            const codeEl = block.querySelector('code');
+            if (codeEl && !codeEl.classList.contains('prism-highlighted')) {
+                try {
+                    codeEl.classList.add('prism-highlighted');
+                    Prism.highlightElement(codeEl);
+                    block.classList.add('prism-processed');
+                    console.log(`🎨 Applied syntax highlighting to enhanced code block`);
+                } catch (error) {
+                    console.warn('⚠️ Failed to highlight enhanced code block:', error);
+                }
+            }
+        });
     }
 }
 
 // =============================================================================
-// GLOBAL EXPORTS AND COPY FUNCTION
+// GLOBAL FUNCTIONS FOR CODE BLOCK INTERACTIONS
 // =============================================================================
 
-// Global function for copying inline code
-window.copyInlineCode = async function(blockId) {
+// Enhanced copy function with better feedback
+window.copyEnhancedCode = async function(blockId) {
     const codeBlock = document.querySelector(`[data-code-id="${blockId}"]`);
     if (!codeBlock) {
         console.error(`Code block ${blockId} not found`);
         return;
     }
     
-    const codeContent = codeBlock.querySelector('code');
-    const copyBtn = codeBlock.querySelector('.inline-code-copy-btn');
+    const copyBtn = codeBlock.querySelector('.copy-btn');
+    const fullCode = codeBlock.getAttribute('data-full-code');
     
-    if (!codeContent || !copyBtn) {
+    if (!fullCode || !copyBtn) {
         console.error('Code content or copy button not found');
         return;
     }
     
     try {
-        await navigator.clipboard.writeText(codeContent.textContent);
+        // Decode HTML entities
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = fullCode;
+        const decodedCode = tempDiv.textContent || tempDiv.innerText || '';
         
-        // Show success feedback
+        await navigator.clipboard.writeText(decodedCode);
+        
+        // Show success feedback with animation
         const originalContent = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i class="bi bi-check"></i> Copied!';
-        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Copied!';
+        copyBtn.classList.add('btn-success');
+        copyBtn.classList.remove('btn-outline-primary');
+        
+        // Add success animation
+        copyBtn.style.transform = 'scale(1.05)';
         
         setTimeout(() => {
             copyBtn.innerHTML = originalContent;
-            copyBtn.classList.remove('copied');
+            copyBtn.classList.remove('btn-success');
+            copyBtn.classList.add('btn-outline-primary');
+            copyBtn.style.transform = 'scale(1)';
         }, 2000);
         
-        console.log('📋 Inline code copied to clipboard');
+        console.log('📋 Enhanced code copied to clipboard');
+        
+        // Show toast notification if available
+        if (typeof sharedInterface !== 'undefined') {
+            sharedInterface.showSuccess('Code copied to clipboard!');
+        }
     } catch (error) {
-        console.error('❌ Failed to copy inline code:', error);
+        console.error('❌ Failed to copy enhanced code:', error);
         
         // Show error feedback
         const originalContent = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i class="bi bi-x"></i> Failed';
-        copyBtn.style.background = 'var(--danger-color)';
+        copyBtn.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i> Failed';
+        copyBtn.classList.add('btn-danger');
+        copyBtn.classList.remove('btn-outline-primary');
         
         setTimeout(() => {
             copyBtn.innerHTML = originalContent;
-            copyBtn.style.background = '';
+            copyBtn.classList.remove('btn-danger');
+            copyBtn.classList.add('btn-outline-primary');
         }, 2000);
+        
+        if (typeof sharedInterface !== 'undefined') {
+            sharedInterface.showError('Failed to copy code: ' + error.message);
+        }
     }
 };
+
+// Toggle expand/collapse for code blocks
+window.toggleCodeBlock = function(blockId) {
+    const codeBlock = document.querySelector(`[data-code-id="${blockId}"]`);
+    if (!codeBlock) {
+        console.error(`Code block ${blockId} not found`);
+        return;
+    }
+    
+    const expandBtn = codeBlock.querySelector('.expand-btn');
+    const codeContent = codeBlock.querySelector('.code-content');
+    const fullCode = codeBlock.getAttribute('data-full-code');
+    const language = codeBlock.getAttribute('data-language');
+    
+    if (!expandBtn || !codeContent || !fullCode) {
+        console.error('Required elements not found for toggle');
+        return;
+    }
+    
+    const isExpanded = codeBlock.classList.contains('expanded');
+    
+    if (isExpanded) {
+        // Collapse
+        const lines = fullCode.split('\n');
+        const previewLines = lines.slice(0, 5).join('\n') + '\n// ... ' + (lines.length - 5) + ' more lines';
+        
+        // Decode HTML entities for preview
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = previewLines;
+        const decodedPreview = tempDiv.textContent || tempDiv.innerText || '';
+        
+        codeContent.textContent = decodedPreview;
+        codeBlock.classList.remove('expanded');
+        
+        expandBtn.innerHTML = '<i class="bi bi-arrows-expand"></i> <span class="expand-text">Expand</span>';
+        
+        console.log(`📁 Collapsed code block ${blockId}`);
+    } else {
+        // Expand
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = fullCode;
+        const decodedCode = tempDiv.textContent || tempDiv.innerText || '';
+        
+        codeContent.textContent = decodedCode;
+        codeBlock.classList.add('expanded');
+        
+        expandBtn.innerHTML = '<i class="bi bi-arrows-collapse"></i> <span class="expand-text">Collapse</span>';
+        
+        console.log(`📂 Expanded code block ${blockId}`);
+        
+        // Smooth scroll to show more content
+        codeBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Re-apply syntax highlighting after content change
+    if (typeof Prism !== 'undefined') {
+        try {
+            codeContent.classList.remove('prism-highlighted');
+            Prism.highlightElement(codeContent);
+            console.log(`🎨 Re-applied syntax highlighting after toggle`);
+        } catch (error) {
+            console.warn('⚠️ Failed to re-highlight after toggle:', error);
+        }
+    }
+};
+
+// Legacy function for backward compatibility
+window.copyInlineCode = window.copyEnhancedCode;
+
+// =============================================================================
+// GLOBAL EXPORTS
+// =============================================================================
 
 if (typeof window !== 'undefined') {
     window.CodePanelManager = CodePanelManager;
     window.CodeMarkdownProcessor = CodeMarkdownProcessor;
     
-    console.log('📦 Code artifact management loaded and available globally');
+    console.log('📦 Enhanced code artifact management loaded with Prism.js support');
+}
+
+// Auto-apply syntax highlighting when DOM changes
+if (typeof MutationObserver !== 'undefined') {
+    const codeProcessor = new CodeMarkdownProcessor();
+    
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        // Apply syntax highlighting to new code elements
+                        codeProcessor.applySyntaxHighlighting(node);
+                    }
+                });
+            }
+        });
+    });
+    
+    // Start observing when DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Initial highlighting pass
+        codeProcessor.applySyntaxHighlighting();
+        
+        console.log('👁️ Code syntax highlighting observer started');
+    });
 }

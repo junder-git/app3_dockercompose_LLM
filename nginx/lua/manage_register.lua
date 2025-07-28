@@ -1,6 +1,6 @@
--- nginx/lua/register.lua - SECURE user registration handler with pending user limits
+-- nginx/lua/manage_register.lua - SECURE user registration handler with pending user limits
 local cjson = require "cjson"
-local server = require "server"
+local auth = require "manage_auth"
 local redis = require "resty.redis"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
@@ -41,21 +41,25 @@ local function count_pending_users()
         return 0, "Redis unavailable"
     end
     
-    local user_keys = redis_to_lua(red:keys("user:*")) or {}
+    local user_keys = redis_to_lua(red:keys("username:*")) or {}
     local pending_count = 0
     local pending_usernames = {}
     
     for _, key in ipairs(user_keys) do
-        if key ~= "user:" then -- Skip invalid keys
+        if key ~= "username:" then -- Skip invalid keys
             local user_data = red:hgetall(key)
             if user_data and #user_data > 0 then
                 local user = {}
                 for i = 1, #user_data, 2 do
-                    user[user_data[i]] = user_data[i + 1]
+                    local field_key = user_data[i]
+                    if string.sub(field_key, -1) == ":" then
+                        field_key = string.sub(field_key, 1, -2)
+                    end
+                    user[field_key] = user_data[i + 1]
                 end
                 
-                -- Count users who are not approved and not admin
-                if user.is_approved == "false" and user.is_admin == "false" and user.username then
+                -- Count users who are pending
+                if user.user_type == "is_pending" and user.username then
                     pending_count = pending_count + 1
                     table.insert(pending_usernames, user.username)
                 end
@@ -128,12 +132,47 @@ end
 
 -- SECURE password hashing - same as login
 local function hash_password(password)
-    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | cut -d' ' -f2",
+    local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
     local hash = handle:read("*a"):gsub("\n", "")
     handle:close()
     return hash
+end
+
+-- Check if user already exists
+local function user_exists(username)
+    local user_data = auth.get_user(username)
+    return user_data ~= nil
+end
+
+-- Create new user in Redis
+local function create_user(username, password_hash, ip_address)
+    local red = connect_redis()
+    if not red then
+        return false, "Database connection failed"
+    end
+    
+    local user_key = "username:" .. username
+    local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    
+    -- Create user with pending status
+    local ok, err = red:hmset(user_key,
+        "username", username,
+        "password_hash", password_hash,
+        "user_type", "is_pending",
+        "created_at", now,
+        "created_ip", ip_address or "unknown",
+        "last_active", now
+    )
+    
+    if not ok then
+        red:close()
+        return false, "Failed to create user: " .. (err or "unknown")
+    end
+    
+    red:close()
+    return true, "User created successfully"
 end
 
 -- CRITICAL: Registration with pending user limits
@@ -175,8 +214,7 @@ local function handle_register()
     end
 
     -- ANTI-SPAM: Check if user already exists
-    local existing_user = server.get_user(username)
-    if existing_user then
+    if user_exists(username) then
         ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
         ngx.log(ngx.WARN, "Registration attempt with existing username: " .. username)
         send_json(409, { error = "Username already taken" })
@@ -206,8 +244,8 @@ local function handle_register()
     -- SECURITY: Hash password before storing
     local password_hash = hash_password(password)
 
-    -- CRITICAL: Create user as PENDING (is_approved = false)
-    local success, message = server.create_user(username, password_hash, ngx.var.remote_addr)
+    -- CRITICAL: Create user as PENDING (is_pending = true)
+    local success, message = create_user(username, password_hash, ngx.var.remote_addr)
     
     if not success then
         ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
@@ -229,9 +267,8 @@ local function handle_register()
         user = {
             username = username,
             status = "pending_approval",
-            is_approved = false,
-            is_admin = false,
-            created_at = os.date("!%Y-%m-%dT%TZ")
+            user_type = "is_pending",
+            created_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
         },
         queue_info = {
             pending_users = pending_count + 1,
@@ -249,10 +286,9 @@ end
 
 -- SECURITY: Registration status check (for pending users)
 local function handle_registration_status()
-    local is_who = require "is_who"
-    local user_type, username, user_data = is_who.check()
+    local user_type, username, user_data = auth.check()
     
-    if user_type == "authenticated" then
+    if user_type == "is_pending" then
         -- User has JWT but not approved
         local pending_count, _ = count_pending_users()
         
@@ -260,7 +296,7 @@ local function handle_registration_status()
             success = false,
             status = "pending_approval",
             username = username,
-            is_approved = false,
+            user_type = "is_pending",
             message = "Your account is pending administrator approval",
             created_at = user_data.created_at,
             queue_info = {

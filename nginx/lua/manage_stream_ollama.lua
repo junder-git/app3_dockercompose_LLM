@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_stream_ollama.lua - COMPLETE ENV VAR INTEGRATION
+-- nginx/lua/manage_stream_ollama.lua - UPDATED WITH HISTORY CALLBACK SUPPORT
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -187,7 +187,7 @@ function M.handle_chat_api(user_type)
 end
 
 -- =============================================
--- SHARED CHAT STREAMING HANDLER - EXTENDED TIMEOUT
+-- ENHANCED CHAT STREAMING HANDLER WITH CALLBACKS
 -- =============================================
 
 function M.handle_chat_stream_common(stream_context)
@@ -219,6 +219,16 @@ function M.handle_chat_stream_common(stream_context)
         return ngx.exit(400)
     end
     
+    -- Save user message via callback if provided
+    if stream_context.on_user_message then
+        local save_ok, save_err = pcall(stream_context.on_user_message, message)
+        if not save_ok then
+            ngx.log(ngx.WARN, "Failed to save user message: " .. tostring(save_err))
+        else
+            ngx.log(ngx.INFO, "💾 User message saved via callback")
+        end
+    end
+    
     -- Run pre-stream checks if provided
     if stream_context.pre_stream_check then
         local check_ok, check_error = stream_context.pre_stream_check(message, data)
@@ -245,8 +255,21 @@ function M.handle_chat_stream_common(stream_context)
     
     -- Add chat history if enabled
     if stream_context.include_history and stream_context.history_limit > 0 then
-        -- Could load chat history here for regular users
-        -- For now, just add the current message
+        -- Load chat history from Redis for admin/approved users
+        if stream_context.user_type == "is_admin" or stream_context.user_type == "is_approved" then
+            local chat_history = require "manage_chat_history"
+            local history_messages, err = chat_history.load_history(stream_context.username, stream_context.history_limit)
+            
+            if not err and history_messages then
+                for _, hist_msg in ipairs(history_messages) do
+                    table.insert(messages, {
+                        role = hist_msg.role,
+                        content = hist_msg.content
+                    })
+                end
+                ngx.log(ngx.INFO, "📚 Loaded " .. #history_messages .. " history messages for " .. stream_context.username)
+            end
+        end
     end
     
     -- Add current user message
@@ -263,9 +286,12 @@ function M.handle_chat_stream_common(stream_context)
         end
     end
     
-    -- Stream callback function - FIXED TO USE CORRECT SSE FORMAT
+    -- Enhanced stream callback function with assistant message saving
+    local accumulated_response = ""
     local function stream_callback(chunk)
         if chunk.content and chunk.content ~= "" then
+            accumulated_response = accumulated_response .. chunk.content
+            
             -- Send content as 'type': 'content' for compatibility with frontend
             ngx.print("data: " .. cjson.encode({
                 type = "content",
@@ -276,6 +302,16 @@ function M.handle_chat_stream_common(stream_context)
         end
         
         if chunk.done then
+            -- Save assistant message via callback if provided
+            if stream_context.on_assistant_message and accumulated_response ~= "" then
+                local save_ok, save_err = pcall(stream_context.on_assistant_message, accumulated_response)
+                if not save_ok then
+                    ngx.log(ngx.WARN, "Failed to save assistant message: " .. tostring(save_err))
+                else
+                    ngx.log(ngx.INFO, "💾 Assistant message saved via callback (" .. string.len(accumulated_response) .. " chars)")
+                end
+            end
+            
             -- Send completion signal
             ngx.print("data: " .. cjson.encode({
                 type = "complete",

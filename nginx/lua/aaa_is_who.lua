@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - UPDATED FOR SIMPLIFIED GUEST SYSTEM
+-- nginx/lua/aaa_is_who.lua - UPDATED WITH ENHANCED CHAT API ROUTING
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -56,7 +56,7 @@ function M.require_guest()
 end
 
 -- =====================================================================
--- MAIN ROUTING HANDLER - UPDATED TO USE SIMPLIFIED GUEST SYSTEM
+-- MAIN ROUTING HANDLER - UPDATED FOR ENHANCED CHAT API
 -- =====================================================================
 
 function M.route_to_handler(route_type)
@@ -189,7 +189,7 @@ function M.handle_50x()
 end
 
 -- =====================================================================
--- OLLAMA API HANDLERS (KEEP THESE HERE AS THEY'RE CROSS-USER-TYPE)
+-- ENHANCED OLLAMA API HANDLERS WITH FULL CHAT API ROUTING
 -- =====================================================================
 
 function M.handle_ollama_chat_api()
@@ -205,29 +205,43 @@ function M.handle_ollama_chat_api()
         return ngx.exit(401)
     end
     
-    -- Delegate to user-type specific Ollama handler
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    ngx.log(ngx.INFO, "🔄 Chat API request: " .. method .. " " .. uri .. " (user: " .. user_type .. ")")
+    
+    -- Route to appropriate user-specific chat handler
     if user_type == "is_admin" then
         local is_admin = require "is_admin"
-        return is_admin.handle_ollama_chat_stream()
+        return is_admin.handle_chat_api()
     elseif user_type == "is_approved" then
         local is_approved = require "is_approved"
-        return is_approved.handle_ollama_chat_stream()
+        return is_approved.handle_chat_api()
     elseif user_type == "is_guest" then
         local is_guest = require "is_guest"
-        return is_guest.handle_ollama_chat_stream()
+        return is_guest.handle_chat_api()
+    elseif user_type == "is_pending" then
+        -- Pending users shouldn't have chat access
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Access denied",
+            message = "Account pending approval - no chat access"
+        }))
+        return ngx.exit(403)
     else
         ngx.status = 403
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
             error = "Access denied",
-            message = "Invalid user type"
+            message = "Invalid user type: " .. tostring(user_type)
         }))
         return ngx.exit(403)
     end
 end
 
 -- =============================================
--- SIMPLE API ROUTING FUNCTIONS - UPDATED FOR SIMPLIFIED GUEST SYSTEM
+-- SIMPLE API ROUTING FUNCTIONS - UPDATED FOR ENHANCED CHAT
 -- =============================================
 
 function M.handle_auth_api_status()

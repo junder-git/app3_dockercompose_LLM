@@ -19,7 +19,6 @@ class GuestChat extends SharedChatBase {
     // Override saveMessage to use localStorage
     saveMessage(role, content) {
         console.log(`💾 Guest saving ${role} message to localStorage (${content.length} chars)`);
-        return GuestChatStorage.saveMessage(role, content);
     }
 
     // Override clearChat to also clear localStorage
@@ -37,9 +36,6 @@ class GuestChat extends SharedChatBase {
         if (welcomePrompt) {
             welcomePrompt.style.display = 'block';
         }
-        
-        // Clear localStorage
-        GuestChatStorage.clearMessages();
         
         this.messageCount = 0;
         console.log('🗑️ Guest chat history cleared from localStorage');
@@ -355,7 +351,6 @@ class GuestChallengeResponder {
 // =============================================================================
 
 window.downloadGuestHistory = function() {
-    const exportData = GuestChatStorage.exportMessages();
     const blob = new Blob([exportData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     
