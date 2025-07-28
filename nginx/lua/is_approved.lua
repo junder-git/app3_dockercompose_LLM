@@ -12,7 +12,7 @@ local M = {}
 -- APPROVED USER CHAT API HANDLERS
 -- =============================================
 
-local function handle_chat_history()
+function M.handle_chat_history()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -51,7 +51,7 @@ local function handle_chat_history()
     }))
 end
 
-local function handle_clear_chat()
+function M.handle_clear_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -85,7 +85,7 @@ local function handle_clear_chat()
     }))
 end
 
-local function handle_export_chat()
+function M.handle_export_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -119,7 +119,7 @@ local function handle_export_chat()
     ngx.say(export_data)
 end
 
-local function handle_search_chat()
+function M.handle_search_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -167,7 +167,7 @@ local function handle_search_chat()
     }))
 end
 
-local function handle_chat_stats()
+function M.handle_chat_stats()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -206,7 +206,7 @@ end
 -- APPROVED USER CHAT STREAMING WITH HISTORY SAVING
 -- =============================================
 
-local function handle_ollama_chat_stream()
+function M.handle_ollama_chat_stream()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_approved" and user_type ~= "is_admin" then
@@ -286,8 +286,4 @@ function M.handle_route(route_type)
     end
 end
 
-return {
-    handle_chat_api = M.handle_chat_api,
-    handle_ollama_chat_stream = handle_ollama_chat_stream,
-    handle_route = M.handle_route
-}
+return M
