@@ -82,3 +82,22 @@
         </div>
     </div>
 </div>
+
+<!-- CRITICAL: Load JavaScript modules in correct dependency order -->
+<script>
+// Load modules in dependency order to prevent "not defined" errors
+// 1. Core shared functionality
+{{ js_shared }}
+
+// 2. SSE management (required by chat)
+{{ js_sse }}
+
+// 3. Code artifact management (required by chat)  
+{{ js_code }}
+
+// 4. Chat functionality (depends on SSE and Code modules)
+{{ js_chat }}
+
+// 5. User-specific functionality
+{{ js_user }}
+</script>

@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_template.lua - JS CACHE WITH is_shared_chat.js SUPPORT
+-- nginx/lua/manage_template.lua - JS CACHE WITH INDIVIDUAL JS LOADING SUPPORT
 -- =============================================================================
 
 -- Configuration
@@ -11,14 +11,14 @@ local CACHE_INITIALIZED = false
 local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
 
 -- =============================================
--- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP INCLUDING NEW CHAT FILE
+-- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP INCLUDING NEW CHAT FILES
 -- =============================================
 
 local function load_js_assets()
     local js_files = {
         "is_shared.js",         -- Core shared functionality (non-chat)
-        "is_shared_sse.js",     -- NEW: Server-Sent Events management
-        "is_shared_code.js",    -- NEW: Code artifact management
+        "is_shared_sse.js",     -- SSE management (must load before chat)
+        "is_shared_code.js",    -- Code artifact management (must load before chat)
         "is_shared_chat.js",    -- Chat functionality (depends on SSE and Code)
         "is_admin.js",          -- Admin-specific functionality
         "is_approved.js",       -- Approved user functionality
@@ -119,6 +119,29 @@ local function build_js_block(js_files)
            "\n\n})();\n</script>"
 end
 
+-- NEW: Build individual JS blocks for ordered loading
+local function build_individual_js_blocks(js_files)
+    if not js_files or type(js_files) ~= "table" or #js_files == 0 then
+        return {}
+    end
+    
+    local js_blocks = {}
+    
+    for _, filename in ipairs(js_files) do
+        local content = get_js_content(filename)
+        if content and content ~= "" then
+            local block = "<script>\n(function() {\n'use strict';\n\n" .. 
+                         content .. 
+                         "\n\n})();\n</script>"
+            js_blocks[filename] = block
+        else
+            js_blocks[filename] = ""
+        end
+    end
+    
+    return js_blocks
+end
+
 -- =============================================
 -- ENHANCED TEMPLATE RENDERING
 -- =============================================
@@ -134,8 +157,8 @@ local function render_template(path, context, depth)
     
     depth = depth or 2
     
-    -- Process js_files if provided
-    if context.js_files then
+    -- Process js_files if provided (for backward compatibility)
+    if context.js_files and not context.js then
         context.js = build_js_block(context.js_files)
     end
     
@@ -171,9 +194,11 @@ end
 local function get_js_files_for_context(user_type, page_type)
     local js_files = {"is_shared.js"}  -- Always include core shared functionality
     
-    -- Add chat functionality for chat pages
+    -- Add specialized modules for chat pages IN CORRECT ORDER
     if page_type == "chat" then
-        table.insert(js_files, "is_shared_chat.js")  -- Include chat functionality
+        table.insert(js_files, "is_shared_sse.js")    -- Load SSE first
+        table.insert(js_files, "is_shared_code.js")   -- Load Code second
+        table.insert(js_files, "is_shared_chat.js")   -- Load Chat last (depends on both)
     end
     
     -- Add user-type specific JS
@@ -196,6 +221,36 @@ end
 local function render_with_assets(template_path, user_type, page_type, context)
     -- Auto-inject appropriate JS assets
     context.js_files = get_js_files_for_context(user_type, page_type)
+    
+    -- For chat pages, create individual JS blocks for ordered loading
+    if page_type == "chat" then
+        local js_blocks = build_individual_js_blocks(context.js_files)
+        context.js_shared = js_blocks["is_shared.js"] or ""
+        context.js_sse = js_blocks["is_shared_sse.js"] or ""
+        context.js_code = js_blocks["is_shared_code.js"] or ""
+        context.js_chat = js_blocks["is_shared_chat.js"] or ""
+        
+        -- Add user-specific JS
+        local user_js_map = {
+            is_admin = "is_admin.js",
+            is_approved = "is_approved.js",
+            is_guest = "is_guest.js", 
+            is_none = "is_none.js",
+            is_pending = "is_pending.js"
+        }
+        
+        if user_js_map[user_type] then
+            context.js_user = js_blocks[user_js_map[user_type]] or ""
+        else
+            context.js_user = ""
+        end
+        
+        -- Clear the combined js field for chat pages
+        context.js = ""
+    else
+        -- For non-chat pages, use combined JS block
+        context.js = build_js_block(context.js_files)
+    end
     
     -- Call standard render function
     render_template(template_path, context)
@@ -306,6 +361,7 @@ return {
     
     -- Asset builders
     build_js_block = build_js_block,
+    build_individual_js_blocks = build_individual_js_blocks,
     get_js_files_for_context = get_js_files_for_context,
     
     -- Cache management
