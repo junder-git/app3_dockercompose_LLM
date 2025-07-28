@@ -230,6 +230,20 @@ end
 -- SIMPLE API ROUTING FUNCTIONS - UPDATED FOR SIMPLIFIED GUEST SYSTEM
 -- =============================================
 
+function M.handle_auth_api_status()
+    local user_type = select(1, auth.check())
+
+    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_guest" then
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"status":"success"}')
+    else
+        ngx.status = 401
+        ngx.header.content_type = 'application/json'
+        ngx.say('{"status":"fail"}')
+    end
+end
+
 function M.handle_auth_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
