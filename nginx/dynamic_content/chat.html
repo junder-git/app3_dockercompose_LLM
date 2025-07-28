@@ -1,13 +1,17 @@
-<!-- chat.html - Chat page content -->
+<!-- chat.html - UPDATED: Chat page with scrolling headers inside messages area -->
 <div class="chat-container">
-    {{ chat_features }}
-    
     <div class="chat-messages" id="chat-messages">
-        <div id="welcome-prompt" class="welcome-prompt">
-            <h4><i class="bi bi-chat-dots"></i> Welcome to ai.junder.uk</h4>
-            <p>Start a conversation with our AI assistant. Ask questions about coding, technology, or anything else!</p>
-            <div class="text-muted">
-                <small>💡 Tip: Use <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new lines</small>
+        <!-- MOVED: Feature alerts now inside scrolling area at the top -->
+        {{ chat_features }}
+        
+        <!-- ADDED: Wrapper for actual message content -->
+        <div class="chat-messages-content" id="chat-messages-content">
+            <div id="welcome-prompt" class="welcome-prompt">
+                <h4><i class="bi bi-chat-dots"></i> Welcome to ai.junder.uk</h4>
+                <p>Start a conversation with our AI assistant. Ask questions about coding, technology, or anything else!</p>
+                <div class="text-muted">
+                    <small>💡 Tip: Use <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new lines</small>
+                </div>
             </div>
         </div>
     </div>

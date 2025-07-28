@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/shared_chat.js - DEDICATED CHAT FUNCTIONALITY WITH REAL-TIME MARKDOWN
+// nginx/static/js/is_shared_chat.js - DEDICATED CHAT FUNCTIONALITY WITH REAL-TIME MARKDOWN
 // =============================================================================
 
 // =============================================================================
@@ -59,6 +59,15 @@ class SharedChatBase {
         
         // Initialize markdown when chat base is created
         setupMarkedWithFormatting();
+    }
+
+    // =============================================================================
+    // UPDATED: CONTAINER MANAGEMENT FOR NEW SCROLLING STRUCTURE
+    // =============================================================================
+
+    // UPDATED: Get the correct messages container (prioritize content wrapper)
+    getMessagesContainer() {
+        return document.getElementById('chat-messages-content') || document.getElementById('chat-messages');
     }
 
     // =============================================================================
@@ -210,6 +219,11 @@ class SharedChatBase {
         this.updateButtons(false);
     }
 
+    // =============================================================================
+    // UPDATED: ENHANCED SCROLLING METHODS FOR NEW STRUCTURE
+    // =============================================================================
+
+    // UPDATED: Scroll to bottom of the main chat container (includes headers)
     scrollToBottom() {
         const messagesContainer = document.getElementById('chat-messages');
         if (messagesContainer) {
@@ -220,6 +234,7 @@ class SharedChatBase {
         }
     }
 
+    // UPDATED: Scroll to show the latest message (smart scrolling)
     scrollToLatestMessage() {
         const messagesContainer = document.getElementById('chat-messages');
         if (messagesContainer) {
@@ -230,6 +245,22 @@ class SharedChatBase {
                     behavior: 'smooth',
                     block: 'start'
                 });
+            } else {
+                // Fallback to bottom scroll
+                this.scrollToBottom();
+            }
+        }
+    }
+
+    // ADDED: Smart scrolling that respects user scroll position
+    smartScroll() {
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) {
+            const { scrollTop, scrollHeight, clientHeight } = messagesContainer;
+            const isNearBottom = scrollTop + clientHeight >= scrollHeight - 100; // Within 100px of bottom
+            
+            if (isNearBottom) {
+                this.scrollToBottom();
             }
         }
     }
@@ -350,7 +381,7 @@ class SharedChatBase {
         };
     }
 
-    // ENHANCED: Update streaming message with real-time markdown processing on every chunk
+    // UPDATED: Enhanced streaming message update with smart scrolling
     updateStreamingMessageWithMarkdown(messageDiv, content) {
         const streamingEl = messageDiv.querySelector('.streaming-content');
         if (streamingEl) {
@@ -360,8 +391,8 @@ class SharedChatBase {
             // Add typing cursor
             streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
             
-            // Scroll to bottom
-            this.scrollToBottom();
+            // Use smart scrolling instead of always scrolling to bottom
+            this.smartScroll();
         }
     }
 
@@ -371,10 +402,11 @@ class SharedChatBase {
         if (streamingEl) {
             // Show raw text during streaming (no markdown processing)
             streamingEl.innerHTML = content + '<span class="cursor blink">▋</span>';
-            this.scrollToBottom();
+            this.smartScroll();
         }
     }
 
+    // UPDATED: Finish streaming with smart final scroll
     finishStreaming(messageDiv, finalContent) {
         console.log('🏁 Finishing stream with content length:', finalContent.length);
         
@@ -393,8 +425,10 @@ class SharedChatBase {
         this.isTyping = false;
         this.updateButtons(false);
         
-        // Scroll to the top of the latest message when finished streaming
-        this.scrollToLatestMessage();
+        // Final scroll to show the complete message
+        setTimeout(() => {
+            this.scrollToLatestMessage();
+        }, 100);
         
         const input = document.getElementById('chat-input');
         if (input) {
@@ -403,22 +437,90 @@ class SharedChatBase {
     }
 
     // =============================================================================
-    // SHARED MESSAGE HANDLING - OVERRIDE IN SUBCLASSES
+    // UPDATED: SHARED MESSAGE HANDLING FOR NEW STRUCTURE
     // =============================================================================
+
+    // UPDATED: Add message to the content area (below scrolling headers)
     addMessage(sender, content, isStreaming = false, skipStorage = false) {
-        // This should be overridden by subclasses to handle user-specific styling
-        console.warn('addMessage should be overridden by subclass');
-        return null;
+        const messagesContainer = this.getMessagesContainer();
+        if (!messagesContainer) {
+            console.error('Messages container not found');
+            return null;
+        }
+
+        // Hide welcome prompt when first message is added
+        const welcomePrompt = document.getElementById('welcome-prompt');
+        if (welcomePrompt && sender === 'user') {
+            welcomePrompt.style.display = 'none';
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message message-${sender}`;
+        
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = `message-avatar avatar-${sender}`;
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        
+        if (sender === 'user') {
+            avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
+            contentDiv.innerHTML = window.marked ? marked.parse(content) : content;
+            
+            if (!skipStorage && this.saveMessage) {
+                this.saveMessage('user', content);
+            }
+        } else {
+            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
+            contentDiv.innerHTML = isStreaming ? 
+                '<span class="streaming-content"></span>' : 
+                (window.marked ? marked.parse(content) : content);
+                
+            if (!isStreaming && content.trim() && !skipStorage && this.saveMessage) {
+                this.saveMessage('assistant', content);
+            }
+        }
+        
+        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(contentDiv);
+        messagesContainer.appendChild(messageDiv);
+        this.scrollToBottom();
+        
+        console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
+        
+        return messageDiv;
     }
 
+    // TEMPLATE METHODS - TO BE OVERRIDDEN BY SUBCLASSES
     async sendMessage() {
-        // This should be overridden by subclasses
         console.warn('sendMessage should be overridden by subclass');
     }
 
+    // UPDATED: Clear chat and reset to initial state
     clearChat() {
-        // This should be overridden by subclasses
-        console.warn('clearChat should be overridden by subclass');
+        if (!confirm('Clear chat history?')) return;
+        
+        const messagesContainer = this.getMessagesContainer();
+        const welcomePrompt = document.getElementById('welcome-prompt');
+        
+        if (messagesContainer) {
+            // Remove all messages but keep the welcome prompt
+            const messages = messagesContainer.querySelectorAll('.message');
+            messages.forEach(msg => msg.remove());
+        }
+        
+        if (welcomePrompt) {
+            welcomePrompt.style.display = 'block';
+        }
+        
+        this.messageCount = 0;
+        
+        // Clear storage if implemented by subclass
+        if (this.clearStorage) {
+            this.clearStorage();
+        }
+        
+        console.log('🗑️ Chat history cleared');
     }
 
     // Save message method - override in subclasses for different storage types
