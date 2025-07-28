@@ -218,9 +218,11 @@ local function get_js_files_for_context(user_type, page_type)
     return js_files
 end
 
--- Enhanced render function with automatic JS injection
-local function render_with_assets(template_path, user_type, page_type, context)
-    -- Auto-inject appropriate JS assets
+-- Enhanced render function that includes CSS versioning
+local function render_with_versioned_assets(template_path, user_type, page_type, context)
+    context.css_version = os.time()
+    
+    -- Auto-inject appropriate JS assets (existing logic)
     context.js_files = get_js_files_for_context(user_type, page_type)
     
     -- For chat pages, create individual JS blocks for ordered loading
@@ -265,8 +267,8 @@ local function render_page_with_base(page_content_path, user_type, page_type, co
     -- Set the content in context
     context.content = content
     
-    -- Use render_with_assets to handle JS and render with base template
-    render_with_assets("/usr/local/openresty/nginx/dynamic_content/base.html", user_type, page_type, context)
+    -- Use render_with_versioned_assets to handle JS and render with base template
+    render_with_versioned_assets("/usr/local/openresty/nginx/dynamic_content/base.html", user_type, page_type, context)
 end
 
 -- =============================================
@@ -347,51 +349,6 @@ local function warm_up_cache()
     ngx.log(ngx.INFO, "🔥 Cache warm-up completed")
 end
 
--- =============================================================================
--- Enhanced manage_template.lua - ADD CSS VERSIONING FOR CACHE BUSTING
--- =============================================================================
-
--- Enhanced render function that includes CSS versioning
-local function render_with_versioned_assets(template_path, user_type, page_type, context)
-    context.css_version = os.time()
-    
-    -- Auto-inject appropriate JS assets (existing logic)
-    context.js_files = get_js_files_for_context(user_type, page_type)
-    
-    -- For chat pages, create individual JS blocks for ordered loading
-    if page_type == "chat" then
-        local js_blocks = build_individual_js_blocks(context.js_files)
-        context.js_shared = js_blocks["is_shared.js"] or ""
-        context.js_sse = js_blocks["is_shared_sse.js"] or ""
-        context.js_code = js_blocks["is_shared_code.js"] or ""
-        context.js_chat = js_blocks["is_shared_chat.js"] or ""
-        
-        -- Add user-specific JS
-        local user_js_map = {
-            is_admin = "is_admin.js",
-            is_approved = "is_approved.js",
-            is_guest = "is_guest.js", 
-            is_none = "is_none.js",
-            is_pending = "is_pending.js"
-        }
-        
-        if user_js_map[user_type] then
-            context.js_user = js_blocks[user_js_map[user_type]] or ""
-        else
-            context.js_user = ""
-        end
-        
-        -- Clear the combined js field for chat pages
-        context.js = ""
-    else
-        -- For non-chat pages, use combined JS block
-        context.js = build_js_block(context.js_files)
-    end
-    
-    -- Call standard render function
-    render_template(template_path, context)
-end
-
 -- Update your module exports
 return {
     -- Original API (backwards compatible)
@@ -399,7 +356,7 @@ return {
     read_file = read_file,
     
     -- Enhanced rendering with automatic asset injection AND versioning
-    render_with_assets = render_with_versioned_assets, -- Updated function
+    render_with_versioned_assets = render_with_versioned_assets, -- Updated function
     render_page_with_base = render_page_with_base,
     
     -- Asset builders
