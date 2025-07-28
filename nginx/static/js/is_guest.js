@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_guest.js - GUEST CHAT (EXTENDS SHARED FUNCTIONALITY)
+// nginx/static/js/guest.js - GUEST CHAT (EXTENDS SharedChatBase)
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -63,25 +63,11 @@ const GuestChatStorage = {
     }
 };
 
-// Guest Chat System - Extends SharedChatBase
 class GuestChat extends SharedChatBase {
     constructor() {
         super();
-        this.storageType = 'localStorage';
-        this.messageLimit = 10;
-        this.init();
-    }
-
-    init() {
-        this.setupEventListeners();
         this.loadGuestHistory();
-        this.setupSuggestionChips();
-        console.log('👤 Guest chat system initialized');
-    }
-
-    // Override saveMessage to use localStorage
-    saveMessage(role, content) {
-        return GuestChatStorage.saveMessage(role, content);
+        console.log('👤 Guest chat initialized');
     }
 
     loadGuestHistory() {
@@ -91,9 +77,7 @@ class GuestChat extends SharedChatBase {
             if (welcomePrompt) welcomePrompt.style.display = 'none';
             
             const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) {
-                messagesContainer.innerHTML = '';
-            }
+            if (messagesContainer) messagesContainer.innerHTML = '';
             
             messages.forEach(msg => {
                 this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true);
@@ -101,166 +85,9 @@ class GuestChat extends SharedChatBase {
             console.log('📱 Loaded', messages.length, 'messages from localStorage');
         }
     }
-
-    async sendMessage() {
-        console.log('🚀 Guest sendMessage called');
-        const input = document.getElementById('chat-input');
-        if (!input) {
-            console.error('Chat input not found');
-            return;
-        }
-        
-        const message = input.value.trim();
-        
-        if (!message) {
-            console.warn('Empty message - not sending');
-            return;
-        }
-
-        if (this.isTyping) {
-            console.warn('Already typing - ignoring send request');
-            return;
-        }
-
-        console.log('📤 Sending message:', message);
-
-        // Check guest message limits
-        const guestMessages = GuestChatStorage.getMessages();
-        if (guestMessages.length >= this.messageLimit) {
-            alert('Guest message limit reached! Register for unlimited access.');
-            return;
-        }
-
-        // Hide welcome prompt
-        const welcomePrompt = document.getElementById('welcome-prompt');
-        if (welcomePrompt) welcomePrompt.style.display = 'none';
-        
-        // Add user message to UI immediately
-        this.addMessage('user', message);
-        
-        // Clear input immediately and reset height
-        input.value = '';
-        input.style.height = 'auto';
-        this.updateCharCount();
-        this.autoResizeTextarea();
-        
-        // Set typing state
-        this.isTyping = true;
-        this.updateButtons(true);
-
-        // Create abort controller for this request
-        this.abortController = new AbortController();
-        
-        // Add AI message container for streaming
-        const aiMessage = this.addMessage('ai', '', true);
-
-        try {
-            console.log('🌐 Making SSE request to /api/chat/stream');
-            
-            const response = await fetch('/api/chat/stream', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'text/event-stream',
-                    'Cache-Control': 'no-cache'
-                },
-                credentials: 'include',
-                signal: this.abortController.signal,
-                body: JSON.stringify({
-                    message: message,
-                    stream: true
-                })
-            });
-
-            console.log('📡 Response status:', response.status);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            // Use shared SSE processing from SharedChatBase
-            await this.processSSEStream(response, aiMessage);
-
-        } catch (error) {
-            console.error('❌ Chat error:', error);
-            
-            if (error.name === 'AbortError') {
-                console.log('🛑 Request was aborted by user');
-                this.updateStreamingMessage(aiMessage, '*Request cancelled*');
-            } else {
-                const errorMessage = `*Error: ${error.message}*`;
-                this.updateStreamingMessage(aiMessage, errorMessage);
-            }
-            
-            this.finishStreaming(aiMessage, `Error: ${error.message}`);
-        }
-    }
-
-    addMessage(sender, content, isStreaming = false, skipStorage = false) {
-        const messagesContainer = document.getElementById('chat-messages');
-        if (!messagesContainer) {
-            console.error('Messages container not found');
-            return;
-        }
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message message-${sender}`;
-        
-        const avatarDiv = document.createElement('div');
-        avatarDiv.className = `message-avatar avatar-${sender}`;
-        
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        
-        if (sender === 'user') {
-            avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
-            contentDiv.innerHTML = `<div class="d-flex align-items-center mb-1">
-                <i class="bi bi-clock-history text-warning me-2"></i>
-                <strong>Guest User</strong>
-                <span class="badge bg-warning ms-2">GUEST</span>
-            </div>` + (window.marked ? marked.parse(content) : content);
-            
-            if (!skipStorage) {
-                this.saveMessage('user', content);
-            }
-        } else {
-            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
-            contentDiv.innerHTML = isStreaming ? 
-                '<span class="streaming-content"></span>' : 
-                (window.marked ? marked.parse(content) : content);
-                
-            if (!isStreaming && content.trim() && !skipStorage) {
-                this.saveMessage('assistant', content);
-            }
-        }
-        
-        messageDiv.appendChild(avatarDiv);
-        messageDiv.appendChild(contentDiv);
-        messagesContainer.appendChild(messageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        
-        console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
-        
-        return messageDiv;
-    }
-
-    clearChat() {
-        if (!confirm('Clear guest chat history? This will only clear your browser storage.')) return;
-        
-        GuestChatStorage.clearMessages();
-        
-        const messagesContainer = document.getElementById('chat-messages');
-        const welcomePrompt = document.getElementById('welcome-prompt');
-        
-        if (messagesContainer) messagesContainer.innerHTML = '';
-        if (welcomePrompt) welcomePrompt.style.display = 'block';
-        
-        this.messageCount = 0;
-        console.log('🗑️ Guest chat history cleared');
-    }
 }
 
-// Guest Challenge Response System (for active guests who get challenged)
+// Guest Challenge Response System
 class GuestChallengeResponder {
     constructor() {
         this.challengeModal = null;
@@ -280,8 +107,7 @@ class GuestChallengeResponder {
         this.challengeModal = SharedModalUtils.createModal(
             'guest-response-modal',
             '<i class="bi bi-exclamation-triangle"></i> Guest Session Challenge',
-            `
-            <div class="text-center">
+            `<div class="text-center">
                 <div class="mb-3">
                     <i class="bi bi-person-x challenge-icon" style="font-size: 3rem; color: #ffc107;"></i>
                 </div>
@@ -306,15 +132,12 @@ class GuestChallengeResponder {
                         If you don't respond, you'll be disconnected and the other user will get access.
                     </small>
                 </div>
-            </div>
-            `,
+            </div>`,
             [
                 { id: 'response-accept', type: 'success', text: '<i class="bi bi-check-circle"></i> Continue Session' },
                 { id: 'response-reject', type: 'secondary', text: '<i class="bi bi-x-circle"></i> End Session' }
             ]
         );
-        
-        console.log('📋 Challenge response modal created');
     }
 
     setupEventListeners() {
@@ -342,7 +165,6 @@ class GuestChallengeResponder {
     }
 
     startChallengeListener() {
-        // Check for challenges every 10 seconds when user is active
         setInterval(() => {
             if (this.isUserActive() && !this.isListening) {
                 this.checkForChallenges();
@@ -355,7 +177,7 @@ class GuestChallengeResponder {
         if (!lastActivity) return true;
         
         const timeSinceActivity = Date.now() - parseInt(lastActivity);
-        return timeSinceActivity < 30000; // 30 seconds
+        return timeSinceActivity < 30000;
     }
 
     updateLastActivity() {
@@ -385,13 +207,11 @@ class GuestChallengeResponder {
     handleIncomingChallenge(challenge) {
         if (this.isListening) return;
 
-        console.log('🚨 Incoming challenge:', challenge);
-        
         this.isListening = true;
         this.currentChallenge = challenge;
         
         this.challengeModal.show();
-        this.startChallengeCountdown(8); // 8 second timeout
+        this.startChallengeCountdown(8);
         this.showBrowserNotification();
     }
 
@@ -436,8 +256,6 @@ class GuestChallengeResponder {
     }
 
     async handleChallengeTimeout() {
-        console.log('⏰ Challenge timeout - user will be disconnected');
-        
         this.stopCountdown();
         this.isListening = false;
         this.challengeModal.hide();
@@ -452,8 +270,6 @@ class GuestChallengeResponder {
 
     async respondToChallenge(response) {
         if (!this.currentChallenge) return;
-
-        console.log('📞 Responding to challenge:', response);
         
         try {
             const apiResponse = await fetch('/api/guest/challenge-response', {
@@ -546,17 +362,19 @@ window.downloadGuestHistory = function() {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    // Always initialize guest functionality on chat page
+    if (typeof SharedChatBase === 'undefined') {
+        console.error('❌ SharedChatBase not found - shared_chat.js must be loaded first');
+        return;
+    }
+    
     if (window.location.pathname === '/chat') {
-        // Initialize challenge responder for guest users (server will determine if needed)
+        // Initialize challenge responder for guest users
         if (!window.guestChallengeResponder) {
             window.guestChallengeResponder = new GuestChallengeResponder();
-            console.log('🎯 Challenge responder initialized');
         }
         
         // Initialize main guest chat
-        window.guestChat = new GuestChat();
-        window.chatSystem = window.guestChat; // For compatibility
-        console.log('💬 Guest chat initialized');
+        window.chatSystem = new GuestChat();
+        console.log('💬 Guest chat system initialized');
     }
 });

@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_shared_chat.js - DEDICATED CHAT FUNCTIONALITY WITH REAL-TIME MARKDOWN
+// nginx/static/js/shared_chat.js - DEDICATED CHAT FUNCTIONALITY WITH REAL-TIME MARKDOWN
 // =============================================================================
 
 // =============================================================================
@@ -101,7 +101,7 @@ class SharedChatBase {
                 this.autoResizeTextarea();
             });
             
-            // Enter key handling
+            // Enter key handling - now available for all chat types
             textarea.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     if (e.shiftKey) {
@@ -217,6 +217,20 @@ class SharedChatBase {
                 top: messagesContainer.scrollHeight,
                 behavior: 'smooth'
             });
+        }
+    }
+
+    scrollToLatestMessage() {
+        const messagesContainer = document.getElementById('chat-messages');
+        if (messagesContainer) {
+            const messages = messagesContainer.querySelectorAll('.message');
+            if (messages.length > 0) {
+                const latestMessage = messages[messages.length - 1];
+                latestMessage.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
         }
     }
 
@@ -378,7 +392,9 @@ class SharedChatBase {
         
         this.isTyping = false;
         this.updateButtons(false);
-        this.scrollToBottom();
+        
+        // Scroll to the top of the latest message when finished streaming
+        this.scrollToLatestMessage();
         
         const input = document.getElementById('chat-input');
         if (input) {
