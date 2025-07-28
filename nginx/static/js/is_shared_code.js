@@ -104,9 +104,13 @@ class CodeArtifactManager {
     }
     
     displayArtifact(artifactId) {
+        console.log(`👁️ DisplayArtifact called with: ${artifactId}`);
+        
         if (artifactId === 'pending' && this.pendingCodeBlock) {
             // Show pending content
             this.activeArtifact = 'pending';
+            console.log(`📋 Displaying pending code block with ${this.pendingCodeBlock.content.length} chars`);
+            
             if (window.sharedChatInstance && window.sharedChatInstance.codePanel) {
                 window.sharedChatInstance.codePanel.showCode(
                     this.pendingCodeBlock.content, 
@@ -114,18 +118,22 @@ class CodeArtifactManager {
                     'pending',
                     'pending'
                 );
-                console.log(`👁️ Displaying pending code block with ${this.pendingCodeBlock.content.length} chars`);
+            } else {
+                console.error('❌ Code panel manager not available for pending');
             }
             return;
         }
         
         if (!this.artifacts.has(artifactId)) {
             console.warn(`⚠️ Cannot display artifact ${artifactId} - not found`);
+            console.log('Available artifacts:', Array.from(this.artifacts.keys()));
             return;
         }
         
         const artifact = this.artifacts.get(artifactId);
         this.activeArtifact = artifactId;
+        
+        console.log(`📦 Displaying artifact: ${artifactId} with ${artifact.content.length} chars`);
         
         // Use the code panel manager directly
         if (window.sharedChatInstance && window.sharedChatInstance.codePanel) {
@@ -135,7 +143,6 @@ class CodeArtifactManager {
                 artifact.filename || artifactId,
                 artifactId
             );
-            console.log(`👁️ Displaying artifact: ${artifactId} with ${artifact.content.length} chars`);
         } else {
             console.error('❌ Code panel manager not available');
         }
@@ -209,7 +216,8 @@ class CodePanelManager {
             contentLength: codeContent ? codeContent.length : 0,
             language,
             filename,
-            artifactId
+            artifactId,
+            contentPreview: codeContent ? codeContent.substring(0, 100) + '...' : 'No content'
         });
         
         const codeDisplay = document.getElementById('code-display');
@@ -229,11 +237,12 @@ class CodePanelManager {
             return;
         }
         
-        if (!codeContent) {
-            console.warn('⚠️ No code content provided');
+        if (!codeContent || codeContent.trim() === '') {
+            console.warn('⚠️ No code content provided or content is empty');
             return;
         }
         
+        // Hide placeholder and show editor
         placeholder.style.display = 'none';
         editorContainer.style.display = 'flex';
         
@@ -241,6 +250,7 @@ class CodePanelManager {
         
         // Set code content
         codeDisplay.value = codeContent;
+        codeDisplay.style.color = '#cccccc'; // Ensure text is visible
         
         // Generate line numbers
         const lines = codeContent.split('\n');
@@ -275,6 +285,12 @@ class CodePanelManager {
         if (closeBtn) closeBtn.style.display = 'inline-block';
         
         console.log('✅ Code displayed in panel successfully');
+        
+        // Force a repaint to ensure content is visible
+        setTimeout(() => {
+            codeDisplay.scrollTop = 0;
+            lineNumbers.scrollTop = 0;
+        }, 10);
     }
     
     updateStreamingCode(codeContent) {

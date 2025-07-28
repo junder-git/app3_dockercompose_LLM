@@ -570,6 +570,29 @@ body:not(.index-page) {
     font-style: italic;
 }
 
+/* Small streaming indicator for code < 16 lines */
+.code-streaming-small {
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: rgba(13, 110, 253, 0.1);
+    border: 1px solid rgba(13, 110, 253, 0.3);
+    border-radius: 6px;
+    animation: pulse 2s infinite;
+}
+
+.streaming-indicator-small {
+    color: var(--primary-color);
+    font-size: 12px;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.streaming-indicator-small i {
+    font-size: 14px;
+}
+
 /* Streaming code placeholder */
 .code-streaming-placeholder {
     background: rgba(13, 110, 253, 0.1);
