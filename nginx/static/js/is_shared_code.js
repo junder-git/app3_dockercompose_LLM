@@ -444,6 +444,9 @@ class CodeMarkdownProcessor {
         // Generate unique ID for this code block
         const blockId = `inline-code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
+        // Normalize language name for Prism.js
+        const prismLanguage = this.normalizePrismLanguage(language);
+        
         return `<div class="inline-code-block" data-code-id="${blockId}">
             <div class="inline-code-header">
                 <span class="inline-code-info">
@@ -455,9 +458,48 @@ class CodeMarkdownProcessor {
                 </button>
             </div>
             <div class="inline-code-content">
-                <pre><code class="language-${language}">${this.escapeHtml(codeContent)}</code></pre>
+                <pre><code class="language-${prismLanguage}">${this.escapeHtml(codeContent)}</code></pre>
             </div>
         </div>`;
+    }
+    
+    normalizePrismLanguage(language) {
+        if (!language) return 'none';
+        
+        // Map common language aliases to Prism.js language names
+        const languageMap = {
+            'js': 'javascript',
+            'jsx': 'javascript',
+            'ts': 'typescript',
+            'tsx': 'typescript',
+            'py': 'python',
+            'sh': 'bash',
+            'shell': 'bash',
+            'yml': 'yaml',
+            'dockerfile': 'docker',
+            'compose.yml': 'yaml',
+            'compose.yaml': 'yaml',
+            'docker-compose': 'yaml',
+            'htm': 'html',
+            'xml': 'markup',
+            'svg': 'markup',
+            'md': 'markdown',
+            'rb': 'ruby',
+            'cs': 'csharp',
+            'cpp': 'cpp',
+            'c++': 'cpp',
+            'rs': 'rust',
+            'go': 'go',
+            'php': 'php',
+            'sql': 'sql',
+            'json': 'json',
+            'scss': 'scss',
+            'sass': 'sass',
+            'less': 'less'
+        };
+        
+        const normalizedLanguage = language.toLowerCase().trim();
+        return languageMap[normalizedLanguage] || normalizedLanguage;
     }
     
     escapeHtml(text) {
@@ -501,6 +543,28 @@ class CodeMarkdownProcessor {
                 });
             }
         });
+        
+        // Apply syntax highlighting to any new inline code blocks
+        this.applySyntaxHighlighting(messageDiv);
+    }
+    
+    applySyntaxHighlighting(container = document) {
+        // Apply Prism.js syntax highlighting to code blocks
+        if (window.Prism) {
+            // Find all code elements that haven't been highlighted yet
+            const codeElements = container.querySelectorAll('code[class*="language-"]:not(.prism-highlighted)');
+            codeElements.forEach(codeEl => {
+                // Mark as highlighted to prevent re-processing
+                codeEl.classList.add('prism-highlighted');
+                
+                // Apply Prism highlighting
+                window.Prism.highlightElement(codeEl);
+                
+                console.log(`🎨 Applied syntax highlighting to ${codeEl.className}`);
+            });
+        } else {
+            console.warn('⚠️ Prism.js not available for syntax highlighting');
+        }
     }
     
     updateStreamingMessageWithArtifacts(messageDiv, content) {
@@ -540,7 +604,8 @@ class CodeMarkdownProcessor {
                     let streamingPlaceholder;
                     
                     if (lineCount < 16) {
-                        // Small code block - show inline with streaming indicator
+                        // Small code block - show inline with streaming indicator and syntax highlighting
+                        const prismLanguage = this.normalizePrismLanguage(language);
                         streamingPlaceholder = `<div class="code-streaming-inline">
                             <div class="inline-code-header">
                                 <span class="inline-code-info">
@@ -552,7 +617,7 @@ class CodeMarkdownProcessor {
                                 </span>
                             </div>
                             <div class="inline-code-content">
-                                <pre><code class="language-${language}">${this.escapeHtml(codeContent)}</code></pre>
+                                <pre><code class="language-${prismLanguage} prism-highlighted">${this.escapeHtml(codeContent)}</code></pre>
                             </div>
                         </div>`;
                     } else {
