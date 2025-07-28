@@ -486,7 +486,6 @@ window.copyInlineCode = async function(blockId) {
 };
 
 if (typeof window !== 'undefined') {
-    window.CodeArtifactManager = CodeArtifactManager;
     window.CodePanelManager = CodePanelManager;
     window.CodeMarkdownProcessor = CodeMarkdownProcessor;
     

@@ -52,8 +52,7 @@ class SharedChatBase {
         
         // Initialize specialized managers (from separate JS files)
         this.codePanel = new CodePanelManager();
-        this.codeArtifacts = new CodeArtifactManager();
-        this.codeProcessor = new CodeMarkdownProcessor(this.codeArtifacts);
+        this.codeProcessor = new CodeMarkdownProcessor();
         this.sseManager = new SSERequestManager(this);
         
         setupMarkedWithFormatting();
@@ -315,13 +314,7 @@ class SharedChatBase {
             if (!skipStorage && this.saveMessage) {
                 this.saveMessage('user', content);
             }
-        } else {
-            contentDiv.innerHTML = isStreaming ? 
-                '<span class="streaming-content"></span>' : 
-                (this.codeProcessor ? 
-                    this.codeProcessor.processMarkdownWithArtifacts(content) : 
-                    (window.marked ? marked.parse(content) : content));
-                
+        } else {                
             if (!isStreaming && content.trim() && !skipStorage && this.saveMessage) {
                 this.saveMessage('assistant', content);
             }
@@ -331,10 +324,6 @@ class SharedChatBase {
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
         
-        // Setup code artifact handlers if not streaming
-        if (!isStreaming && this.codeProcessor) {
-            this.codeProcessor.setupCodeArtifactHandlers(messageDiv);
-        }
         
         this.scrollToBottom();
         console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
@@ -412,7 +401,6 @@ class SharedChatBase {
         
         // Clear code artifacts and hide panel
         this.codePanel.hideCode();
-        this.codeArtifacts.clearAllArtifacts();
         
         this.messageCount = 0;
         
