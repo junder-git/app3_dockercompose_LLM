@@ -660,3 +660,15 @@ a:hover {
         min-width: 160px !important;
     }
 }
+
+/* Blinking cursor for streaming messages */
+.cursor.blink {
+    animation: blink 1s infinite;
+    color: var(--primary-color);
+    font-weight: bold;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}

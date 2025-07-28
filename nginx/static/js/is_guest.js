@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/guest.js - GUEST CHAT (EXTENDS SharedChatBase)
+// nginx/static/js/is_guest.js - COMPLETE GUEST CHAT WITH CHALLENGES AND LOCALSTORAGE
 // =============================================================================
 
 // Guest Chat Storage - localStorage only
@@ -63,11 +63,48 @@ const GuestChatStorage = {
     }
 };
 
+// =============================================================================
+// GUEST CHAT CLASS - EXTENDS SharedChatBase
+// =============================================================================
+
 class GuestChat extends SharedChatBase {
     constructor() {
         super();
-        this.loadGuestHistory();
+        this.storageType = 'localStorage';
+        this.maxTokens = 1024; // Limited for guests
         console.log('👤 Guest chat initialized');
+        
+        // Load guest history after initialization
+        this.loadGuestHistory();
+    }
+
+    // Override saveMessage to use localStorage
+    saveMessage(role, content) {
+        console.log(`💾 Guest saving ${role} message to localStorage (${content.length} chars)`);
+        return GuestChatStorage.saveMessage(role, content);
+    }
+
+    // Override clearChat to also clear localStorage
+    clearChat() {
+        if (!confirm('Clear guest chat history? This will only clear your browser storage.')) return;
+        
+        const messagesContainer = this.getMessagesContainer();
+        const welcomePrompt = document.getElementById('welcome-prompt');
+        
+        if (messagesContainer) {
+            const messages = messagesContainer.querySelectorAll('.message');
+            messages.forEach(msg => msg.remove());
+        }
+        
+        if (welcomePrompt) {
+            welcomePrompt.style.display = 'block';
+        }
+        
+        // Clear localStorage
+        GuestChatStorage.clearMessages();
+        
+        this.messageCount = 0;
+        console.log('🗑️ Guest chat history cleared from localStorage');
     }
 
     loadGuestHistory() {
@@ -76,9 +113,14 @@ class GuestChat extends SharedChatBase {
             const welcomePrompt = document.getElementById('welcome-prompt');
             if (welcomePrompt) welcomePrompt.style.display = 'none';
             
-            const messagesContainer = document.getElementById('chat-messages');
-            if (messagesContainer) messagesContainer.innerHTML = '';
+            // Clear any existing messages first
+            const messagesContainer = this.getMessagesContainer();
+            if (messagesContainer) {
+                const existingMessages = messagesContainer.querySelectorAll('.message');
+                existingMessages.forEach(msg => msg.remove());
+            }
             
+            // Add all stored messages
             messages.forEach(msg => {
                 this.addMessage(msg.role === 'user' ? 'user' : 'ai', msg.content, false, true);
             });
@@ -87,7 +129,10 @@ class GuestChat extends SharedChatBase {
     }
 }
 
-// Guest Challenge Response System
+// =============================================================================
+// GUEST CHALLENGE RESPONSE SYSTEM
+// =============================================================================
+
 class GuestChallengeResponder {
     constructor() {
         this.challengeModal = null;
@@ -104,50 +149,63 @@ class GuestChallengeResponder {
     }
 
     createChallengeModal() {
-        this.challengeModal = SharedModalUtils.createModal(
-            'guest-response-modal',
-            '<i class="bi bi-exclamation-triangle"></i> Guest Session Challenge',
-            `<div class="text-center">
-                <div class="mb-3">
-                    <i class="bi bi-person-x challenge-icon" style="font-size: 3rem; color: #ffc107;"></i>
-                </div>
-                <h6 class="text-warning mb-3">Someone wants to use your guest session!</h6>
-                <p class="text-light mb-3">
-                    Another user is requesting access to your guest slot. 
-                    You appear to be inactive. Do you want to continue your session?
-                </p>
-                <div class="challenge-countdown mb-3">
-                    <div class="progress bg-secondary" style="height: 12px; border-radius: 6px;">
-                        <div id="response-progress" class="progress-bar bg-warning" role="progressbar" style="width: 100%;"></div>
+        // Check if SharedModalUtils is available
+        if (typeof SharedModalUtils !== 'undefined') {
+            this.challengeModal = SharedModalUtils.createModal(
+                'guest-response-modal',
+                '<i class="bi bi-exclamation-triangle"></i> Guest Session Challenge',
+                `<div class="text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-person-x challenge-icon" style="font-size: 3rem; color: #ffc107;"></i>
                     </div>
-                    <div class="mt-2">
-                        <span class="text-warning">Time remaining: </span>
-                        <span id="response-timer" class="text-light fw-bold" style="font-family: monospace; font-size: 1.25rem;">8</span>
-                        <span class="text-light"> seconds</span>
+                    <h6 class="text-warning mb-3">Someone wants to use your guest session!</h6>
+                    <p class="text-light mb-3">
+                        Another user is requesting access to your guest slot. 
+                        You appear to be inactive. Do you want to continue your session?
+                    </p>
+                    <div class="challenge-countdown mb-3">
+                        <div class="progress bg-secondary" style="height: 12px; border-radius: 6px;">
+                            <div id="response-progress" class="progress-bar bg-warning" role="progressbar" style="width: 100%;"></div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="text-warning">Time remaining: </span>
+                            <span id="response-timer" class="text-light fw-bold" style="font-family: monospace; font-size: 1.25rem;">8</span>
+                            <span class="text-light"> seconds</span>
+                        </div>
                     </div>
-                </div>
-                <div class="alert alert-warning">
-                    <small>
-                        <i class="bi bi-info-circle"></i>
-                        If you don't respond, you'll be disconnected and the other user will get access.
-                    </small>
-                </div>
-            </div>`,
-            [
-                { id: 'response-accept', type: 'success', text: '<i class="bi bi-check-circle"></i> Continue Session' },
-                { id: 'response-reject', type: 'secondary', text: '<i class="bi bi-x-circle"></i> End Session' }
-            ]
-        );
+                    <div class="alert alert-warning">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            If you don't respond, you'll be disconnected and the other user will get access.
+                        </small>
+                    </div>
+                </div>`,
+                [
+                    { id: 'response-accept', type: 'success', text: '<i class="bi bi-check-circle"></i> Continue Session' },
+                    { id: 'response-reject', type: 'secondary', text: '<i class="bi bi-x-circle"></i> End Session' }
+                ]
+            );
+        } else {
+            console.warn('SharedModalUtils not available - challenge modals will not work');
+        }
     }
 
     setupEventListeners() {
-        document.getElementById('response-accept').addEventListener('click', () => {
-            this.respondToChallenge('accept');
-        });
+        // Set up challenge response buttons
+        const acceptBtn = document.getElementById('response-accept');
+        const rejectBtn = document.getElementById('response-reject');
+        
+        if (acceptBtn) {
+            acceptBtn.addEventListener('click', () => {
+                this.respondToChallenge('accept');
+            });
+        }
 
-        document.getElementById('response-reject').addEventListener('click', () => {
-            this.respondToChallenge('reject');
-        });
+        if (rejectBtn) {
+            rejectBtn.addEventListener('click', () => {
+                this.respondToChallenge('reject');
+            });
+        }
 
         // Activity tracking
         ['click', 'keypress', 'scroll', 'mousemove'].forEach(event => {
@@ -165,6 +223,7 @@ class GuestChallengeResponder {
     }
 
     startChallengeListener() {
+        // Check for challenges every 10 seconds when user is active
         setInterval(() => {
             if (this.isUserActive() && !this.isListening) {
                 this.checkForChallenges();
@@ -177,7 +236,7 @@ class GuestChallengeResponder {
         if (!lastActivity) return true;
         
         const timeSinceActivity = Date.now() - parseInt(lastActivity);
-        return timeSinceActivity < 30000;
+        return timeSinceActivity < 30000; // 30 seconds
     }
 
     updateLastActivity() {
@@ -186,6 +245,12 @@ class GuestChallengeResponder {
 
     async checkForChallenges() {
         try {
+            // Check if sharedInterface is available
+            if (typeof sharedInterface === 'undefined') {
+                console.warn('sharedInterface not available for auth check');
+                return;
+            }
+
             const userInfo = await sharedInterface.checkAuth();
             if (!userInfo || userInfo.user_type !== 'is_guest') return;
 
@@ -207,12 +272,16 @@ class GuestChallengeResponder {
     handleIncomingChallenge(challenge) {
         if (this.isListening) return;
 
+        console.log('🚨 Incoming challenge:', challenge);
+        
         this.isListening = true;
         this.currentChallenge = challenge;
         
-        this.challengeModal.show();
-        this.startChallengeCountdown(8);
-        this.showBrowserNotification();
+        if (this.challengeModal) {
+            this.challengeModal.show();
+            this.startChallengeCountdown(8); // 8 second timeout
+            this.showBrowserNotification();
+        }
     }
 
     startChallengeCountdown(totalSeconds) {
@@ -256,11 +325,19 @@ class GuestChallengeResponder {
     }
 
     async handleChallengeTimeout() {
+        console.log('⏰ Challenge timeout - user will be disconnected');
+        
         this.stopCountdown();
         this.isListening = false;
-        this.challengeModal.hide();
         
-        sharedInterface.showWarning('Your guest session has been ended due to inactivity. Another user has taken your slot.');
+        if (this.challengeModal) {
+            this.challengeModal.hide();
+        }
+        
+        if (typeof sharedInterface !== 'undefined') {
+            sharedInterface.showWarning('Your guest session has been ended due to inactivity. Another user has taken your slot.');
+        }
+        
         this.clearUserSession();
         
         setTimeout(() => {
@@ -270,6 +347,8 @@ class GuestChallengeResponder {
 
     async respondToChallenge(response) {
         if (!this.currentChallenge) return;
+
+        console.log('📞 Responding to challenge:', response);
         
         try {
             const apiResponse = await fetch('/api/guest/challenge-response', {
@@ -291,20 +370,29 @@ class GuestChallengeResponder {
             }
         } catch (error) {
             console.error('Challenge response error:', error);
-            sharedInterface.showError('Failed to respond to challenge: ' + error.message);
+            if (typeof sharedInterface !== 'undefined') {
+                sharedInterface.showError('Failed to respond to challenge: ' + error.message);
+            }
         }
     }
 
     handleChallengeResponse(response, result) {
         this.stopCountdown();
         this.isListening = false;
-        this.challengeModal.hide();
+        
+        if (this.challengeModal) {
+            this.challengeModal.hide();
+        }
         
         if (response === 'accept' && result === 'accepted') {
-            sharedInterface.showSuccess('Session continued successfully!');
+            if (typeof sharedInterface !== 'undefined') {
+                sharedInterface.showSuccess('Session continued successfully!');
+            }
             this.updateLastActivity();
         } else {
-            sharedInterface.showInfo('Session ended. Thank you for using ai.junder.uk!');
+            if (typeof sharedInterface !== 'undefined') {
+                sharedInterface.showInfo('Session ended. Thank you for using ai.junder.uk!');
+            }
             this.clearUserSession();
             
             setTimeout(() => {
@@ -338,12 +426,17 @@ class GuestChallengeResponder {
     }
 
     clearUserSession() {
-        sharedInterface.clearClientData();
+        if (typeof sharedInterface !== 'undefined') {
+            sharedInterface.clearClientData();
+        }
         console.log('🧹 Guest session cleared');
     }
 }
 
-// Global guest functions
+// =============================================================================
+// GLOBAL GUEST FUNCTIONS
+// =============================================================================
+
 window.downloadGuestHistory = function() {
     const exportData = GuestChatStorage.exportMessages();
     const blob = new Blob([exportData], { type: 'application/json' });
@@ -360,21 +453,25 @@ window.downloadGuestHistory = function() {
     console.log('📥 Guest chat history downloaded');
 };
 
-// Initialize when DOM is ready
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof SharedChatBase === 'undefined') {
-        console.error('❌ SharedChatBase not found - shared_chat.js must be loaded first');
+        console.error('❌ SharedChatBase not found - is_shared_chat.js must be loaded first');
         return;
     }
     
     if (window.location.pathname === '/chat') {
-        // Initialize challenge responder for guest users
+        // Initialize challenge responder for guest users (server will determine if needed)
         if (!window.guestChallengeResponder) {
             window.guestChallengeResponder = new GuestChallengeResponder();
+            console.log('🎯 Challenge responder initialized');
         }
         
         // Initialize main guest chat
         window.chatSystem = new GuestChat();
-        console.log('💬 Guest chat system initialized');
+        console.log('💬 Guest chat system initialized and ready');
     }
 });

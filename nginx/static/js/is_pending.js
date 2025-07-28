@@ -1,8 +1,8 @@
 // =============================================================================
-// nginx/static/js/is_pending.js - PENDING USER FUNCTIONALITY
+// nginx/static/js/is_pending.js - PENDING USER FUNCTIONALITY (NO CHAT ACCESS)
 // =============================================================================
 
-// Pending User Status Checker
+// Pending users don't get chat access, but we can provide status checking
 class PendingUserStatus {
     constructor() {
         this.checkInterval = null;
@@ -92,7 +92,9 @@ class PendingUserStatus {
 window.checkStatusNow = async function() {
     if (window.pendingUserStatus) {
         await window.pendingUserStatus.checkApprovalStatus();
-        sharedInterface.showInfo('Status checked - you\'ll be notified of any changes');
+        if (window.sharedInterface) {
+            sharedInterface.showInfo('Status checked - you\'ll be notified of any changes');
+        }
     }
 };
 
@@ -103,15 +105,17 @@ window.tryGuestChat = function() {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     // Only initialize if we're actually a pending user
-    sharedInterface.checkAuth()
-        .then(data => {
-            if (data.success && data.user_type === 'is_pending') {
-                // Initialize pending user status checker
-                window.pendingUserStatus = new PendingUserStatus();
-                console.log('📋 Pending user functionality initialized');
-            }
-        })
-        .catch(error => {
-            console.warn('Could not check auth status for pending user:', error);
-        });
+    if (window.sharedInterface) {
+        sharedInterface.checkAuth()
+            .then(data => {
+                if (data.success && data.user_type === 'is_pending') {
+                    // Initialize pending user status checker
+                    window.pendingUserStatus = new PendingUserStatus();
+                    console.log('📋 Pending user functionality initialized');
+                }
+            })
+            .catch(error => {
+                console.warn('Could not check auth status for pending user:', error);
+            });
+    }
 });
