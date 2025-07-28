@@ -1,192 +1,6 @@
 // =============================================================================
 // nginx/static/js/is_shared_code.js - CODE ARTIFACT MANAGEMENT SYSTEM
 // =============================================================================
-
-// =============================================================================
-// CODE ARTIFACT MANAGEMENT SYSTEM
-// =============================================================================
-
-class CodeArtifactManager {
-    constructor() {
-        this.artifacts = new Map(); // Store code artifacts: code_1, code_2, etc.
-        this.activeArtifact = null;
-        this.streamingArtifact = null;
-        this.pendingCodeBlock = null; // For temporary storage during streaming
-    }
-    
-    createArtifact(language = '', filename = '') {
-        // Use the array size + 1 as the index, not a separate counter
-        const artifactIndex = this.artifacts.size + 1;
-        const artifactId = `code_${artifactIndex}`;
-        
-        const artifact = {
-            id: artifactId,
-            content: '',
-            language: language,
-            filename: filename,
-            isStreaming: false,
-            version: 1
-        };
-        
-        this.artifacts.set(artifactId, artifact);
-        console.log(`📦 Created code artifact: ${artifactId} (index: ${artifactIndex})`);
-        return artifactId;
-    }
-    
-    createPendingCodeBlock(language = '') {
-        // Create a temporary holding area for streaming content
-        this.pendingCodeBlock = {
-            content: '',
-            language: language,
-            isActive: true
-        };
-        console.log(`📋 Created pending code block for language: ${language}`);
-        return this.pendingCodeBlock;
-    }
-    
-    updatePendingCodeBlock(content) {
-        if (this.pendingCodeBlock && this.pendingCodeBlock.isActive) {
-            this.pendingCodeBlock.content = content;
-            
-            // Update code panel if it's showing pending content
-            if (window.sharedChatInstance && window.sharedChatInstance.codePanel && 
-                window.sharedChatInstance.codePanel.currentArtifactId === 'pending') {
-                window.sharedChatInstance.codePanel.updateStreamingCode(content);
-            }
-            
-            return true;
-        }
-        return false;
-    }
-    
-    finalizePendingCodeBlock() {
-        if (this.pendingCodeBlock && this.pendingCodeBlock.isActive) {
-            // Only create artifact if content is substantial (≥16 lines)
-            const lineCount = this.pendingCodeBlock.content.split('\n').length;
-            if (lineCount >= 16) {
-                // Create actual artifact from pending content
-                const artifactId = this.createArtifact(this.pendingCodeBlock.language);
-                this.updateArtifact(artifactId, this.pendingCodeBlock.content, true);
-                
-                // Clear pending block
-                const finalContent = this.pendingCodeBlock.content;
-                this.pendingCodeBlock = null;
-                
-                console.log(`✅ Finalized pending code block as ${artifactId} (${lineCount} lines)`);
-                return { artifactId, content: finalContent };
-            } else {
-                // Clear pending block without creating artifact
-                const finalContent = this.pendingCodeBlock.content;
-                this.pendingCodeBlock = null;
-                console.log(`📄 Pending code block too small (${lineCount} lines) - not creating artifact`);
-                return { artifactId: null, content: finalContent };
-            }
-        }
-        return null;
-    }
-    
-    updateArtifact(artifactId, content, isComplete = false) {
-        if (!this.artifacts.has(artifactId)) {
-            console.warn(`⚠️ Artifact ${artifactId} not found`);
-            return;
-        }
-        
-        const artifact = this.artifacts.get(artifactId);
-        artifact.content = content;
-        artifact.isStreaming = !isComplete;
-        
-        // If this is the active artifact in the code panel, update the display
-        if (this.activeArtifact === artifactId) {
-            this.displayArtifact(artifactId);
-        }
-        
-        console.log(`📝 Updated artifact ${artifactId} (${content.length} chars)`);
-    }
-    
-    displayArtifact(artifactId) {
-        console.log(`👁️ DisplayArtifact called with: ${artifactId}`);
-        
-        if (artifactId === 'pending' && this.pendingCodeBlock) {
-            // Show pending content
-            this.activeArtifact = 'pending';
-            console.log(`📋 Displaying pending code block with ${this.pendingCodeBlock.content.length} chars`);
-            
-            if (window.sharedChatInstance && window.sharedChatInstance.codePanel) {
-                window.sharedChatInstance.codePanel.showCode(
-                    this.pendingCodeBlock.content, 
-                    this.pendingCodeBlock.language, 
-                    'pending',
-                    'pending'
-                );
-            } else {
-                console.error('❌ Code panel manager not available for pending');
-            }
-            return;
-        }
-        
-        if (!this.artifacts.has(artifactId)) {
-            console.warn(`⚠️ Cannot display artifact ${artifactId} - not found`);
-            console.log('Available artifacts:', Array.from(this.artifacts.keys()));
-            return;
-        }
-        
-        const artifact = this.artifacts.get(artifactId);
-        this.activeArtifact = artifactId;
-        
-        console.log(`📦 Displaying artifact: ${artifactId} with ${artifact.content.length} chars`);
-        
-        // Use the code panel manager directly
-        if (window.sharedChatInstance && window.sharedChatInstance.codePanel) {
-            window.sharedChatInstance.codePanel.showCode(
-                artifact.content, 
-                artifact.language, 
-                artifact.filename || artifactId,
-                artifactId
-            );
-        } else {
-            console.error('❌ Code panel manager not available');
-        }
-    }
-    
-    getArtifact(artifactId) {
-        return this.artifacts.get(artifactId);
-    }
-    
-    getAllArtifacts() {
-        return Array.from(this.artifacts.values());
-    }
-    
-    setStreamingArtifact(artifactId) {
-        this.streamingArtifact = artifactId;
-        if (this.artifacts.has(artifactId)) {
-            this.artifacts.get(artifactId).isStreaming = true;
-        }
-    }
-    
-    finishStreaming(artifactId) {
-        this.streamingArtifact = null;
-        if (this.artifacts.has(artifactId)) {
-            this.artifacts.get(artifactId).isStreaming = false;
-        }
-    }
-    
-    isStreaming() {
-        return this.streamingArtifact !== null || (this.pendingCodeBlock && this.pendingCodeBlock.isActive);
-    }
-    
-    getCurrentStreamingArtifact() {
-        return this.streamingArtifact;
-    }
-    
-    clearAllArtifacts() {
-        this.artifacts.clear();
-        this.activeArtifact = null;
-        this.streamingArtifact = null;
-        this.pendingCodeBlock = null;
-        console.log('🗑️ All code artifacts cleared');
-    }
-}
-
 // =============================================================================
 // CODE PANEL MANAGEMENT
 // =============================================================================
@@ -400,53 +214,18 @@ class CodeMarkdownProcessor {
                 const language = match[1] || '';
                 const codeContent = match[2];
                 const lineCount = codeContent.split('\n').length;
-                
                 console.log(`🔍 Processing code block: ${lineCount} lines, language: ${language || 'none'}`);
+                // Small code block - create custom inline display with copy button
+                const inlineCodeBlock = this.createInlineCodeBlock(codeContent, language, lineCount);
+                const startIndex = match.index + offset;
+                const endIndex = startIndex + fullMatch.length;
                 
-                // Only create artifacts for code blocks with 16+ lines
-                if (lineCount >= 16) {
-                    // Check if this is the finalization of a pending code block
-                    let artifactId;
-                    if (this.artifactManager.pendingCodeBlock && 
-                        this.artifactManager.pendingCodeBlock.language === language &&
-                        this.artifactManager.pendingCodeBlock.content.trim() === codeContent.trim()) {
-                        
-                        // Finalize the pending block
-                        const result = this.artifactManager.finalizePendingCodeBlock();
-                        if (result) {
-                            artifactId = result.artifactId;
-                            console.log(`✅ Finalized pending code block as ${artifactId} (${lineCount} lines)`);
-                        }
-                    } else {
-                        // Create new artifact for large complete code blocks
-                        artifactId = this.artifactManager.createArtifact(language);
-                        this.artifactManager.updateArtifact(artifactId, codeContent, true);
-                        console.log(`📦 Created artifact ${artifactId} for large code block (${lineCount} lines)`);
-                    }
-                    
-                    // Replace code block with button placeholder
-                    const buttonPlaceholder = this.createCodeButtonPlaceholder(artifactId, language);
-                    const startIndex = match.index + offset;
-                    const endIndex = startIndex + fullMatch.length;
-                    
-                    processed = processed.substring(0, startIndex) + 
-                               buttonPlaceholder + 
-                               processed.substring(endIndex);
-                    
-                    offset += buttonPlaceholder.length - fullMatch.length;
-                } else {
-                    // Small code block - create custom inline display with copy button
-                    const inlineCodeBlock = this.createInlineCodeBlock(codeContent, language, lineCount);
-                    const startIndex = match.index + offset;
-                    const endIndex = startIndex + fullMatch.length;
-                    
-                    processed = processed.substring(0, startIndex) + 
-                               inlineCodeBlock + 
-                               processed.substring(endIndex);
-                    
-                    offset += inlineCodeBlock.length - fullMatch.length;
-                    console.log(`📄 Created inline code block (${lineCount} lines)`);
-                }
+                processed = processed.substring(0, startIndex) + 
+                            inlineCodeBlock + 
+                            processed.substring(endIndex);
+                
+                offset += inlineCodeBlock.length - fullMatch.length;
+                console.log(`📄 Created inline code block (${lineCount} lines)`);
             }
             
             return marked.parse(processed);
@@ -618,35 +397,22 @@ class CodeMarkdownProcessor {
                     // Process the content before the code block + show placeholder based on size
                     const processedBeforeCode = this.processMarkdownWithArtifacts(beforeCode);
                     let streamingPlaceholder;
-                    
-                    if (lineCount < 16) {
-                        // Small code block - show inline with streaming indicator and syntax highlighting
-                        const prismLanguage = this.normalizePrismLanguage(language);
-                        streamingPlaceholder = `<div class="code-streaming-inline">
-                            <div class="inline-code-header">
-                                <span class="inline-code-info">
-                                    <i class="bi bi-file-earmark-code"></i>
-                                    ${language || 'Code'} • ${lineCount} lines • Streaming...
-                                </span>
-                                <span class="streaming-indicator-text">
-                                    <i class="bi bi-arrow-right"></i> Also in code panel
-                                </span>
-                            </div>
-                            <div class="inline-code-content">
-                                <pre><code class="language-${prismLanguage} prism-highlighted">${this.escapeHtml(codeContent)}</code></pre>
-                            </div>
-                        </div>`;
-                    } else {
-                        // Large code block - show artifact placeholder
-                        streamingPlaceholder = `<div class="code-streaming-placeholder">
-                            <div class="code-artifact-info">
+                    // Small code block - show inline with streaming indicator and syntax highlighting
+                    const prismLanguage = this.normalizePrismLanguage(language);
+                    streamingPlaceholder = `<div class="code-streaming-inline">
+                        <div class="inline-code-header">
+                            <span class="inline-code-info">
                                 <i class="bi bi-file-earmark-code"></i>
-                                <span class="code-artifact-name">Streaming code...</span>
-                                <span class="code-artifact-meta">${language || 'Code'} • ${lineCount} lines • View in panel →</span>
-                            </div>
-                        </div>`;
-                    }
-                    
+                                ${language || 'Code'} • ${lineCount} lines • Streaming...
+                            </span>
+                            <span class="streaming-indicator-text">
+                                <i class="bi bi-arrow-right"></i> Also in code panel
+                            </span>
+                        </div>
+                        <div class="inline-code-content">
+                            <pre><code class="language-${prismLanguage} prism-highlighted">${this.escapeHtml(codeContent)}</code></pre>
+                        </div>
+                    </div>`;                    
                     streamingEl.innerHTML = processedBeforeCode + streamingPlaceholder + '<span class="cursor blink">▋</span>';
                 } else {
                     // Still determining language, just show regular markdown
