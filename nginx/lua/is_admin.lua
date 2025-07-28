@@ -12,7 +12,7 @@ local M = {}
 -- ADMIN CHAT API HANDLERS
 -- =============================================
 
-local function handle_chat_history()
+function M.handle_chat_history()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_admin" then
@@ -51,7 +51,7 @@ local function handle_chat_history()
     }))
 end
 
-local function handle_clear_chat()
+function M.handle_clear_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_admin" then
@@ -85,7 +85,7 @@ local function handle_clear_chat()
     }))
 end
 
-local function handle_export_chat()
+function M.handle_export_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_admin" then
@@ -119,7 +119,7 @@ local function handle_export_chat()
     ngx.say(export_data)
 end
 
-local function handle_search_chat()
+function M.handle_search_chat()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_admin" then
@@ -171,7 +171,7 @@ end
 -- ADMIN API HANDLERS (EXISTING)
 -- =============================================
 
-local function handle_admin_stats()
+function M.handle_admin_stats()
     -- Get comprehensive system statistics
     local stats = {
         guest_sessions = {
@@ -264,7 +264,7 @@ local function handle_admin_stats()
     }))
 end
 
-local function handle_pending_users()
+function M.handle_pending_users()
     local red = auth.connect_redis()
     if not red then
         ngx.status = 503
@@ -315,7 +315,7 @@ local function handle_pending_users()
     }))
 end
 
-local function handle_all_users()
+function M.handle_all_users()
     local red = auth.connect_redis()
     if not red then
         ngx.status = 503
@@ -376,7 +376,7 @@ local function handle_all_users()
     }))
 end
 
-local function handle_approve_user()
+function M.handle_approve_user()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
@@ -431,7 +431,7 @@ local function handle_approve_user()
     }))
 end
 
-local function handle_reject_user()
+function M.handle_reject_user()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
     if not body then
@@ -485,7 +485,7 @@ local function handle_reject_user()
     }))
 end
 
-local function handle_clear_guest_sessions()
+function M.handle_clear_guest_sessions()
     local red = auth.connect_redis()
     if not red then
         ngx.status = 503
@@ -527,7 +527,7 @@ end
 -- ADMIN CHAT STREAMING WITH HISTORY SAVING
 -- =============================================
 
-local function handle_ollama_chat_stream()
+function M.handle_ollama_chat_stream()
     local user_type, username, user_data = auth.check()
     
     if user_type ~= "is_admin" then
@@ -657,9 +657,4 @@ function M.handle_route(route_type)
     end
 end
 
-return {
-    handle_admin_api = M.handle_admin_api,
-    handle_chat_api = M.handle_chat_api,
-    handle_ollama_chat_stream = handle_ollama_chat_stream,
-    handle_route = M.handle_route
-}
+return M
