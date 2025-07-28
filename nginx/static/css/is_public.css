@@ -442,6 +442,42 @@ body:not(.index-page) {
     animation: pulse 2s infinite;
 }
 
+/* Inline streaming code (for small blocks) */
+.code-streaming-inline {
+    margin: 12px 0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.code-inline-content {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px 8px 0 0;
+}
+
+.code-inline-content pre {
+    margin: 0;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    font-size: 13px;
+    line-height: 1.4;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.streaming-indicator {
+    background: rgba(13, 110, 253, 0.1);
+    border: 1px solid rgba(13, 110, 253, 0.3);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--primary-color);
+    text-align: center;
+    animation: pulse 2s infinite;
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }

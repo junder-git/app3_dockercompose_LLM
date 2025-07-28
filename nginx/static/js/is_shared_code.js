@@ -374,36 +374,46 @@ class CodeMarkdownProcessor {
                 const fullMatch = match[0];
                 const language = match[1] || '';
                 const codeContent = match[2];
+                const lineCount = codeContent.split('\n').length;
                 
-                // Check if this is the finalization of a pending code block
-                let artifactId;
-                if (this.artifactManager.pendingCodeBlock && 
-                    this.artifactManager.pendingCodeBlock.language === language &&
-                    this.artifactManager.pendingCodeBlock.content === codeContent) {
-                    
-                    // Finalize the pending block
-                    const result = this.artifactManager.finalizePendingCodeBlock();
-                    if (result) {
-                        artifactId = result.artifactId;
-                        console.log(`✅ Finalized pending code block as ${artifactId}`);
+                console.log(`🔍 Processing code block: ${lineCount} lines, language: ${language || 'none'}`);
+                
+                // Only create artifacts for code blocks with 16+ lines
+                if (lineCount >= 16) {
+                    // Check if this is the finalization of a pending code block
+                    let artifactId;
+                    if (this.artifactManager.pendingCodeBlock && 
+                        this.artifactManager.pendingCodeBlock.language === language &&
+                        this.artifactManager.pendingCodeBlock.content.trim() === codeContent.trim()) {
+                        
+                        // Finalize the pending block
+                        const result = this.artifactManager.finalizePendingCodeBlock();
+                        if (result) {
+                            artifactId = result.artifactId;
+                            console.log(`✅ Finalized pending code block as ${artifactId} (${lineCount} lines)`);
+                        }
+                    } else {
+                        // Create new artifact for large complete code blocks
+                        artifactId = this.artifactManager.createArtifact(language);
+                        this.artifactManager.updateArtifact(artifactId, codeContent, true);
+                        console.log(`📦 Created artifact ${artifactId} for large code block (${lineCount} lines)`);
                     }
+                    
+                    // Replace code block with button placeholder
+                    const buttonPlaceholder = this.createCodeButtonPlaceholder(artifactId, language);
+                    const startIndex = match.index + offset;
+                    const endIndex = startIndex + fullMatch.length;
+                    
+                    processed = processed.substring(0, startIndex) + 
+                               buttonPlaceholder + 
+                               processed.substring(endIndex);
+                    
+                    offset += buttonPlaceholder.length - fullMatch.length;
                 } else {
-                    // Create new artifact for complete code blocks
-                    artifactId = this.artifactManager.createArtifact(language);
-                    this.artifactManager.updateArtifact(artifactId, codeContent, true);
-                    console.log(`📦 Created artifact ${artifactId} for complete code block (${codeContent.length} chars)`);
+                    // Small code block - leave as regular markdown
+                    console.log(`📄 Keeping small code block inline (${lineCount} lines)`);
+                    // No replacement needed - let markdown handle it normally
                 }
-                
-                // Replace code block with button placeholder
-                const buttonPlaceholder = this.createCodeButtonPlaceholder(artifactId, language);
-                const startIndex = match.index + offset;
-                const endIndex = startIndex + fullMatch.length;
-                
-                processed = processed.substring(0, startIndex) + 
-                           buttonPlaceholder + 
-                           processed.substring(endIndex);
-                
-                offset += buttonPlaceholder.length - fullMatch.length;
             }
             
             return marked.parse(processed);
@@ -437,10 +447,16 @@ class CodeMarkdownProcessor {
             const artifactId = button.dataset.artifactId;
             const language = button.dataset.language;
             
-            button.addEventListener('click', () => {
-                this.artifactManager.displayArtifact(artifactId);
-                console.log(`📁 Code artifact ${artifactId} clicked, displaying in panel`);
-            });
+            // Remove any existing listeners to prevent duplicates
+            button.replaceWith(button.cloneNode(true));
+            const newButton = messageDiv.querySelector(`[data-artifact-id="${artifactId}"]`);
+            
+            if (newButton) {
+                newButton.addEventListener('click', () => {
+                    console.log(`🖱️ Code artifact button clicked: ${artifactId}`);
+                    this.artifactManager.displayArtifact(artifactId);
+                });
+            }
         });
     }
     
@@ -461,26 +477,45 @@ class CodeMarkdownProcessor {
                     const language = afterTripleBacktick.substring(0, newlineIndex).trim();
                     const codeContent = afterTripleBacktick.substring(newlineIndex + 1);
                     
-                    // Use pending code block system for streaming
-                    if (!this.artifactManager.pendingCodeBlock) {
+                    // Only create/update pending block once per code block
+                    if (!this.artifactManager.pendingCodeBlock || 
+                        this.artifactManager.pendingCodeBlock.language !== language) {
                         this.artifactManager.createPendingCodeBlock(language);
                         // Immediately show pending content in code panel
                         this.artifactManager.displayArtifact('pending');
-                        console.log(`📋 Started streaming to pending code block`);
+                        console.log(`📋 Started streaming to pending code block (${language})`);
                     }
                     
                     // Update pending content and code panel
                     this.artifactManager.updatePendingCodeBlock(codeContent);
                     
-                    // Process the content before the code block + show simple placeholder
+                    // Check line count for artifact creation threshold
+                    const lineCount = codeContent.split('\n').length;
+                    
+                    // Process the content before the code block + show placeholder based on size
                     const processedBeforeCode = this.processMarkdownWithArtifacts(beforeCode);
-                    const streamingPlaceholder = `<div class="code-streaming-placeholder">
-                        <div class="code-artifact-info">
-                            <i class="bi bi-file-earmark-code"></i>
-                            <span class="code-artifact-name">Streaming code...</span>
-                            <span class="code-artifact-meta">${language || 'Code'} • View in panel →</span>
-                        </div>
-                    </div>`;
+                    let streamingPlaceholder;
+                    
+                    if (lineCount < 16) {
+                        // Small code block - show inline with streaming indicator
+                        streamingPlaceholder = `<div class="code-streaming-inline">
+                            <div class="code-inline-content">
+                                <pre class="streaming-code"><code>${codeContent}</code></pre>
+                            </div>
+                            <div class="streaming-indicator">
+                                <i class="bi bi-arrow-right"></i> Streaming to code panel
+                            </div>
+                        </div>`;
+                    } else {
+                        // Large code block - show artifact placeholder
+                        streamingPlaceholder = `<div class="code-streaming-placeholder">
+                            <div class="code-artifact-info">
+                                <i class="bi bi-file-earmark-code"></i>
+                                <span class="code-artifact-name">Streaming code...</span>
+                                <span class="code-artifact-meta">${language || 'Code'} • ${lineCount} lines • View in panel →</span>
+                            </div>
+                        </div>`;
+                    }
                     
                     streamingEl.innerHTML = processedBeforeCode + streamingPlaceholder + '<span class="cursor blink">▋</span>';
                 } else {
