@@ -9,15 +9,15 @@
 class CodeArtifactManager {
     constructor() {
         this.artifacts = new Map(); // Store code artifacts: code_1, code_2, etc.
-        this.counter = 0;
         this.activeArtifact = null;
         this.streamingArtifact = null;
         this.pendingCodeBlock = null; // For temporary storage during streaming
     }
     
     createArtifact(language = '', filename = '') {
-        this.counter++;
-        const artifactId = `code_${this.counter}`;
+        // Use the array size + 1 as the index, not a separate counter
+        const artifactIndex = this.artifacts.size + 1;
+        const artifactId = `code_${artifactIndex}`;
         
         const artifact = {
             id: artifactId,
@@ -29,7 +29,7 @@ class CodeArtifactManager {
         };
         
         this.artifacts.set(artifactId, artifact);
-        console.log(`📦 Created code artifact: ${artifactId}`);
+        console.log(`📦 Created code artifact: ${artifactId} (index: ${artifactIndex})`);
         return artifactId;
     }
     
@@ -61,16 +61,26 @@ class CodeArtifactManager {
     
     finalizePendingCodeBlock() {
         if (this.pendingCodeBlock && this.pendingCodeBlock.isActive) {
-            // Create actual artifact from pending content
-            const artifactId = this.createArtifact(this.pendingCodeBlock.language);
-            this.updateArtifact(artifactId, this.pendingCodeBlock.content, true);
-            
-            // Clear pending block
-            const finalContent = this.pendingCodeBlock.content;
-            this.pendingCodeBlock = null;
-            
-            console.log(`✅ Finalized pending code block as ${artifactId}`);
-            return { artifactId, content: finalContent };
+            // Only create artifact if content is substantial (≥16 lines)
+            const lineCount = this.pendingCodeBlock.content.split('\n').length;
+            if (lineCount >= 16) {
+                // Create actual artifact from pending content
+                const artifactId = this.createArtifact(this.pendingCodeBlock.language);
+                this.updateArtifact(artifactId, this.pendingCodeBlock.content, true);
+                
+                // Clear pending block
+                const finalContent = this.pendingCodeBlock.content;
+                this.pendingCodeBlock = null;
+                
+                console.log(`✅ Finalized pending code block as ${artifactId} (${lineCount} lines)`);
+                return { artifactId, content: finalContent };
+            } else {
+                // Clear pending block without creating artifact
+                const finalContent = this.pendingCodeBlock.content;
+                this.pendingCodeBlock = null;
+                console.log(`📄 Pending code block too small (${lineCount} lines) - not creating artifact`);
+                return { artifactId: null, content: finalContent };
+            }
         }
         return null;
     }
@@ -163,7 +173,6 @@ class CodeArtifactManager {
     
     clearAllArtifacts() {
         this.artifacts.clear();
-        this.counter = 0;
         this.activeArtifact = null;
         this.streamingArtifact = null;
         this.pendingCodeBlock = null;
@@ -410,9 +419,17 @@ class CodeMarkdownProcessor {
                     
                     offset += buttonPlaceholder.length - fullMatch.length;
                 } else {
-                    // Small code block - leave as regular markdown
-                    console.log(`📄 Keeping small code block inline (${lineCount} lines)`);
-                    // No replacement needed - let markdown handle it normally
+                    // Small code block - create custom inline display with copy button
+                    const inlineCodeBlock = this.createInlineCodeBlock(codeContent, language, lineCount);
+                    const startIndex = match.index + offset;
+                    const endIndex = startIndex + fullMatch.length;
+                    
+                    processed = processed.substring(0, startIndex) + 
+                               inlineCodeBlock + 
+                               processed.substring(endIndex);
+                    
+                    offset += inlineCodeBlock.length - fullMatch.length;
+                    console.log(`📄 Created inline code block (${lineCount} lines)`);
                 }
             }
             
@@ -421,6 +438,32 @@ class CodeMarkdownProcessor {
             console.warn('⚠️ Markdown processing error:', error);
             return content;
         }
+    }
+    
+    createInlineCodeBlock(codeContent, language = '', lineCount = 0) {
+        // Generate unique ID for this code block
+        const blockId = `inline-code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        return `<div class="inline-code-block" data-code-id="${blockId}">
+            <div class="inline-code-header">
+                <span class="inline-code-info">
+                    <i class="bi bi-file-earmark-code"></i>
+                    ${language ? `${language} • ` : ''}${lineCount} lines
+                </span>
+                <button class="inline-code-copy-btn" onclick="copyInlineCode('${blockId}')">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+            </div>
+            <div class="inline-code-content">
+                <pre><code class="language-${language}">${this.escapeHtml(codeContent)}</code></pre>
+            </div>
+        </div>`;
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     createCodeButtonPlaceholder(artifactId, language = '', isStreaming = false) {
@@ -499,11 +542,17 @@ class CodeMarkdownProcessor {
                     if (lineCount < 16) {
                         // Small code block - show inline with streaming indicator
                         streamingPlaceholder = `<div class="code-streaming-inline">
-                            <div class="code-inline-content">
-                                <pre class="streaming-code"><code>${codeContent}</code></pre>
+                            <div class="inline-code-header">
+                                <span class="inline-code-info">
+                                    <i class="bi bi-file-earmark-code"></i>
+                                    ${language || 'Code'} • ${lineCount} lines • Streaming...
+                                </span>
+                                <span class="streaming-indicator-text">
+                                    <i class="bi bi-arrow-right"></i> Also in code panel
+                                </span>
                             </div>
-                            <div class="streaming-indicator">
-                                <i class="bi bi-arrow-right"></i> Streaming to code panel
+                            <div class="inline-code-content">
+                                <pre><code class="language-${language}">${this.escapeHtml(codeContent)}</code></pre>
                             </div>
                         </div>`;
                     } else {
@@ -541,8 +590,53 @@ class CodeMarkdownProcessor {
 }
 
 // =============================================================================
-// GLOBAL EXPORTS
+// GLOBAL EXPORTS AND COPY FUNCTION
 // =============================================================================
+
+// Global function for copying inline code
+window.copyInlineCode = async function(blockId) {
+    const codeBlock = document.querySelector(`[data-code-id="${blockId}"]`);
+    if (!codeBlock) {
+        console.error(`Code block ${blockId} not found`);
+        return;
+    }
+    
+    const codeContent = codeBlock.querySelector('code');
+    const copyBtn = codeBlock.querySelector('.inline-code-copy-btn');
+    
+    if (!codeContent || !copyBtn) {
+        console.error('Code content or copy button not found');
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(codeContent.textContent);
+        
+        // Show success feedback
+        const originalContent = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+        copyBtn.classList.add('copied');
+        
+        setTimeout(() => {
+            copyBtn.innerHTML = originalContent;
+            copyBtn.classList.remove('copied');
+        }, 2000);
+        
+        console.log('📋 Inline code copied to clipboard');
+    } catch (error) {
+        console.error('❌ Failed to copy inline code:', error);
+        
+        // Show error feedback
+        const originalContent = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="bi bi-x"></i> Failed';
+        copyBtn.style.background = 'var(--danger-color)';
+        
+        setTimeout(() => {
+            copyBtn.innerHTML = originalContent;
+            copyBtn.style.background = '';
+        }, 2000);
+    }
+};
 
 if (typeof window !== 'undefined') {
     window.CodeArtifactManager = CodeArtifactManager;
