@@ -17,7 +17,9 @@ local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
 local function load_js_assets()
     local js_files = {
         "is_shared.js",         -- Core shared functionality (non-chat)
-        "is_shared_chat.js",    -- NEW: Dedicated chat functionality
+        "is_shared_sse.js",     -- NEW: Server-Sent Events management
+        "is_shared_code.js",    -- NEW: Code artifact management
+        "is_shared_chat.js",    -- Chat functionality (depends on SSE and Code)
         "is_admin.js",          -- Admin-specific functionality
         "is_approved.js",       -- Approved user functionality
         "is_guest.js",          -- Guest user functionality

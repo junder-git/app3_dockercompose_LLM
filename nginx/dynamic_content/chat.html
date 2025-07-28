@@ -1,52 +1,83 @@
-<!-- chat.html - UPDATED: Chat page with scrolling headers inside messages area -->
-<div class="chat-container">
-    <div class="chat-messages" id="chat-messages">
-        <!-- MOVED: Feature alerts now inside scrolling area at the top -->
-        {{ chat_features }}
+<!-- chat.html - UPDATED: Linear chat layout with code panel -->
+<div class="chat-main-layout">
+    <!-- Main Chat Container -->
+    <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+            <!-- Feature alerts inside scrolling area at the top -->
+            {{ chat_features }}
+            
+            <!-- Wrapper for actual message content -->
+            <div class="chat-messages-content" id="chat-messages-content">
+                <div id="welcome-prompt" class="welcome-prompt">
+                    <h4><i class="bi bi-chat-dots"></i> Welcome to ai.junder.uk</h4>
+                    <p>Start a conversation with our AI assistant. Ask questions about coding, technology, or anything else!</p>
+                    <div class="text-muted">
+                        <small>💡 Tip: Use <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new lines</small>
+                    </div>
+                </div>
+            </div>
+        </div>
         
-        <!-- ADDED: Wrapper for actual message content -->
-        <div class="chat-messages-content" id="chat-messages-content">
-            <div id="welcome-prompt" class="welcome-prompt">
-                <h4><i class="bi bi-chat-dots"></i> Welcome to ai.junder.uk</h4>
-                <p>Start a conversation with our AI assistant. Ask questions about coding, technology, or anything else!</p>
+        <div class="chat-input-container">
+            <form id="chat-form" class="chat-input-form">
+                <textarea 
+                    class="form-control chat-input" 
+                    id="chat-input" 
+                    placeholder="{{ chat_placeholder }}" 
+                    rows="1"
+                    required
+                    style="resize: none; overflow: hidden;"></textarea>
+                
+                <button type="submit" class="btn btn-primary btn-send" id="send-button">
+                    <i class="bi bi-send"></i>
+                </button>
+                
+                <button type="button" class="btn btn-danger btn-send" id="stop-button" style="display: none;">
+                    <i class="bi bi-stop"></i>
+                </button>
+            </form>
+            
+            <div class="d-flex justify-content-between align-items-center mt-2">
                 <div class="text-muted">
-                    <small>💡 Tip: Use <kbd>Enter</kbd> to send, <kbd>Shift+Enter</kbd> for new lines</small>
+                    <small>
+                        <span id="char-count">0</span> characters
+                        <span class="mx-2">•</span>
+                        <span id="message-count">0</span> messages
+                    </small>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="clear-chat">
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
                 </div>
             </div>
         </div>
     </div>
     
-    <div class="chat-input-container">
-        <form id="chat-form" class="chat-input-form">
-            <textarea 
-                class="form-control chat-input" 
-                id="chat-input" 
-                placeholder="{{ chat_placeholder }}" 
-                rows="1"
-                required
-                style="resize: none; overflow: hidden;"></textarea>
-            
-            <button type="submit" class="btn btn-primary btn-send" id="send-button">
-                <i class="bi bi-send"></i>
-            </button>
-            
-            <button type="button" class="btn btn-danger btn-send" id="stop-button" style="display: none;">
-                <i class="bi bi-stop"></i>
-            </button>
-        </form>
-        
-        <div class="d-flex justify-content-between align-items-center mt-2">
-            <div class="text-muted">
-                <small>
-                    <span id="char-count">0</span> characters
-                    <span class="mx-2">•</span>
-                    <span id="message-count">0</span> messages
-                </small>
-            </div>
+    <!-- Code Display Panel -->
+    <div class="code-panel" id="code-panel">
+        <div class="code-panel-header">
+            <h6 class="mb-0">
+                <i class="bi bi-code-square"></i> 
+                Code Viewer
+            </h6>
             <div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="clear-chat">
-                    <i class="bi bi-trash"></i> Clear
+                <button class="btn btn-outline-secondary btn-sm" id="copy-code-btn" style="display: none;">
+                    <i class="bi bi-clipboard"></i> Copy
                 </button>
+                <button class="btn btn-outline-secondary btn-sm ms-1" id="close-code-btn" style="display: none;">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+        <div class="code-panel-content">
+            <div class="code-panel-placeholder">
+                <i class="bi bi-code-slash" style="font-size: 3rem; opacity: 0.3;"></i>
+                <p>Click on any code snippet in the chat to view it here</p>
+            </div>
+            <div class="code-editor-container" id="code-editor-container" style="display: none;">
+                <textarea class="code-line-numbers" id="code-line-numbers" readonly></textarea>
+                <textarea class="code-display" id="code-display" readonly></textarea>
             </div>
         </div>
     </div>

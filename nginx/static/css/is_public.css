@@ -1,4 +1,4 @@
-/* nginx/static/css/is_public.css - Condensed UI with Wider Chat */
+/* nginx/static/css/is_public.css - Linear Chat Layout with Code Panel */
 
 /* CSS Variables */
 :root {
@@ -22,11 +22,11 @@
     --border-color: #333;
     --border-color-light: #444;
     
-    --chat-user-bg: linear-gradient(135deg, #0d6efd, #6610f2);
-    --chat-user-text: #ffffff;
-    --chat-ai-bg: var(--bg-tertiary);
-    --chat-ai-text: var(--text-primary);
-    --chat-ai-border: var(--border-color);
+    --chat-user-bg: var(--bg-tertiary);
+    --chat-user-text: var(--text-primary);
+    --chat-user-border: var(--border-color);
+    --chat-ai-bg: linear-gradient(135deg, #0d6efd, #6610f2);
+    --chat-ai-text: #ffffff;
 }
 
 /* Global Styles */
@@ -190,35 +190,123 @@ body:not(.index-page) {
     overflow: auto;
 }
 
-/* UPDATED: Chat Interface - Much Wider with Scrolling Headers */
-.chat-container {
+/* UPDATED: Chat Interface - Split Layout with Code Panel */
+.chat-main-layout {
     height: calc(100vh - 60px);
     display: flex;
+    max-width: 100%;
+    margin: 0;
+    background: var(--bg-primary);
+}
+
+.chat-container {
+    flex: 1;
+    display: flex;
     flex-direction: column;
-    max-width: 1400px;  /* INCREASED: Much wider from 900px */
-    margin: 0 auto;
     background: var(--bg-secondary);
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    border-right: 1px solid var(--border-color);
+    min-width: 60%;
+}
+
+.code-panel {
+    width: 40%;
+    background: var(--bg-tertiary);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.code-panel-header {
+    padding: 1rem;
+    background: var(--bg-quaternary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.code-panel-content {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+}
+
+.code-display {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 0;
+    margin: 0;
+    border: none;
+    width: 100%;
+    height: 100%;
+    resize: none;
+    white-space: pre;
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-wrap: break-word;
+    tab-size: 4;
+}
+
+.code-display:focus {
+    outline: none;
+}
+
+.code-line-numbers {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 1rem 0.5rem;
+    margin: 0;
+    border: none;
+    width: 50px;
+    height: 100%;
+    resize: none;
+    white-space: pre;
+    overflow: hidden;
+    text-align: right;
+    user-select: none;
+    border-right: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.code-editor-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary);
+}
+
+.code-panel-placeholder {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
 }
 
 .chat-messages {
     flex: 1;
     overflow-y: auto;
-    padding: 0;  /* REMOVED: No padding so headers scroll naturally */
+    padding: 0;
     background: var(--bg-primary);
     display: flex;
     flex-direction: column;
-    gap: 0;  /* REMOVED: No gap between header and messages */
+    gap: 0;
 }
 
-/* UPDATED: Feature alerts now scroll with messages */
+/* Feature alerts now scroll with messages */
 .user-features {
-    margin: 0;  /* REMOVED: No fixed margin */
-    padding: 1rem 2rem;  /* UPDATED: Better padding for wider layout */
+    margin: 0;
+    padding: 1rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
     background: var(--bg-secondary);
-    position: relative;  /* REMOVED: No fixed positioning */
-    flex-shrink: 0;  /* ADDED: Don't shrink but allow scrolling */
+    position: relative;
+    flex-shrink: 0;
 }
 
 .user-features .alert {
@@ -228,22 +316,23 @@ body:not(.index-page) {
     margin-bottom: 0;
 }
 
-/* ADDED: Messages content wrapper */
+/* Messages content wrapper */
 .chat-messages-content {
-    padding: 1.5rem 2rem;  /* UPDATED: Better padding for wider layout */
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
     flex: 1;
-    min-height: 0; /* ADDED: Allow flex shrinking */
+    min-height: 0;
 }
 
-/* Message Layout - UPDATED: Much wider messages */
+/* UPDATED: Linear Message Layout - Top to Bottom */
 .message {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
     animation: slideIn 0.3s ease-out;
-    max-width: 95%;  /* INCREASED: From 80% to 95% */
+    max-width: 100%;
+    margin-bottom: 1rem;
 }
 
 @keyframes slideIn {
@@ -251,69 +340,148 @@ body:not(.index-page) {
     to { opacity: 1; transform: translateY(0); }
 }
 
-.message-user {
-    align-self: flex-end;
-    flex-direction: row-reverse;
-}
-
-.message-ai {
-    align-self: flex-start;
+.message-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
 }
 
 .message-avatar {
-    width: 36px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 10px;
-    font-size: 14px;
+    margin-right: 8px;
+    font-size: 12px;
     flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.avatar-user {
-    background: var(--chat-user-bg);
-    color: var(--chat-user-text);
+.message-user .message-header {
+    color: var(--text-secondary);
 }
 
-.avatar-ai {
-    background: var(--bg-quaternary);
+.message-ai .message-header {
     color: var(--primary-color);
-    border: 2px solid var(--border-color);
+}
+
+.message-user .message-avatar {
+    background: var(--bg-quaternary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.message-ai .message-avatar {
+    background: var(--chat-ai-bg);
+    color: white;
 }
 
 .message-content {
-    padding: 12px 16px;
-    border-radius: 16px;
+    padding: 16px 20px;
+    border-radius: 12px;
     position: relative;
     word-wrap: break-word;
-    line-height: 1.4;
-    font-size: 14px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    line-height: 1.6;
+    font-size: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     max-width: 100%;
 }
 
 .message-user .message-content {
     background: var(--chat-user-bg);
+    border: 1px solid var(--chat-user-border);
     color: var(--chat-user-text);
-    border-bottom-right-radius: 6px;
 }
 
 .message-ai .message-content {
     background: var(--chat-ai-bg);
-    border: 1px solid var(--chat-ai-border);
     color: var(--chat-ai-text);
-    border-bottom-left-radius: 6px;
 }
 
-/* UPDATED: Input Section with better spacing */
+/* Code artifact buttons */
+.code-artifact-button {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.code-artifact-button:hover {
+    background: rgba(0, 0, 0, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: var(--primary-color);
+}
+
+.code-artifact-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.code-artifact-info i {
+    font-size: 18px;
+    color: var(--primary-color);
+    flex-shrink: 0;
+}
+
+.code-artifact-name {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-right: 8px;
+}
+
+.code-artifact-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.code-artifact-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.code-artifact-button:hover .code-artifact-action {
+    opacity: 1;
+    color: var(--primary-color);
+}
+
+.message-content code:not(pre code) {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Input Section */
 .chat-input-container {
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
-    padding: 1rem 2rem;  /* UPDATED: Better padding for wider layout */
-    flex-shrink: 0;  /* ADDED: Don't shrink input area */
+    padding: 1rem 1.5rem;
+    flex-shrink: 0;
 }
 
 .chat-input-form {
@@ -365,15 +533,15 @@ body:not(.index-page) {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* UPDATED: Welcome message with wider margins */
+/* Welcome message */
 .welcome-prompt {
     text-align: center;
     color: var(--text-secondary);
     padding: 3rem 2rem;
     background: var(--bg-secondary);
     border-radius: 16px;
-    margin: 2rem auto;  /* UPDATED: Center with auto margins */
-    max-width: 800px;   /* ADDED: Max width for readability */
+    margin: 2rem auto;
+    max-width: 800px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
@@ -405,27 +573,6 @@ body:not(.index-page) {
     background-color: rgba(74, 144, 226, 0.1);
     color: var(--text-primary);
     border-left: 4px solid #4a90e2;
-}
-
-/* Code Blocks */
-.message-content pre {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 16px;
-    margin: 12px 0;
-    overflow-x: auto;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 13px;
-    line-height: 1.4;
-}
-
-.message-content code {
-    background: var(--bg-tertiary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 13px;
 }
 
 /* Forms & Buttons */
@@ -473,6 +620,17 @@ body:not(.index-page) {
 .btn-sm {
     padding: 8px 16px;
     font-size: 13px;
+}
+
+.btn-outline-secondary {
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--bg-quaternary);
+    border-color: var(--border-color-light);
+    color: var(--text-primary);
 }
 
 /* Cards */
@@ -557,29 +715,26 @@ a:hover {
 
 /* Responsive Design */
 @media (max-width: 1200px) {
+    .chat-main-layout {
+        flex-direction: column;
+    }
+    
+    .code-panel {
+        width: 100%;
+        height: 300px;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+    }
+    
     .chat-container {
-        max-width: 95%;  /* Use most of screen on smaller desktop */
-        margin: 0 auto;
-    }
-    
-    .chat-messages-content {
-        padding: 1.5rem;
-    }
-    
-    .chat-input-container {
-        padding: 1rem 1.5rem;
-    }
-    
-    .user-features {
-        padding: 1rem 1.5rem;
+        min-width: 100%;
+        border-right: none;
     }
 }
 
 @media (max-width: 768px) {
-    .chat-container {
-        max-width: 100%;
+    .chat-main-layout {
         height: 100vh;
-        margin: 0;
     }
     
     .chat-messages-content {
@@ -589,10 +744,6 @@ a:hover {
     
     .chat-input-container {
         padding: 1rem;
-    }
-    
-    .message {
-        max-width: 95%;
     }
     
     .user-features {
@@ -623,19 +774,15 @@ a:hover {
         padding: 0 1rem !important;
         max-width: 100% !important;
     }
+    
+    .code-panel {
+        height: 250px;
+    }
 }
 
 @media (max-width: 576px) {
-    .chat-container {
-        max-width: 100vw;
-    }
-    
     .chat-messages-content {
         padding: 0.75rem;
-    }
-    
-    .message {
-        max-width: 98%;
     }
     
     .user-features {
@@ -658,6 +805,10 @@ a:hover {
     body.index-page .hero-subtitle button {
         padding: 12px 28px !important;
         min-width: 160px !important;
+    }
+    
+    .code-panel {
+        height: 200px;
     }
 }
 

@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_shared_chat.js - COMPLETE WORKING CHAT FUNCTIONALITY
+// nginx/static/js/is_shared_chat.js - CLEAN CHAT FUNCTIONALITY
 // =============================================================================
 
 // =============================================================================
@@ -40,7 +40,7 @@ function processMarkdownSafely(text) {
 }
 
 // =============================================================================
-// SHARED CHAT BASE CLASS - COMPLETE WORKING IMPLEMENTATION
+// STREAMLINED CHAT BASE CLASS - USES EXTERNAL MODULES
 // =============================================================================
 
 class SharedChatBase {
@@ -48,24 +48,28 @@ class SharedChatBase {
         this.isTyping = false;
         this.abortController = null;
         this.messageCount = 0;
-        this.enableRealtimeMarkdown = true;
-        this.markdownUpdateInterval = 100;
-        this.lastMarkdownUpdate = 0;
-        this.maxTokens = 1024;
         this.storageType = 'none';
+        
+        // Initialize specialized managers (from separate JS files)
+        this.codePanel = new CodePanelManager();
+        this.codeArtifacts = new CodeArtifactManager();
+        this.codeProcessor = new CodeMarkdownProcessor(this.codeArtifacts);
+        this.sseManager = new SSERequestManager(this);
         
         setupMarkedWithFormatting();
         
-        // Auto-initialize everything when constructed
+        // Make this instance globally available
+        window.sharedChatInstance = this;
+        
+        // Auto-initialize
         this.init();
     }
 
     // =============================================================================
-    // INITIALIZATION - AUTOMATICALLY CALLED
+    // INITIALIZATION
     // =============================================================================
     
     init() {
-        // Wait for DOM to be ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 this.setupEventListeners();
@@ -79,84 +83,63 @@ class SharedChatBase {
         }
     }
 
-    // =============================================================================
-    // CONTAINER MANAGEMENT
-    // =============================================================================
-
     getMessagesContainer() {
         return document.getElementById('chat-messages-content') || document.getElementById('chat-messages');
     }
 
     // =============================================================================
-    // EVENT LISTENERS SETUP - COMPLETE IMPLEMENTATION
+    // EVENT LISTENERS
     // =============================================================================
     
     setupEventListeners() {
         console.log('🎯 Setting up chat event listeners...');
 
-        // Chat form submission
+        // Form submission
         const chatForm = document.getElementById('chat-form');
         if (chatForm) {
             chatForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                e.stopPropagation();
                 this.sendMessage();
                 return false;
             });
-            console.log('✅ Chat form listener added');
         }
 
-        // Stop button
+        // Stop/Clear buttons
         const stopButton = document.getElementById('stop-button');
         if (stopButton) {
             stopButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.stopGeneration();
             });
-            console.log('✅ Stop button listener added');
         }
 
-        // Clear button
         const clearButton = document.getElementById('clear-chat');
         if (clearButton) {
             clearButton.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.clearChat();
             });
-            console.log('✅ Clear button listener added');
         }
         
         // Textarea handling
         const textarea = document.getElementById('chat-input');
         if (textarea) {
-            // Input changes for character count and auto-resize
-            textarea.addEventListener('input', (e) => {
+            textarea.addEventListener('input', () => {
                 this.updateCharCount();
                 this.autoResizeTextarea();
             });
             
-            // FIXED: Enter key handling
             textarea.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Shift+Enter: Allow new line (do nothing, let default behavior happen)
-                        return;
-                    } else {
-                        // Enter only: Send message
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        if (textarea.value.trim()) {
-                            this.sendMessage();
-                        }
-                        return false;
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (textarea.value.trim()) {
+                        this.sendMessage();
                     }
+                    return false;
                 }
             });
 
-            // Auto-resize on load
             this.autoResizeTextarea();
-            console.log('✅ Textarea listeners added');
         }
 
         // Send button
@@ -164,18 +147,15 @@ class SharedChatBase {
         if (sendButton) {
             sendButton.addEventListener('click', (e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                
                 const textarea = document.getElementById('chat-input');
                 if (textarea && textarea.value.trim()) {
                     this.sendMessage();
                 }
                 return false;
             });
-            console.log('✅ Send button listener added');
         }
 
-        console.log('🎯 Chat event listeners setup complete');
+        console.log('🎯 Event listeners setup complete');
     }
 
     setupSuggestionChips() {
@@ -202,8 +182,7 @@ class SharedChatBase {
         const countEl = document.getElementById('char-count');
         
         if (textarea && countEl) {
-            const count = textarea.value.length;
-            countEl.textContent = count;
+            countEl.textContent = textarea.value.length;
         }
     }
 
@@ -211,11 +190,9 @@ class SharedChatBase {
         const textarea = document.getElementById('chat-input');
         if (textarea) {
             textarea.style.height = 'auto';
-            
             const maxHeight = 120;
             const newHeight = Math.min(textarea.scrollHeight, maxHeight);
             textarea.style.height = newHeight + 'px';
-            
             textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
         }
     }
@@ -248,7 +225,7 @@ class SharedChatBase {
     }
 
     // =============================================================================
-    // SCROLLING METHODS
+    // SCROLLING
     // =============================================================================
 
     scrollToBottom() {
@@ -290,7 +267,7 @@ class SharedChatBase {
     }
 
     // =============================================================================
-    // MESSAGE HANDLING - WORKING IMPLEMENTATION
+    // MESSAGE HANDLING - SIMPLE AND CLEAN
     // =============================================================================
 
     addMessage(sender, content, isStreaming = false, skipStorage = false) {
@@ -300,7 +277,7 @@ class SharedChatBase {
             return null;
         }
 
-        // Hide welcome prompt when first message is added
+        // Hide welcome prompt
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt && sender === 'user') {
             welcomePrompt.style.display = 'none';
@@ -309,42 +286,64 @@ class SharedChatBase {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message message-${sender}`;
         
+        // Create header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'message-header';
+        
         const avatarDiv = document.createElement('div');
         avatarDiv.className = `message-avatar avatar-${sender}`;
         
+        const labelSpan = document.createElement('span');
+        
+        if (sender === 'user') {
+            avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
+            labelSpan.textContent = 'You';
+        } else {
+            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
+            labelSpan.textContent = 'AI Assistant';
+        }
+        
+        headerDiv.appendChild(avatarDiv);
+        headerDiv.appendChild(labelSpan);
+        
+        // Create content
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         
         if (sender === 'user') {
-            avatarDiv.innerHTML = '<i class="bi bi-person-circle"></i>';
             contentDiv.innerHTML = window.marked ? marked.parse(content) : content;
-            
             if (!skipStorage && this.saveMessage) {
                 this.saveMessage('user', content);
             }
         } else {
-            avatarDiv.innerHTML = '<i class="bi bi-robot"></i>';
             contentDiv.innerHTML = isStreaming ? 
                 '<span class="streaming-content"></span>' : 
-                (window.marked ? marked.parse(content) : content);
+                (this.codeProcessor ? 
+                    this.codeProcessor.processMarkdownWithArtifacts(content) : 
+                    (window.marked ? marked.parse(content) : content));
                 
             if (!isStreaming && content.trim() && !skipStorage && this.saveMessage) {
                 this.saveMessage('assistant', content);
             }
         }
         
-        messageDiv.appendChild(avatarDiv);
+        messageDiv.appendChild(headerDiv);
         messageDiv.appendChild(contentDiv);
         messagesContainer.appendChild(messageDiv);
-        this.scrollToBottom();
         
+        // Setup code artifact handlers if not streaming
+        if (!isStreaming && this.codeProcessor) {
+            this.codeProcessor.setupCodeArtifactHandlers(messageDiv);
+        }
+        
+        this.scrollToBottom();
         console.log(`💬 Added ${sender} message:`, content.substring(0, 50) + '...');
         
         return messageDiv;
     }
 
     // =============================================================================
-    // SEND MESSAGE - WORKING IMPLEMENTATION FOR ALL USERS
+    // SEND MESSAGE - DELEGATES TO SSE MANAGER
     // =============================================================================
 
     async sendMessage() {
@@ -356,14 +355,7 @@ class SharedChatBase {
         }
         
         const message = input.value.trim();
-        
-        if (!message) {
-            console.warn('Empty message - not sending');
-            return;
-        }
-
-        if (this.isTyping) {
-            console.warn('Already typing - ignoring send request');
+        if (!message || this.isTyping) {
             return;
         }
 
@@ -373,10 +365,10 @@ class SharedChatBase {
         const welcomePrompt = document.getElementById('welcome-prompt');
         if (welcomePrompt) welcomePrompt.style.display = 'none';
         
-        // Add user message to UI immediately
+        // Add user message
         this.addMessage('user', message);
         
-        // Clear input immediately and reset height
+        // Clear input
         input.value = '';
         input.style.height = 'auto';
         this.updateCharCount();
@@ -385,199 +377,17 @@ class SharedChatBase {
         // Set typing state
         this.isTyping = true;
         this.updateButtons(true);
-
-        // Create abort controller for this request
         this.abortController = new AbortController();
         
-        // Add AI message container for streaming
+        // Add AI message container
         const aiMessage = this.addMessage('ai', '', true);
 
         try {
-            console.log('🌐 Making SSE request to /api/chat/stream');
-            
-            const response = await fetch('/api/chat/stream', {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'text/event-stream',
-                    'Cache-Control': 'no-cache'
-                },
-                credentials: 'include',
-                signal: this.abortController.signal,
-                body: JSON.stringify({
-                    message: message,
-                    stream: true
-                })
-            });
-
-            console.log('📡 Response status:', response.status);
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            // Process the streaming response
-            await this.processSSEStream(response, aiMessage);
-
+            // Delegate to SSE manager
+            await this.sseManager.sendStreamingRequest(message, aiMessage);
         } catch (error) {
-            console.error('❌ Chat error:', error);
-            
-            if (error.name === 'AbortError') {
-                console.log('🛑 Request was aborted by user');
-                this.updateStreamingMessage(aiMessage, '*Request cancelled*');
-            } else {
-                const errorMessage = `*Error: ${error.message}*`;
-                this.updateStreamingMessage(aiMessage, errorMessage);
-            }
-            
-            this.finishStreaming(aiMessage, `Error: ${error.message}`);
-        }
-    }
-
-    // =============================================================================
-    // SSE STREAM PROCESSING
-    // =============================================================================
-
-    async processSSEStream(response, aiMessage) {
-        console.log('📺 Starting SSE stream processing');
-        
-        let accumulated = '';
-        
-        const parser = this.createEventSourceParser((event) => {
-            if (event.type === 'event') {
-                
-                if (event.data === '[DONE]') {
-                    console.log('✅ Stream completed with [DONE]');
-                    this.finishStreaming(aiMessage, accumulated);
-                    return;
-                }
-                
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.type === 'content' && data.content) {
-                        accumulated += data.content;
-                        this.updateStreamingMessageWithMarkdown(aiMessage, accumulated);
-                    }
-                    
-                    if (data.type === 'complete' || data.done === true) {
-                        console.log('✅ Stream completed with complete flag');
-                        this.finishStreaming(aiMessage, accumulated);
-                        return;
-                    }
-                    
-                    if (data.type === 'error') {
-                        console.error('❌ Stream error:', data.error);
-                        const errorMsg = '*Error: ' + data.error + '*';
-                        this.updateStreamingMessageWithMarkdown(aiMessage, errorMsg);
-                        this.finishStreaming(aiMessage, errorMsg);
-                        return;
-                    }
-                    
-                } catch (parseError) {
-                    console.warn('⚠️ JSON parse error:', parseError, 'for:', event.data);
-                }
-            }
-        });
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) {
-                    console.log('✅ Stream reader finished');
-                    if (accumulated) {
-                        this.finishStreaming(aiMessage, accumulated);
-                    }
-                    break;
-                }
-                
-                const chunk = decoder.decode(value, { stream: true });
-                parser.feed(chunk);
-            }
-        } catch (error) {
-            console.error('❌ Stream reading error:', error);
-            const errorMsg = '*Stream error: ' + error.message + '*';
-            this.updateStreamingMessageWithMarkdown(aiMessage, errorMsg);
-            this.finishStreaming(aiMessage, errorMsg);
-        }
-        
-        console.log('🏁 Stream processing completed');
-        return accumulated;
-    }
-    
-    createEventSourceParser(onParse) {
-        if (typeof createParser !== 'undefined') {
-            return createParser(onParse);
-        }
-        
-        console.warn('⚠️ eventsource-parser not found, using fallback parser');
-        let buffer = '';
-        
-        return {
-            feed: (chunk) => {
-                buffer += chunk;
-                
-                let newlineIndex;
-                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                    const line = buffer.slice(0, newlineIndex).trim();
-                    buffer = buffer.slice(newlineIndex + 1);
-                    
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        onParse({
-                            type: 'event',
-                            data: data
-                        });
-                    }
-                }
-            }
-        };
-    }
-
-    updateStreamingMessageWithMarkdown(messageDiv, content) {
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            const processedContent = processMarkdownSafely(content);
-            streamingEl.innerHTML = processedContent + '<span class="cursor blink">▋</span>';
-            this.smartScroll();
-        }
-    }
-
-    updateStreamingMessage(messageDiv, content) {
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            streamingEl.innerHTML = content + '<span class="cursor blink">▋</span>';
-            this.smartScroll();
-        }
-    }
-
-    finishStreaming(messageDiv, finalContent) {
-        console.log('🏁 Finishing stream with content length:', finalContent.length);
-        
-        const streamingEl = messageDiv.querySelector('.streaming-content');
-        if (streamingEl) {
-            const parsedContent = processMarkdownSafely(finalContent);
-            streamingEl.innerHTML = parsedContent;
-            
-            if (this.saveMessage && finalContent.trim()) {
-                this.saveMessage('assistant', finalContent);
-            }
-        }
-        
-        this.isTyping = false;
-        this.updateButtons(false);
-        
-        setTimeout(() => {
-            this.scrollToLatestMessage();
-        }, 100);
-        
-        const input = document.getElementById('chat-input');
-        if (input) {
-            input.focus();
+            // Delegate error handling to SSE manager
+            this.sseManager.handleStreamingError(error, aiMessage);
         }
     }
 
@@ -600,6 +410,10 @@ class SharedChatBase {
             welcomePrompt.style.display = 'block';
         }
         
+        // Clear code artifacts and hide panel
+        this.codePanel.hideCode();
+        this.codeArtifacts.clearAllArtifacts();
+        
         this.messageCount = 0;
         
         if (this.clearStorage) {
@@ -619,7 +433,7 @@ class SharedChatBase {
 }
 
 // =============================================================================
-// GLOBAL EXPORTS AND AUTO-INITIALIZATION
+// GLOBAL EXPORTS
 // =============================================================================
 
 if (typeof window !== 'undefined') {
@@ -627,10 +441,10 @@ if (typeof window !== 'undefined') {
     window.processMarkdownSafely = processMarkdownSafely;
     window.setupMarkedWithFormatting = setupMarkedWithFormatting;
     
-    console.log('💬 Shared chat functionality loaded and available globally');
+    console.log('💬 Clean chat functionality loaded and available globally');
 }
 
-// Auto-resize textarea functionality for all pages
+// Auto-resize textarea functionality
 document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input');
     if (chatInput) {
