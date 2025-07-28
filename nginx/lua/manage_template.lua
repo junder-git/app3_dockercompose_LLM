@@ -6,6 +6,7 @@
 local TEMPLATE_CACHE = {}
 local JS_CACHE = {}
 local CACHE_INITIALIZED = false
+local CSS_VERSION = os.time() -- Use timestamp as version, or set manually
 
 -- FIXED: Use the correct JS path from Dockerfile
 local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
@@ -346,17 +347,66 @@ local function warm_up_cache()
     ngx.log(ngx.INFO, "🔥 Cache warm-up completed")
 end
 
--- =============================================
--- MODULE EXPORTS
--- =============================================
+-- =============================================================================
+-- Enhanced manage_template.lua - ADD CSS VERSIONING FOR CACHE BUSTING
+-- =============================================================================
 
+-- Enhanced render function that includes CSS versioning
+local function render_with_versioned_assets(template_path, user_type, page_type, context)
+    -- Add CSS version to context
+    if DEVELOPMENT_MODE then
+        -- In development, use timestamp for cache busting
+        context.css_version = os.time()
+    else
+        -- In production, use fixed version (change when you update CSS)
+        context.css_version = CSS_VERSION
+    end
+    
+    -- Auto-inject appropriate JS assets (existing logic)
+    context.js_files = get_js_files_for_context(user_type, page_type)
+    
+    -- For chat pages, create individual JS blocks for ordered loading
+    if page_type == "chat" then
+        local js_blocks = build_individual_js_blocks(context.js_files)
+        context.js_shared = js_blocks["is_shared.js"] or ""
+        context.js_sse = js_blocks["is_shared_sse.js"] or ""
+        context.js_code = js_blocks["is_shared_code.js"] or ""
+        context.js_chat = js_blocks["is_shared_chat.js"] or ""
+        
+        -- Add user-specific JS
+        local user_js_map = {
+            is_admin = "is_admin.js",
+            is_approved = "is_approved.js",
+            is_guest = "is_guest.js", 
+            is_none = "is_none.js",
+            is_pending = "is_pending.js"
+        }
+        
+        if user_js_map[user_type] then
+            context.js_user = js_blocks[user_js_map[user_type]] or ""
+        else
+            context.js_user = ""
+        end
+        
+        -- Clear the combined js field for chat pages
+        context.js = ""
+    else
+        -- For non-chat pages, use combined JS block
+        context.js = build_js_block(context.js_files)
+    end
+    
+    -- Call standard render function
+    render_template(template_path, context)
+end
+
+-- Update your module exports
 return {
     -- Original API (backwards compatible)
     render_template = render_template,
     read_file = read_file,
     
-    -- Enhanced rendering with automatic asset injection
-    render_with_assets = render_with_assets,
+    -- Enhanced rendering with automatic asset injection AND versioning
+    render_with_assets = render_with_versioned_assets, -- Updated function
     render_page_with_base = render_page_with_base,
     
     -- Asset builders
