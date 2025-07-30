@@ -77,7 +77,7 @@ services:
     build: ./nginx
     container_name: devstral-nginx
     ports:
-      - "443:80"
+      - "443:443"
     environment:
       - JWT_SECRET=${JWT_SECRET}
       - REDIS_HOST=${REDIS_HOST}
