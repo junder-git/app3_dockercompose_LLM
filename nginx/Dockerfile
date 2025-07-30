@@ -50,7 +50,7 @@ RUN chmod -R 755 /usr/local/openresty/nginx/dynamic_content/ && \
 
 
 # Expose port
-EXPOSE 80
+EXPOSE 443
 
 # Start OpenResty directly
 CMD ["/usr/local/openresty/bin/openresty", "-g", "daemon off;"]
