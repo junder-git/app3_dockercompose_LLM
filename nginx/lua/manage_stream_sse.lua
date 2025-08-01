@@ -5,8 +5,8 @@
 local cjson = require "cjson"
 
 -- Configuration
-local MAX_SSE_SESSIONS = 3
-local SESSION_TIMEOUT = 300
+local MAX_SSE_SESSIONS = 1
+local SESSION_TIMEOUT = 3600
 
 local M = {}
 
