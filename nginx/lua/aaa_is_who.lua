@@ -17,65 +17,32 @@ local M = {}
 
 function M.set_user()
     local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" and user_type ~= "is_approved" and user_type ~= "is_pending" and user_type ~= "is_guest" then
+    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" or user_type == "is_guest" then
+       return user_type, username, user_data
+    else
         username = "guest"
         user_type = "is_none"
     end
     return user_type, username, user_data
 end
 
--- =============================================
--- ACCESS CONTROL HELPERS - NO CHANGES NEEDED
--- =============================================
-
-function M.require_admin()
-    local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    return username, user_data
-end
-
-function M.require_approved()
-    local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" and user_type ~= "is_approved" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    return username, user_data
-end
-
-function M.require_guest()
-    local user_type, username, user_data = auth.check()
-    if user_type ~= "is_admin" and user_type ~= "is_approved" and user_type ~= "is_guest" then
-        ngx.status = 403
-        return ngx.exec("@custom_50x")
-    end
-    return username, user_data
-end
-
 -- =====================================================================
 -- MAIN ROUTING HANDLER - UPDATED FOR ENHANCED CHAT API
 -- =====================================================================
-
 function M.route_to_handler(route_type)
     local user_type, username, user_data = M.set_user()
-    
     -- Handle Ollama API endpoints first
     if route_type == "ollama_chat_api" then
         M.handle_ollama_chat_api()
         return
     end
-    
     -- ROUTING LOGIC: Based on what each user type can see, using views module
     if user_type == "is_admin" then
         -- Can see: /chat, /dash, / 
-        -- Redirect login/register to dash
+        -- Redirect login/register to chat
         if route_type == "login" or route_type == "register" then
-            return ngx.redirect("/dash")
+            return ngx.redirect("/chat")
         end
-        
         -- Route to appropriate view handler
         if route_type == "index" then
             return views.handle_index_page()
@@ -87,51 +54,11 @@ function M.route_to_handler(route_type)
             -- Delegate to is_admin module for API endpoints
             local is_admin = require "is_admin"
             return is_admin.handle_route(route_type)
-        end
-        
-    elseif user_type == "is_approved" then
-        -- Can see: /chat, /dash, / 
-        -- Redirect login/register to dash
-        if route_type == "login" or route_type == "register" then
-            return ngx.redirect("/dash")
-        end
-        
-        -- Route to appropriate view handler
-        if route_type == "index" then
-            return views.handle_index_page()
-        elseif route_type == "chat" then
-            return views.handle_chat_page_approved()
-        elseif route_type == "dash" then
-            return views.handle_dash_page_approved()
-        else
-            -- Delegate to is_approved module for API endpoints
-            local is_approved = require "is_approved"
-            return is_approved.handle_route(route_type)
-        end
-        
-    elseif user_type == "is_pending" then
-        -- Can see: /, /dash (pending shows as dash)
-        -- Block chat, login, register
-        if route_type == "chat" or route_type == "login" or route_type == "register" then
-            return ngx.redirect("/dash")
-        end
-        
-        -- Route to appropriate view handler
-        if route_type == "index" then
-            return views.handle_index_page()
-        elseif route_type == "dash" then
-            return views.handle_dash_page_pending()
-        else
-            -- Delegate to is_pending module for API endpoints
-            local is_pending = require "is_pending"
-            return is_pending.handle_route(route_type)
-        end
-        
+        end        
     elseif user_type == "is_guest" then
         if route_type == "dash" then
             return ngx.redirect("/")
         end
-        
         -- Route to appropriate view handler
         if route_type == "index" then
             return views.handle_index_page()
@@ -146,14 +73,12 @@ function M.route_to_handler(route_type)
             local is_guest = require "is_guest"
             return is_guest.handle_route(route_type)
         end
-        
     elseif user_type == "is_none" then
         -- Can see: /, /login, /register
         -- Block chat and dash (unless upgrading to guest through available logic)
         if route_type == "chat" or route_type == "dash" then
             return ngx.redirect("/")
         end
-        
         -- Route to appropriate view handler
         if route_type == "index" then
             return views.handle_index_page()
@@ -167,7 +92,6 @@ function M.route_to_handler(route_type)
             return is_none.handle_route(route_type)
         end
     end
-    
     -- Fallback redirect
     return ngx.redirect("/")
 end
@@ -340,25 +264,7 @@ function M.handle_ollama_chat_api()
     end
 end
 
--- =============================================
--- SIMPLE API ROUTING FUNCTIONS - UPDATED FOR ENHANCED CHAT
--- =============================================
-
-function M.handle_auth_api_status()
-    local user_type = select(1, auth.check())
-
-    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_guest" then
-        ngx.status = 200
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"status":"success"}')
-    else
-        ngx.status = 401
-        ngx.header.content_type = 'application/json'
-        ngx.say('{"status":"fail"}')
-    end
-end
-
-function M.handle_auth_api()
+function M.handle_auth()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
@@ -381,31 +287,6 @@ function M.handle_auth_api()
             }
         }))
     end
-end
-
-function M.handle_register_api()
-    local register = require "manage_register"
-    register.handle_register_api()
-end
-
-function M.handle_admin_api()
-    local is_admin = require "is_admin"
-    is_admin.handle_admin_api()
-end
-
-function M.handle_guest_api()
-    -- Use is_none module for guest session creation
-    local is_none = require "is_none"
-    is_none.handle_guest_session_api()
-end
-
--- =============================================
--- COMPATIBILITY FUNCTIONS (IF NEEDED BY OTHER MODULES)
--- =============================================
-
--- Expose auth.check for other modules that might need it
-function M.check()
-    return auth.check()
 end
 
 return M

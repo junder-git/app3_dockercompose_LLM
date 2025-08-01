@@ -103,93 +103,7 @@ local function check()
     local token = ngx.var.cookie_access_token
     if not token then
         return "is_none", nil, nil
-    end
-    
-    local jwt_obj = jwt:verify(JWT_SECRET, token)
-    if not jwt_obj.verified then
-        ngx.log(ngx.WARN, "Invalid JWT token: " .. (jwt_obj.reason or "unknown"))
-        -- Clear the invalid cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    local username = jwt_obj.payload.username
-    local display_username = jwt_obj.payload.display_username
-    
-    -- GUEST USER HANDLING: If JWT has display_username but no username, it's a guest
-    if display_username and not username then
-        -- This is a guest JWT - find which guest user slot is active
-        local is_none = require "is_none"
-        
-        -- Check both guest slots to find the active one for this display name
-        for slot = 1, 2 do
-            local session = is_none.get_session(slot)
-            if session and session.display_name == display_username and session.expires_at > ngx.time() then
-                -- Found the active guest session
-                local guest_username = "guest_user_" .. slot
-                
-                -- Get the guest user data from Redis
-                local user_data = get_user(guest_username)
-                if user_data then
-                    -- Update session activity in Lua shared memory
-                    is_none.update_session_activity(slot)
-                    
-                    -- Return guest auth info with display name
-                    user_data.display_username = display_username
-                    user_data.slot = slot
-                    return "is_guest", guest_username, user_data
-                end
-            end
-        end
-        
-        -- Guest session not found or expired
-        ngx.log(ngx.WARN, "Guest JWT for non-existent session: " .. display_username)
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    -- REGULAR USER HANDLING: JWT has username
-    if not username or username == "" then
-        ngx.log(ngx.WARN, "JWT token missing username - clearing invalid cookie")
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    -- For regular users, check Redis
-    local user_data = get_user(username)
-    if not user_data then
-        ngx.log(ngx.WARN, "Valid JWT for non-existent user: " .. username .. " - clearing stale cookie")
-        -- Clear the stale cookie
-        ngx.header["Set-Cookie"] = "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-        return "is_none", nil, nil
-    end
-    
-    -- Update user activity (now safe since username is validated)
-    local red = connect_redis()
-    if red then
-        red:hset("username:" .. username, "last_active", os.date("!%Y-%m-%dT%TZ"))
-        red:close()
-    end
-    
-    -- Return user type based on Redis data (using is_* format)
-    if user_data.user_type == "is_admin" then
-        return "is_admin", username, user_data
-    end
-    if user_data.user_type == "is_approved" then
-        return "is_approved", username, user_data
-    end
-    if user_data.user_type == "is_pending" then
-        return "is_pending", username, user_data
-    end
-    if user_data.user_type == "is_guest" then
-        return "is_guest", username, user_data
-    end
-    if user_data.user_type == "is_none" then
-        return "is_none", "guest", nil
-    end
-    
-    -- Default fallback
-    return "is_none", nil, nil
+    end      
 end
 
 -- =============================================
@@ -281,22 +195,6 @@ local function handle_logout()
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
     }
     ngx.header["Set-Cookie"] = cookie_headers
-    
-    -- Guest session cleanup
-    if user_type == "is_guest" and user_data and user_data.display_username then
-        local ok, err = pcall(function()
-            local is_none = require "is_none"
-            local cleanup_success, cleanup_msg = is_none.cleanup_guest_session(user_data.display_username)
-            if cleanup_success then
-                ngx.log(ngx.INFO, "Guest session cleaned up: " .. user_data.display_username)
-            else
-                ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. cleanup_msg)
-            end
-        end)
-        if not ok then
-            ngx.log(ngx.WARN, "Failed to cleanup guest session: " .. tostring(err))
-        end
-    end
     
     local logout_user = username or "guest"
     local logout_type = user_type or "is_none"
