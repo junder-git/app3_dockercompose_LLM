@@ -97,13 +97,55 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- AUTH CHECK FUNCTION - CORE LOGIC WITH GUEST HANDLING
+-- AUTH CHECK FUNCTION - OPTIMIZED IMPLEMENTATION
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
     if not token then
         return "is_none", nil, nil
-    end      
+    end
+    
+    -- Verify and decode JWT
+    local jwt_obj = jwt:verify(JWT_SECRET, token)
+    if not jwt_obj or not jwt_obj.valid or not jwt_obj.payload then
+        return "is_none", nil, nil
+    end
+    
+    local payload = jwt_obj.payload
+    
+    -- Check token expiration
+    if payload.exp and payload.exp < ngx.time() then
+        return "is_none", nil, nil
+    end
+    
+    -- Get username from JWT (could be regular username or guest username)
+    local username = payload.username
+    if not username then
+        ngx.log(ngx.WARN, "JWT token missing username")
+        return "is_none", nil, nil
+    end
+    
+    -- Get fresh user data from Redis for ALL users (including guests)
+    local user_data = get_user(username)
+    if not user_data then
+        ngx.log(ngx.WARN, "User from JWT not found in Redis: " .. username)
+        return "is_none", nil, nil
+    end
+    
+    -- Return user type based on fresh data from Redis
+    local user_type = user_data.user_type
+    if user_type == "admin" then
+        return "is_admin", username, user_data
+    elseif user_type == "approved" then
+        return "is_approved", username, user_data
+    elseif user_type == "pending" then
+        return "is_pending", username, user_data
+    elseif user_type == "guest" then
+        return "is_guest", username, user_data
+    else
+        ngx.log(ngx.WARN, "Unknown user type from Redis: " .. tostring(user_type))
+        return "is_none", nil, nil
+    end
 end
 
 -- =============================================

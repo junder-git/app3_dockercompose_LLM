@@ -1,29 +1,25 @@
 -- =============================================================================
--- nginx/lua/manage_views.lua - COMPLETE VIEW HANDLERS WITH PROPER TEMPLATING
+-- nginx/lua/manage_view_base.lua - SHARED VIEW HELPER FUNCTIONS
 -- =============================================================================
 
 local template = require "manage_template"
-local auth = require "manage_auth"
 
 local M = {}
 
 -- =============================================
--- HELPER FUNCTIONS
+-- SHARED HELPER FUNCTIONS
 -- =============================================
 
--- Get display username (for guests, use display_username; for others, use username)
-local function get_display_username(user_type, username, user_data)
-    if user_type == "is_guest" then
-        return user_data.display_username
-    end
-    if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" then
-        return username
+function M.get_display_username(user_type, username, user_data)
+    if user_type == "is_guest" and user_data then
+        return user_data.display_name or user_data.display_username or "Guest User"
+    elseif user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" then
+        return username or "User"
     end
     return "guest"
 end
 
--- Generate navigation buttons based on user type
-local function get_nav_buttons(user_type, username, user_data)
+function M.get_nav_buttons(user_type, username, user_data)
     if user_type == "is_admin" then
         return '<a class="nav-link" href="/dash">Dashboard</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "is_approved" then
@@ -31,7 +27,6 @@ local function get_nav_buttons(user_type, username, user_data)
     elseif user_type == "is_pending" then
         return '<button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">Logout</button>'
     elseif user_type == "is_guest" then
-        local display_name = get_display_username(user_type, username, user_data)
         return '<a class="nav-link" href="/register">Register</a><button class="btn btn-outline-secondary btn-sm ms-2" onclick="logout()">End Session</button>'
     else -- is_none
         return '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
@@ -39,136 +34,81 @@ local function get_nav_buttons(user_type, username, user_data)
 end
 
 -- =============================================
--- INDEX PAGE HANDLERS
+-- COMMON RENDER FUNCTION
 -- =============================================
 
-function M.handle_index_page()
-    local user_type, username, user_data = auth.check()    
-    -- For is_none users, we need to show the guest session creation button
-    local start_chat_button = ""
-    if user_type == "is_none" then
-        start_chat_button = [[
-            <button class="btn btn-primary btn-lg me-3" onclick="startGuestSession()">
-                <i class="bi bi-chat-dots"></i> Start chat
-            </button>
-        ]]
-    else
-        start_chat_button = [[
-            <a href="/chat" class="btn btn-primary btn-lg me-3">
-                <i class="bi bi-chat-dots"></i> Start chat
-            </a>
-        ]]
+function M.render_page(template_path, user_type, page_type, extra_context)
+    local context = {
+        username = M.get_display_username(user_type, nil, extra_context and extra_context.user_data),
+        dash_buttons = M.get_nav_buttons(user_type, nil, extra_context and extra_context.user_data),
+        user_type = user_type
+    }
+    
+    -- Merge extra context
+    if extra_context then
+        for key, value in pairs(extra_context) do
+            context[key] = value
+        end
     end
     
-    local context = {
-        page_title = "ai.junder.uk - Advanced AI Chat",
-        username = get_display_username(user_type, username, user_data),
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        start_chat_button = start_chat_button
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/index.html", user_type, "index", context)
+    template.render_page_with_base(template_path, user_type, page_type, context)
 end
 
 -- =============================================
--- CHAT PAGE HANDLERS
+-- CHAT FEATURE GENERATORS
 -- =============================================
 
-function M.handle_chat_page_admin()
-    local user_type, username, user_data = auth.check()
-    
-    -- Admin chat features
-    local chat_features = [[
-        <div class="user-features admin-features">
-            <div class="alert alert-danger">
-                <h6><i class="bi bi-shield-check text-danger"></i> Admin Console</h6>
-                <p class="mb-1">Unlimited messages • Full system access • Redis storage</p>
-                <div class="admin-actions">
-                    <button class="btn btn-danger btn-sm me-2" onclick="manageUsers()">Manage Users</button>
-                    <button class="btn btn-secondary btn-sm me-2" onclick="viewSystemLogs()">System Logs</button>
-                    <button class="btn btn-outline-light btn-sm" onclick="exportAdminChats()">Export Chats</button>
+function M.get_chat_features(user_type, username, user_data)
+    if user_type == "is_admin" then
+        return [[
+            <div class="user-features admin-features">
+                <div class="alert alert-danger">
+                    <h6><i class="bi bi-shield-check text-danger"></i> Admin Console</h6>
+                    <p class="mb-1">Unlimited messages • Full system access • Redis storage</p>
+                    <div class="admin-actions">
+                        <button class="btn btn-danger btn-sm me-2" onclick="manageUsers()">Manage Users</button>
+                        <button class="btn btn-secondary btn-sm me-2" onclick="viewSystemLogs()">System Logs</button>
+                        <button class="btn btn-outline-light btn-sm" onclick="exportChats()">Export Chats</button>
+                    </div>
                 </div>
             </div>
-        </div>
-    ]]
-    
-    local context = {
-        page_title = "Admin Chat - ai.junder.uk",
-        username = username,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        chat_features = chat_features,
-        chat_placeholder = "Admin console ready..."
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/chat.html", user_type, "chat", context)
-end
-
-function M.handle_chat_page_approved()
-    local user_type, username, user_data = auth.check()
-    
-    -- Approved user chat features
-    local chat_features = [[
-        <div class="user-features approved-features">
-            <div class="alert alert-success">
-                <h6><i class="bi bi-person-check text-success"></i> Approved User</h6>
-                <p class="mb-1">Unlimited messages • Redis storage • Full features</p>
-                <div class="approved-actions">
-                    <button class="btn btn-success btn-sm me-2" onclick="exportChats()">Export History</button>
-                    <button class="btn btn-outline-light btn-sm" onclick="clearHistory()">Clear History</button>
+        ]]
+    elseif user_type == "is_approved" then
+        return [[
+            <div class="user-features approved-features">
+                <div class="alert alert-success">
+                    <h6><i class="bi bi-person-check text-success"></i> Approved User</h6>
+                    <p class="mb-1">Unlimited messages • Redis storage • Full features</p>
+                    <div class="approved-actions">
+                        <button class="btn btn-success btn-sm me-2" onclick="exportChats()">Export History</button>
+                        <button class="btn btn-outline-light btn-sm" onclick="clearHistory()">Clear History</button>
+                    </div>
                 </div>
             </div>
-        </div>
-    ]]
-    
-    local context = {
-        page_title = "Chat - ai.junder.uk",
-        username = username,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        chat_features = chat_features,
-        chat_placeholder = "Ask anything..."
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/chat.html", user_type, "chat", context)
-end
-
-function M.handle_chat_page_guest()
-    local user_type, username, user_data = auth.check()
-    local display_name = get_display_username(user_type, username, user_data)
-    
-    -- Guest chat features
-    local chat_features = [[
-        <div class="user-features guest-features">
-            <div class="alert alert-warning">
-                <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
-                <p class="mb-1">10 messages • 10 minutes • localStorage only</p>
-                <div class="guest-actions">
-                    <a href="/register" class="btn btn-warning btn-sm me-2">Register for unlimited</a>
-                    <button class="btn btn-outline-light btn-sm" onclick="downloadGuestHistory()">Download History</button>
+        ]]
+    elseif user_type == "is_guest" then
+        return [[
+            <div class="user-features guest-features">
+                <div class="alert alert-warning">
+                    <h6><i class="bi bi-clock-history text-warning"></i> Guest Chat</h6>
+                    <p class="mb-1">10 messages • 10 minutes • localStorage only</p>
+                    <div class="guest-actions">
+                        <a href="/register" class="btn btn-warning btn-sm me-2">Register for unlimited</a>
+                        <button class="btn btn-outline-light btn-sm" onclick="downloadGuestHistory()">Download History</button>
+                    </div>
                 </div>
             </div>
-        </div>
-    ]]
-    
-    local context = {
-        page_title = "Guest Chat - ai.junder.uk",
-        username = display_name,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        chat_features = chat_features,
-        chat_placeholder = "Ask me anything... (Guest: 10 messages, 10 minutes)"
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/chat.html", user_type, "chat", context)
+        ]]
+    end
+    return ""
 end
 
 -- =============================================
--- DASHBOARD PAGE HANDLERS
+-- DASHBOARD CONTENT GENERATORS
 -- =============================================
 
-function M.handle_dash_page_admin()
-    local user_type, username, user_data = auth.check()
-    
-    -- Admin dashboard content
-    local dashboard_content = [[
+function M.get_admin_dashboard_content(username)
+    return string.format([[
         <div class="dashboard-container">
             <div class="dashboard-header">
                 <h2><i class="bi bi-shield-check text-danger"></i> Admin Dashboard</h2>
@@ -231,23 +171,11 @@ function M.handle_dash_page_admin()
                 </div>
             </div>
         </div>
-    ]]
-    
-    local context = {
-        page_title = "Admin Dashboard - ai.junder.uk",
-        username = username,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/dash.html", user_type, "dashboard", context)
+    ]], username)
 end
 
-function M.handle_dash_page_approved()
-    local user_type, username, user_data = auth.check()
-    
-    -- Approved user dashboard content
-    local dashboard_content = [[
+function M.get_approved_dashboard_content(username)
+    return string.format([[
         <div class="dashboard-container">
             <div class="dashboard-header">
                 <h2><i class="bi bi-person-check text-success"></i> User Dashboard</h2>
@@ -280,7 +208,7 @@ function M.handle_dash_page_approved()
                             <h5 class="card-title text-info">
                                 <i class="bi bi-person"></i> Account Info
                             </h5>
-                            <p><strong>Username:</strong> ]] .. username .. [[</p>
+                            <p><strong>Username:</strong> %s</p>
                             <p><strong>Account Type:</strong> <span class="badge bg-success">Approved</span></p>
                             <p><strong>Status:</strong> Full Access</p>
                             <p><strong>Storage:</strong> Redis Database</p>
@@ -307,23 +235,11 @@ function M.handle_dash_page_approved()
                 </div>
             </div>
         </div>
-    ]]
-    
-    local context = {
-        page_title = "Dashboard - ai.junder.uk",
-        username = username,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/dash.html", user_type, "dashboard", context)
+    ]], username)
 end
 
-function M.handle_dash_page_pending()
-    local user_type, username, user_data = auth.check()
-    
-    -- Pending user dashboard content
-    local dashboard_content = [[
+function M.get_pending_dashboard_content(username)
+    return string.format([[
         <div class="dashboard-container">
             <div class="pending-header text-center">
                 <h2><i class="bi bi-clock-history text-warning"></i> Account Pending Approval</h2>
@@ -357,7 +273,7 @@ function M.handle_dash_page_pending()
                             
                             <div class="mt-4">
                                 <p class="text-muted">
-                                    <strong>Username:</strong> ]] .. username .. [[<br>
+                                    <strong>Username:</strong> %s<br>
                                     <strong>Status:</strong> <span class="badge bg-warning">Pending Approval</span>
                                 </p>
                             </div>
@@ -375,81 +291,7 @@ function M.handle_dash_page_pending()
                 </div>
             </div>
         </div>
-    ]]
-    
-    local context = {
-        page_title = "Account Pending - ai.junder.uk",
-        username = username,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        dashboard_content = dashboard_content
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/dash.html", user_type, "dashboard", context)
-end
-
--- =============================================
--- AUTH PAGE HANDLERS
--- =============================================
-
-function M.handle_login_page()
-    local user_type, username, user_data = auth.check()
-    local display_name = get_display_username(user_type, username, user_data)
-    
-    local context = {
-        page_title = "Login - ai.junder.uk",
-        username = display_name,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        auth_title = "Sign In",
-        auth_subtitle = "Welcome back to ai.junder.uk"
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/login.html", user_type, "auth", context)
-end
-
-function M.handle_register_page()
-    local user_type, username, user_data = auth.check()
-    local display_name = get_display_username(user_type, username, user_data)
-    
-    local context = {
-        page_title = "Register - ai.junder.uk",
-        username = display_name,
-        dash_buttons = get_nav_buttons(user_type, username, user_data),
-        auth_title = "Create Account",
-        auth_subtitle = "Join ai.junder.uk today"
-    }
-    
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/register.html", user_type, "auth", context)
-end
-
--- =============================================
--- ERROR PAGE HANDLERS
--- =============================================
-
-function M.handle_404_page()
-    local context = {
-        page_title = "404 - Page Not Found",
-        username = "guest",
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/404.html", "is_none", "error", context)
-end
-
-function M.handle_429_page()
-    local context = {
-        page_title = "429 - Guest Slots Full",
-        username = "guest", 
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/429.html", "is_none", "error", context)
-end
-
-function M.handle_50x_page()
-    local context = {
-        page_title = "Server Error",
-        username = "guest",
-        dash_buttons = '<a class="nav-link" href="/login">Login</a><a class="nav-link" href="/register">Register</a>'
-    }
-    template.render_page_with_base("/usr/local/openresty/nginx/dynamic_content/50x.html", "is_none", "error", context)
+    ]], username)
 end
 
 return M
