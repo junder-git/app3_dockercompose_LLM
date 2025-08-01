@@ -97,7 +97,6 @@ function M.route_to_handler(route_type)
         }))
     end
 end
-end
 
 -- =============================================
 -- CHAT API HANDLER - ALL CHAT ENDPOINTS
