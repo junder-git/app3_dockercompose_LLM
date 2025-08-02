@@ -19,13 +19,16 @@
 }
 
 /* Global Styles */
-body {
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    position: relative;
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     line-height: 1.6;
-    margin: 0;
-    padding: 0;
 }
 
 /* Navbar */
@@ -75,14 +78,14 @@ body.index-page .navbar {
 
 /* Background canvas - FIXED to not interfere with content */
 body.index-page canvas#bg-canvas {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 1;
+    position: fixed !important;
+    top: 0px !important;
+    left: 0px !important;
+    width: 100%;
+    height: 100%;
+    z-index: -1 !important;
     pointer-events: none;
-    opacity: 0.6;
+    opacity: 0;
 }
 
 body.index-page .hero-section {
