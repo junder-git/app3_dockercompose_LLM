@@ -1,10 +1,11 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - CLEAN PRODUCTION VERSION
+-- nginx/lua/manage_auth.lua - UPDATED WITH SINGLE USER SESSION MANAGEMENT
 -- =============================================================================
 
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local redis = require "resty.redis"
+local session_manager = require "manage_session"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
@@ -86,7 +87,6 @@ local function verify_password(password, stored_hash)
     end
     
     -- CRITICAL: Use exact same method as redis/init-redis.sh
-    -- Redis script: printf '%s%s' $ADMIN_PASSWORD $JWT_SECRET | openssl dgst -sha256 -hex | awk '{print $2}'
     local hash_cmd = string.format("printf '%%s%%s' '%s' '%s' | openssl dgst -sha256 -hex | awk '{print $2}'",
                                    password:gsub("'", "'\"'\"'"), JWT_SECRET)
     local handle = io.popen(hash_cmd)
@@ -97,7 +97,7 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- AUTH CHECK FUNCTION - OPTIMIZED IMPLEMENTATION
+-- ENHANCED AUTH CHECK WITH SESSION VALIDATION
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
@@ -118,22 +118,33 @@ local function check()
         return "is_none", nil, nil
     end
     
-    -- Get username from JWT (could be regular username or guest username)
+    -- Get username from JWT
     local username = payload.username
     if not username then
         ngx.log(ngx.WARN, "JWT token missing username")
         return "is_none", nil, nil
     end
     
-    -- Get fresh user data from Redis for ALL users (including guests)
+    -- Get fresh user data from Redis
     local user_data = get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "User from JWT not found in Redis: " .. username)
         return "is_none", nil, nil
     end
     
-    -- Return user type based on fresh data from Redis
     local user_type = user_data.user_type
+    
+    -- CRITICAL: Validate session for non-guest users
+    if user_type ~= "guest" then
+        local session_valid, session_err = session_manager.validate_session(username, user_type)
+        if not session_valid then
+            ngx.log(ngx.WARN, string.format("Session validation failed for %s '%s': %s", 
+                user_type, username, session_err or "unknown"))
+            return "is_none", nil, nil
+        end
+    end
+    
+    -- Return user type based on fresh data from Redis
     if user_type == "admin" then
         return "is_admin", username, user_data
     elseif user_type == "approved" then
@@ -149,7 +160,7 @@ local function check()
 end
 
 -- =============================================
--- LOGIN HANDLER
+-- ENHANCED LOGIN HANDLER WITH SESSION MANAGEMENT
 -- =============================================
 local function handle_login()
     ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
@@ -184,22 +195,44 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
-    ngx.log(ngx.INFO, "Login: User found, verifying password")
-    
     -- Verify password
     if not verify_password(password, user_data.password_hash) then
         ngx.log(ngx.WARN, "Login: Invalid password for user: " .. username)
         send_json(401, { error = "Invalid credentials" })
     end
     
-    ngx.log(ngx.INFO, "Login: Password verified, generating JWT")
+    -- CRITICAL: Check if user can login (session limits)
+    local can_login, login_message = session_manager.can_login(username, user_data.user_type)
+    if not can_login then
+        ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
+            user_data.user_type, username, login_message))
+        send_json(409, { 
+            error = "Login not allowed",
+            message = login_message,
+            reason = "concurrent_session_limit"
+        })
+    end
     
-    -- Generate JWT based on user type
+    -- CREATE SESSION
+    local session_success, session_result = session_manager.create_session(username, user_data.user_type, user_data)
+    if not session_success then
+        ngx.log(ngx.ERR, string.format("Failed to create session for %s '%s': %s", 
+            user_data.user_type, username, session_result))
+        send_json(500, { 
+            error = "Failed to create session",
+            message = session_result
+        })
+    end
+    
+    ngx.log(ngx.INFO, "Login: Session created successfully")
+    
+    -- Generate JWT
     local payload = {
         username = username,
         user_type = user_data.user_type,
+        session_id = session_result.session_id,
         iat = ngx.time(),
-        exp = ngx.time() + 86400 * 7  -- 7 days
+        exp = ngx.time() + 86400 * 7  -- 7 days (longer than session for convenience)
     }
     
     local token = jwt:sign(JWT_SECRET, {
@@ -210,26 +243,42 @@ local function handle_login()
     -- Set secure cookie
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
     
-    ngx.log(ngx.INFO, "Login: Success for user: " .. username .. " (type: " .. user_data.user_type .. ")")
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' (session: %s)", 
+        user_data.user_type, username, session_result.session_id))
     
     send_json(200, {
         success = true,
         message = "Login successful",
         username = username,
         user_type = user_data.user_type,
-        redirect = "/chat"  -- Always redirect to chat after login
+        session_info = {
+            session_id = session_result.session_id,
+            expires_at = session_result.expires_at,
+            time_remaining = session_result.expires_at - ngx.time()
+        },
+        redirect = "/chat"
     })
 end
 
 -- =============================================
--- LOGOUT HANDLER
+-- ENHANCED LOGOUT HANDLER WITH SESSION CLEANUP
 -- =============================================
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
     
-    local user_type, username, user_data = check()  -- Use the existing check function
+    local user_type, username, user_data = check()
     
     ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
+    
+    -- Clear session if authenticated
+    if username and user_type ~= "is_none" then
+        local session_success, session_err = session_manager.clear_session(username, user_type:gsub("is_", ""))
+        if not session_success then
+            ngx.log(ngx.WARN, "Failed to clear session: " .. (session_err or "unknown"))
+        else
+            ngx.log(ngx.INFO, "Session cleared successfully")
+        end
+    end
     
     -- Clear cookies
     local cookie_headers = {
@@ -254,6 +303,55 @@ local function handle_logout()
 end
 
 -- =============================================
+-- SESSION STATUS API
+-- =============================================
+local function handle_session_status()
+    local stats, err = session_manager.get_session_stats()
+    if err then
+        send_json(500, {
+            success = false,
+            error = err
+        })
+        return
+    end
+    
+    send_json(200, {
+        success = true,
+        session_stats = stats
+    })
+end
+
+-- =============================================
+-- FORCE LOGOUT API (ADMIN ONLY)
+-- =============================================
+local function handle_force_logout()
+    -- Check if requester is admin
+    local user_type, username, user_data = check()
+    if user_type ~= "is_admin" then
+        send_json(403, {
+            success = false,
+            error = "Admin access required"
+        })
+        return
+    end
+    
+    local success, result = session_manager.force_logout_current_user()
+    if not success then
+        send_json(404, {
+            success = false,
+            error = result
+        })
+        return
+    end
+    
+    send_json(200, {
+        success = true,
+        message = "User force logged out",
+        logged_out_session = result
+    })
+end
+
+-- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
@@ -263,6 +361,8 @@ return {
     verify_password = verify_password,
     handle_login = handle_login,
     handle_logout = handle_logout,
+    handle_session_status = handle_session_status,
+    handle_force_logout = handle_force_logout,
     -- Export Redis helper functions for other modules
     redis_to_lua = redis_to_lua,
     connect_redis = connect_redis

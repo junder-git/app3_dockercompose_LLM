@@ -335,6 +335,15 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
     -- Auto-inject appropriate JS assets (existing logic)
     context.js_files = get_js_files_for_context(user_type, page_type)
     
+    -- Initialize ALL CSS placeholders as empty first
+    context.css_base = ""
+    context.css_index = ""
+    context.css_chat = ""
+    context.css_auth = ""
+    context.css_dash = ""
+    context.css_error = ""
+    context.css = ""
+    
     -- For chat pages, create individual JS blocks for ordered loading
     if page_type == "chat" then
         local js_blocks = build_individual_js_blocks(context.js_files)
@@ -361,25 +370,32 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
         -- Clear the combined js field for chat pages
         context.js = ""
         
-        -- For chat pages, also create individual CSS blocks for ordered loading
+        -- For chat pages, create individual CSS blocks
         local css_blocks = build_individual_css_blocks(context.css_files)
         context.css_base = css_blocks["view_base.css"] or ""
         context.css_chat = css_blocks["view_chat.css"] or ""
         
-        -- Clear the combined css field for chat pages
-        context.css = ""
     else
-        -- For non-chat pages, use combined JS and CSS blocks
+        -- For non-chat pages, use combined JS block
         context.js = build_js_block(context.js_files)
-        context.css = build_css_block(context.css_files)
         
-        -- Also create individual CSS blocks for flexibility
+        -- For non-chat pages, populate only the relevant CSS placeholders
         local css_blocks = build_individual_css_blocks(context.css_files)
         context.css_base = css_blocks["view_base.css"] or ""
-        context.css_index = css_blocks["view_index.css"] or ""
-        context.css_auth = css_blocks["view_auth.css"] or ""
-        context.css_dash = css_blocks["view_dash.css"] or ""
-        context.css_error = css_blocks["view_error.css"] or ""
+        
+        -- Only set the specific CSS placeholder for this page type
+        if page_type == "index" then
+            context.css_index = css_blocks["view_index.css"] or ""
+        elseif page_type == "auth" then
+            context.css_auth = css_blocks["view_auth.css"] or ""
+        elseif page_type == "dashboard" then
+            context.css_dash = css_blocks["view_dash.css"] or ""
+        elseif page_type == "error" then
+            context.css_error = css_blocks["view_error.css"] or ""
+        end
+        
+        -- Also provide combined CSS as fallback
+        context.css = build_css_block(context.css_files)
     end
     
     -- Call standard render function
