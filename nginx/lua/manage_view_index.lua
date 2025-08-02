@@ -16,13 +16,13 @@ function M.handle(user_type, username, user_data)
     if user_type == "is_none" then
         start_chat_button = [[
             <button class="btn btn-primary btn-lg me-3" onclick="startGuestSession()">
-                <i class="bi bi-chat-dots"></i> Start Guest Chat
+                <i class="bi bi-chat-dots"></i> Guest Chat
             </button>
         ]]
     else
         start_chat_button = [[
             <a href="/chat" class="btn btn-primary btn-lg me-3">
-                <i class="bi bi-chat-dots"></i> Start Chat
+                <i class="bi bi-chat-dots"></i> Chat
             </a>
         ]]
     end
