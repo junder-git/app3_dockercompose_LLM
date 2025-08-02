@@ -1,5 +1,5 @@
 // =============================================================================
-// nginx/static/js/is_shared.js - SIMPLIFIED SHARED FUNCTIONALITY
+// nginx/static/js/is_shared.js - SIMPLIFIED SHARED FUNCTIONALITY WITH SESSION HANDLING
 // =============================================================================
 
 // =============================================================================
@@ -105,7 +105,16 @@ class SharedInterface {
                     window.location.href = data.redirect || '/chat';
                 }, 1000);
             } else {
-                this.showError(data.error || 'Login failed');
+                // Handle session conflicts specifically
+                let errorMessage = data.error || 'Login failed';
+                
+                if (data.reason === 'sessions_full') {
+                    errorMessage = `Login blocked: ${data.message || 'Sessions are currently full.'}`;
+                } else if (data.reason === 'concurrent_session_limit') {
+                    errorMessage = `Cannot login: ${data.message || 'Another user is currently logged in.'}`;
+                }
+                
+                this.showError(errorMessage);
             }
         } catch (error) {
             console.error('Login error:', error);
@@ -203,7 +212,14 @@ class SharedInterface {
                     window.location.href = data.redirect || '/chat';
                 }, 1000);
             } else {
-                this.showError(data.error || 'Failed to create guest session');
+                // Handle sessions full error specifically
+                let errorMessage = data.error || 'Failed to create guest session';
+                
+                if (data.reason === 'sessions_full') {
+                    errorMessage = `Sessions are currently full. ${data.message || 'Please try again later.'}`;
+                }
+                
+                this.showError(errorMessage);
             }
         } catch (error) {
             console.error('Guest session error:', error);

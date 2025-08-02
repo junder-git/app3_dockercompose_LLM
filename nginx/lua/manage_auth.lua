@@ -1,11 +1,10 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - UPDATED WITH SINGLE USER SESSION MANAGEMENT
+-- nginx/lua/manage_auth.lua - FIXED - NO CIRCULAR DEPENDENCIES
 -- =============================================================================
 
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local redis = require "resty.redis"
-local session_manager = require "manage_session"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
@@ -97,7 +96,111 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- ENHANCED AUTH CHECK WITH SESSION VALIDATION
+-- SIMPLE SESSION MANAGEMENT (INLINE TO AVOID CIRCULAR DEPS)
+-- =============================================
+
+local function get_current_session()
+    local red = connect_redis()
+    if not red then
+        return nil, "Redis connection failed"
+    end
+    
+    local session_data = red:get("current_active_session")
+    red:close()
+    
+    if not session_data or session_data == ngx.null then
+        return nil, "No active session"
+    end
+    
+    local ok, session = pcall(cjson.decode, session_data)
+    if not ok then
+        return nil, "Invalid session data"
+    end
+    
+    -- Check expiration
+    local current_time = ngx.time()
+    if session.expires_at and current_time > session.expires_at then
+        -- Clear expired session
+        local red2 = connect_redis()
+        if red2 then
+            red2:del("current_active_session")
+            red2:close()
+        end
+        return nil, "Session expired"
+    end
+    
+    return session, nil
+end
+
+local function create_session(username, user_type)
+    local red = connect_redis()
+    if not red then
+        return false, "Redis connection failed"
+    end
+    
+    local current_time = ngx.time()
+    local session_timeout = (user_type == "admin") and 7200 or 3600 -- 2h for admin, 1h for others
+    
+    -- Check for existing session and handle priority
+    local existing_session, _ = get_current_session()
+    if existing_session then
+        local function get_priority(utype)
+            if utype == "admin" then return 1 end
+            if utype == "approved" then return 2 end
+            if utype == "guest" then return 3 end
+            return 4
+        end
+        
+        local existing_priority = get_priority(existing_session.user_type)
+        local new_priority = get_priority(user_type)
+        
+        -- If new user has lower or equal priority, deny access
+        if new_priority >= existing_priority then
+            red:close()
+            return false, string.format("Sessions full. %s '%s' is logged in.", 
+                existing_session.user_type, existing_session.username)
+        end
+        
+        -- Admin kicks out lower priority user
+        ngx.log(ngx.INFO, string.format("🔨 %s '%s' kicking out %s '%s'",
+            user_type, username, existing_session.user_type, existing_session.username))
+    end
+    
+    -- Create new session
+    local session = {
+        username = username,
+        user_type = user_type,
+        created_at = current_time,
+        last_activity = current_time,
+        expires_at = current_time + session_timeout,
+        remote_addr = ngx.var.remote_addr or "unknown"
+    }
+    
+    local session_json = cjson.encode(session)
+    red:setex("current_active_session", session_timeout + 60, session_json)
+    red:close()
+    
+    ngx.log(ngx.INFO, string.format("✅ Session created for %s '%s'", user_type, username))
+    
+    return true, session
+end
+
+local function validate_session(username, user_type)
+    local current_session, err = get_current_session()
+    if not current_session then
+        return false, err or "No active session"
+    end
+    
+    -- Check if this user owns the session
+    if current_session.username ~= username then
+        return false, "Session belongs to different user"
+    end
+    
+    return true, current_session
+end
+
+-- =============================================
+-- AUTH CHECK FUNCTION - WITH INLINE SESSION VALIDATION
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
@@ -134,9 +237,9 @@ local function check()
     
     local user_type = user_data.user_type
     
-    -- CRITICAL: Validate session for non-guest users
+    -- Validate session for non-guest users
     if user_type ~= "guest" then
-        local session_valid, session_err = session_manager.validate_session(username, user_type)
+        local session_valid, session_err = validate_session(username, user_type)
         if not session_valid then
             ngx.log(ngx.WARN, string.format("Session validation failed for %s '%s': %s", 
                 user_type, username, session_err or "unknown"))
@@ -160,7 +263,7 @@ local function check()
 end
 
 -- =============================================
--- ENHANCED LOGIN HANDLER WITH SESSION MANAGEMENT
+-- LOGIN HANDLER WITH INLINE SESSION MANAGEMENT
 -- =============================================
 local function handle_login()
     ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
@@ -201,26 +304,15 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
-    -- CRITICAL: Check if user can login (session limits)
-    local can_login, login_message = session_manager.can_login(username, user_data.user_type)
-    if not can_login then
+    -- CREATE SESSION (with kicking logic)
+    local session_success, session_result = create_session(username, user_data.user_type)
+    if not session_success then
         ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
-            user_data.user_type, username, login_message))
+            user_data.user_type, username, session_result))
         send_json(409, { 
             error = "Login not allowed",
-            message = login_message,
-            reason = "concurrent_session_limit"
-        })
-    end
-    
-    -- CREATE SESSION
-    local session_success, session_result = session_manager.create_session(username, user_data.user_type, user_data)
-    if not session_success then
-        ngx.log(ngx.ERR, string.format("Failed to create session for %s '%s': %s", 
-            user_data.user_type, username, session_result))
-        send_json(500, { 
-            error = "Failed to create session",
-            message = session_result
+            message = session_result,
+            reason = "sessions_full"
         })
     end
     
@@ -230,9 +322,8 @@ local function handle_login()
     local payload = {
         username = username,
         user_type = user_data.user_type,
-        session_id = session_result.session_id,
         iat = ngx.time(),
-        exp = ngx.time() + 86400 * 7  -- 7 days (longer than session for convenience)
+        exp = ngx.time() + 86400 * 7  -- 7 days
     }
     
     local token = jwt:sign(JWT_SECRET, {
@@ -243,25 +334,20 @@ local function handle_login()
     -- Set secure cookie
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
     
-    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' (session: %s)", 
-        user_data.user_type, username, session_result.session_id))
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s'", 
+        user_data.user_type, username))
     
     send_json(200, {
         success = true,
         message = "Login successful",
         username = username,
         user_type = user_data.user_type,
-        session_info = {
-            session_id = session_result.session_id,
-            expires_at = session_result.expires_at,
-            time_remaining = session_result.expires_at - ngx.time()
-        },
         redirect = "/chat"
     })
 end
 
 -- =============================================
--- ENHANCED LOGOUT HANDLER WITH SESSION CLEANUP
+-- LOGOUT HANDLER WITH SESSION CLEANUP
 -- =============================================
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
@@ -272,10 +358,10 @@ local function handle_logout()
     
     -- Clear session if authenticated
     if username and user_type ~= "is_none" then
-        local session_success, session_err = session_manager.clear_session(username, user_type:gsub("is_", ""))
-        if not session_success then
-            ngx.log(ngx.WARN, "Failed to clear session: " .. (session_err or "unknown"))
-        else
+        local red = connect_redis()
+        if red then
+            red:del("current_active_session")
+            red:close()
             ngx.log(ngx.INFO, "Session cleared successfully")
         end
     end
@@ -303,55 +389,6 @@ local function handle_logout()
 end
 
 -- =============================================
--- SESSION STATUS API
--- =============================================
-local function handle_session_status()
-    local stats, err = session_manager.get_session_stats()
-    if err then
-        send_json(500, {
-            success = false,
-            error = err
-        })
-        return
-    end
-    
-    send_json(200, {
-        success = true,
-        session_stats = stats
-    })
-end
-
--- =============================================
--- FORCE LOGOUT API (ADMIN ONLY)
--- =============================================
-local function handle_force_logout()
-    -- Check if requester is admin
-    local user_type, username, user_data = check()
-    if user_type ~= "is_admin" then
-        send_json(403, {
-            success = false,
-            error = "Admin access required"
-        })
-        return
-    end
-    
-    local success, result = session_manager.force_logout_current_user()
-    if not success then
-        send_json(404, {
-            success = false,
-            error = result
-        })
-        return
-    end
-    
-    send_json(200, {
-        success = true,
-        message = "User force logged out",
-        logged_out_session = result
-    })
-end
-
--- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
@@ -361,8 +398,9 @@ return {
     verify_password = verify_password,
     handle_login = handle_login,
     handle_logout = handle_logout,
-    handle_session_status = handle_session_status,
-    handle_force_logout = handle_force_logout,
+    get_current_session = get_current_session,
+    create_session = create_session,
+    validate_session = validate_session,
     -- Export Redis helper functions for other modules
     redis_to_lua = redis_to_lua,
     connect_redis = connect_redis
