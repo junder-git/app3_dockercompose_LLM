@@ -15,7 +15,7 @@
 </div>
 
 <script>
-// Neural network animation - create canvas and animate in JS
+// Neural network animation with gradient background
 (function() {
     'use strict';
     
@@ -41,10 +41,21 @@
     const ctx = canvas.getContext('2d');
     let points = [];
     let animationFrameId;
+    let backgroundGradient;
+    
+    function createBackgroundGradient() {
+        // Create a subtle blue gradient background
+        backgroundGradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        backgroundGradient.addColorStop(0, 'rgba(13, 20, 33, 0.95)');      // Dark blue-gray
+        backgroundGradient.addColorStop(0.3, 'rgba(26, 35, 50, 0.85)');    // Medium blue-gray
+        backgroundGradient.addColorStop(0.7, 'rgba(13, 20, 33, 0.90)');    // Back to dark
+        backgroundGradient.addColorStop(1, 'rgba(8, 12, 20, 0.98)');       // Very dark blue
+    }
     
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        createBackgroundGradient(); // Recreate gradient for new canvas size
         createPoints();
         console.log(`🔄 Canvas resized to ${canvas.width}x${canvas.height}`);
     }
@@ -68,6 +79,10 @@
     function animate() {
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw gradient background
+        ctx.fillStyle = backgroundGradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Update and draw points
         for (let i = 0; i < points.length; i++) {
@@ -83,10 +98,16 @@
             p.x = Math.max(0, Math.min(canvas.width, p.x));
             p.y = Math.max(0, Math.min(canvas.height, p.y));
 
-            // Draw point
+            // Draw point with subtle glow
             ctx.beginPath();
             ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.9)';
+            ctx.fill();
+            
+            // Add subtle glow effect
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.1)';
             ctx.fill();
         }
 
@@ -98,12 +119,12 @@
                 let dist = Math.sqrt(dx * dx + dy * dy);
 
                 if (dist < 150) {
-                    let opacity = 0.4 * (1 - dist / 150);
+                    let opacity = 0.5 * (1 - dist / 150);
                     ctx.beginPath();
                     ctx.moveTo(points[i].x, points[i].y);
                     ctx.lineTo(points[j].x, points[j].y);
                     ctx.strokeStyle = `rgba(0, 200, 255, ${opacity})`;
-                    ctx.lineWidth = 0.5;
+                    ctx.lineWidth = 0.8;
                     ctx.stroke();
                 }
             }
@@ -121,7 +142,7 @@
     
     // Add loaded class for CSS animations
     document.body.classList.add('canvas-loaded');
-    console.log('✨ Neural network animation started successfully');
+    console.log('✨ Neural network animation with gradient background started successfully');
     
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {
