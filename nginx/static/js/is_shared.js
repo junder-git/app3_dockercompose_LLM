@@ -1,9 +1,9 @@
 // =============================================================================
-// nginx/static/js/is_shared.js - SHARED NON-CHAT FUNCTIONALITY ACROSS ALL USER TYPES
+// nginx/static/js/is_shared.js - SIMPLIFIED SHARED FUNCTIONALITY
 // =============================================================================
 
 // =============================================================================
-// SHARED AUTHENTICATION AND NAVIGATION
+// SHARED INTERFACE - NO AUTH STATUS CHECKS
 // =============================================================================
 
 class SharedInterface {
@@ -20,40 +20,23 @@ class SharedInterface {
     setupGlobalMethods() {
         // Only expose methods that need to be called from HTML onclick attributes
         window.logout = this.logout.bind(this);
-        window.updateNavigation = this.updateNavigation.bind(this);
+        window.handleLogin = this.handleLogin.bind(this);
+        window.handleRegister = this.handleRegister.bind(this);
+        window.startGuestSession = this.startGuestSession.bind(this);
     }
 
     setupPublicFeatures() {
         this.setupAuthForms();
         this.setupPasswordToggle();
-        this.setupEventDelegation();
-    }
-
-    // Method to check authentication status (for subclasses)
-    async checkAuth() {
-        try {
-            const response = await fetch('/api/auth/status', {
-                credentials: 'include'
-            });
-            
-            if (response.ok) {
-                return await response.json();
-            }
-            
-            return { success: false, user_type: 'is_none' };
-        } catch (error) {
-            console.warn('Auth check failed:', error);
-            return { success: false, user_type: 'is_none' };
-        }
     }
 
     setupAuthForms() {
-        const loginForm = document.getElementById('login-form');
+        const loginForm = document.getElementById('loginForm');
         if (loginForm) {
             loginForm.addEventListener('submit', this.handleLogin.bind(this));
         }
 
-        const registerForm = document.getElementById('register-form');
+        const registerForm = document.getElementById('registerForm');
         if (registerForm) {
             registerForm.addEventListener('submit', this.handleRegister.bind(this));
         }
@@ -79,37 +62,29 @@ class SharedInterface {
         }
     }
 
-    setupEventDelegation() {
-        document.addEventListener('click', (e) => {
-            const action = e.target.getAttribute('data-action');
-            
-            switch (action) {
-                case 'logout':
-                    e.preventDefault();
-                    this.logout();
-                    break;
-                case 'update-nav':
-                    e.preventDefault();
-                    this.updateNavigation();
-                    break;
-            }
-        });
-    }
-
     async handleLogin(e) {
         e.preventDefault();
-        const formData = new FormData(e.target);
+        
+        const form = e.target.closest('form') || document.getElementById('loginForm');
+        if (!form) return;
+        
+        const formData = new FormData(form);
         const credentials = {
             username: formData.get('username'),
             password: formData.get('password')
         };
 
-        const loginBtn = document.getElementById('login-btn');
-        const originalBtnContent = loginBtn ? loginBtn.innerHTML : null;
+        if (!credentials.username || !credentials.password) {
+            this.showError('Please enter both username and password');
+            return;
+        }
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalContent = submitBtn ? submitBtn.innerHTML : null;
         
-        if (loginBtn) {
-            loginBtn.disabled = true;
-            loginBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Signing in...';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Signing in...';
         }
 
         try {
@@ -125,6 +100,7 @@ class SharedInterface {
             if (data.success) {
                 this.showSuccess('Login successful! Redirecting...');
                 
+                // Direct redirect - let server handle auth state
                 setTimeout(() => {
                     window.location.href = data.redirect || '/chat';
                 }, 1000);
@@ -135,31 +111,46 @@ class SharedInterface {
             console.error('Login error:', error);
             this.showError('Login error: ' + error.message);
         } finally {
-            if (loginBtn && originalBtnContent) {
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalBtnContent;
+            if (submitBtn && originalContent) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalContent;
             }
         }
     }
 
     async handleRegister(e) {
         e.preventDefault();
-        const formData = new FormData(e.target);
+        
+        const form = e.target.closest('form') || document.getElementById('registerForm');
+        if (!form) return;
+        
+        const formData = new FormData(form);
         const userData = {
             username: formData.get('username'),
             password: formData.get('password')
         };
 
-        const registerBtn = document.getElementById('register-btn');
-        const originalBtnContent = registerBtn ? registerBtn.innerHTML : null;
+        const confirmPassword = formData.get('confirmPassword');
+        if (confirmPassword && userData.password !== confirmPassword) {
+            this.showError('Passwords do not match');
+            return;
+        }
+
+        if (!userData.username || !userData.password) {
+            this.showError('Please fill in all fields');
+            return;
+        }
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalContent = submitBtn ? submitBtn.innerHTML : null;
         
-        if (registerBtn) {
-            registerBtn.disabled = true;
-            registerBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating account...';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating account...';
         }
 
         try {
-            const response = await fetch('/api/register', {
+            const response = await fetch('/api/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(userData)
@@ -170,7 +161,7 @@ class SharedInterface {
             if (data.success) {
                 this.showSuccess('Registration successful! Please wait for approval.');
                 setTimeout(() => {
-                    window.location.href = '/login';
+                    window.location.href = data.redirect || '/login';
                 }, 2000);
             } else {
                 this.showError(data.error || 'Registration failed');
@@ -179,41 +170,56 @@ class SharedInterface {
             console.error('Registration error:', error);
             this.showError('Registration error: ' + error.message);
         } finally {
-            if (registerBtn && originalBtnContent) {
-                registerBtn.disabled = false;
-                registerBtn.innerHTML = originalBtnContent;
+            if (submitBtn && originalContent) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalContent;
             }
         }
     }
 
-    clearClientData() {
-        console.log('🧹 Clearing client data...');
+    async startGuestSession() {
+        console.log('🎮 Starting guest session...');
         
-        localStorage.clear();
-        sessionStorage.clear();
+        const button = document.querySelector('button[onclick*="startGuestSession"]');
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating session...';
+        }
         
-        const cookies = ['access_token', 'guest_token', 'session'];
-        cookies.forEach(name => {
-            document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
-            document.cookie = `${name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure`;
-            document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
-        });
-        
-        document.cookie.split(";").forEach(function(c) {
-            const eqPos = c.indexOf("=");
-            const name = eqPos > -1 ? c.substr(0, eqPos) : c;
-            const cleanName = name.trim();
-            if (cleanName) {
-                document.cookie = cleanName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
-                document.cookie = cleanName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + window.location.hostname;
+        try {
+            const response = await fetch('/api/guest/create-session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                this.showSuccess('Guest session created! Redirecting...');
+                
+                // Direct redirect - let server handle auth state
+                setTimeout(() => {
+                    window.location.href = data.redirect || '/chat';
+                }, 1000);
+            } else {
+                this.showError(data.error || 'Failed to create guest session');
             }
-        });
+        } catch (error) {
+            console.error('Guest session error:', error);
+            this.showError('Failed to create guest session: ' + error.message);
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-chat-dots"></i> Start Guest Chat';
+            }
+        }
     }
 
     async logout() {
         console.log('🚪 Logging out...');
         
-        const logoutBtn = document.querySelector('[onclick*="logout"], [data-action="logout"]');
+        const logoutBtn = document.querySelector('[onclick*="logout"]');
         const originalContent = logoutBtn ? logoutBtn.innerHTML : null;
         
         if (logoutBtn) {
@@ -231,17 +237,15 @@ class SharedInterface {
             const data = await response.json();
             console.log('✅ Server logout successful:', data);
             
-            this.clearClientData();
             this.showSuccess('Logged out successfully');
             
+            // Direct redirect - let server handle auth state
             setTimeout(() => {
                 window.location.href = data.redirect || '/';
             }, 500);
             
         } catch (error) {
-            console.warn('Server logout failed, but continuing with client logout:', error);
-            
-            this.clearClientData();
+            console.warn('Server logout failed, but continuing with redirect:', error);
             
             if (logoutBtn && originalContent) {
                 logoutBtn.disabled = false;
@@ -256,107 +260,52 @@ class SharedInterface {
         }
     }
 
-    updateNavigation(navHtml = null) {
-        // Navigation is now handled server-side during page rendering
-        // This function is kept for compatibility but does nothing
-        console.log('🔄 Navigation handled server-side during page rendering');
-        return Promise.resolve();
-    }
-
     // =============================================================================
-    // SHARED ALERT SYSTEM
+    // ALERT SYSTEM
     // =============================================================================
     showError(message) {
-        this.removeExistingAlerts();
-        const alert = this.createAlert('danger', 'exclamation-triangle', message);
-        this.appendAlert(alert);
-        
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 5000);
+        this.showAlert(message, 'danger', 'exclamation-triangle');
     }
 
     showSuccess(message) {
-        this.removeExistingAlerts();
-        const alert = this.createAlert('success', 'check-circle', message);
-        this.appendAlert(alert);
-        
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 3000);
+        this.showAlert(message, 'success', 'check-circle');
     }
 
     showInfo(message) {
-        this.removeExistingAlerts();
-        const alert = this.createAlert('info', 'info-circle', message);
-        this.appendAlert(alert);
-        
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 4000);
+        this.showAlert(message, 'info', 'info-circle');
     }
 
     showWarning(message) {
-        this.removeExistingAlerts();
-        const alert = this.createAlert('warning', 'exclamation-triangle', message);
-        this.appendAlert(alert);
-        
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 4000);
+        this.showAlert(message, 'warning', 'exclamation-triangle');
     }
 
-    createAlert(type, icon, message) {
+    showAlert(message, type, icon) {
+        // Remove existing alerts
+        document.querySelectorAll('.auth-message, .alert').forEach(alert => {
+            if (alert.parentNode) alert.remove();
+        });
+        
         const alert = document.createElement('div');
-        alert.className = `alert alert-${type} alert-dismissible fade show`;
+        alert.className = `alert alert-${type} alert-dismissible fade show auth-message`;
+        alert.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; max-width: 500px;';
         alert.innerHTML = `
             <i class="bi bi-${icon}"></i> ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
-        return alert;
-    }
-
-    appendAlert(alert) {
-        const container = document.getElementById('alert-container') || document.body;
-        if (container === document.body) {
-            container.insertBefore(alert, container.firstChild);
-        } else {
-            container.appendChild(alert);
-        }
-    }
-
-    removeExistingAlerts() {
-        const alerts = document.querySelectorAll('.alert');
-        alerts.forEach(alert => {
+        
+        document.body.appendChild(alert);
+        
+        // Auto-remove
+        setTimeout(() => {
             if (alert.parentNode) {
                 alert.remove();
             }
-        });
-    }
-
-    // Utility method for debugging
-    getStatus() {
-        return {
-            initialized: true,
-            currentPage: window.location.pathname,
-            hasLoginForm: !!document.getElementById('login-form'),
-            hasRegisterForm: !!document.getElementById('register-form'),
-            hasNavigation: !!document.querySelector('nav'),
-            timestamp: new Date().toISOString()
-        };
+        }, type === 'success' ? 3000 : 5000);
     }
 }
 
 // =============================================================================
-// SHARED MODAL UTILITIES
+// MODAL UTILITIES
 // =============================================================================
 
 class SharedModalUtils {
@@ -383,101 +332,27 @@ class SharedModalUtils {
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         return new bootstrap.Modal(document.getElementById(id));
     }
-
-    static removeModal(id) {
-        const modal = document.getElementById(id);
-        if (modal) {
-            const bsModal = bootstrap.Modal.getInstance(modal);
-            if (bsModal) {
-                bsModal.hide();
-            }
-            setTimeout(() => {
-                modal.remove();
-            }, 500);
-        }
-    }
 }
 
 // =============================================================================
-// AUTO-INITIALIZATION
+// INITIALIZATION
 // =============================================================================
 
 let sharedInterface = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Initializing shared interface...');
+    console.log('🚀 Initializing simplified shared interface...');
     
-    // Single initialization point
     sharedInterface = new SharedInterface();
     
-    // Make available globally for debugging
+    // Make available globally
     window.sharedInterface = sharedInterface;
     window.SharedModalUtils = SharedModalUtils;
     
-    // Page-specific setup
-    if (document.querySelector('.hero-section')) {
-        document.body.classList.add('index-page');
-        console.log('📄 Index page detected');
-    }
-    
-    if (document.getElementById('login-form')) {
-        console.log('🔐 Login page detected');
-    }
-    
-    if (document.getElementById('register-form')) {
-        console.log('📝 Register page detected');
-    }
-    
-    // Initialize Bootstrap components if available
-    if (typeof bootstrap !== 'undefined') {
-        // Initialize tooltips
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
-        
-        // Initialize popovers
-        const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
-        popoverTriggerList.map(function (popoverTriggerEl) {
-            return new bootstrap.Popover(popoverTriggerEl);
-        });
-        
-        console.log('🎨 Bootstrap components initialized');
-    }
-    
-    console.log('✅ Shared interface initialized successfully');
+    console.log('✅ Simplified shared interface initialized');
 });
 
-// Handle page visibility changes
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        console.log('👁️ Page became visible');
-        // No need to check auth - handled server-side
-    }
-});
-
-// Handle browser back/forward navigation
-window.addEventListener('popstate', () => {
-    console.log('🔄 Browser navigation detected');
-    // Navigation is handled server-side during page load
-});
-
-// Handle online/offline status
-window.addEventListener('online', () => {
-    if (sharedInterface) {
-        console.log('🌐 Connection restored');
-        sharedInterface.showInfo('Connection restored');
-    }
-});
-
-window.addEventListener('offline', () => {
-    if (sharedInterface) {
-        console.log('📴 Connection lost');
-        sharedInterface.showError('Connection lost - some features may not work');
-    }
-});
-
-// Global error handler for unhandled promises
+// Global error handler
 window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection:', event.reason);
     if (sharedInterface) {
