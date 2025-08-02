@@ -29,6 +29,7 @@ function M.handle(user_type, username, user_data)
     
     local context = {
         page_title = "ai.junder.uk - Advanced AI Chat",
+        body_class = "index-page",  -- Add CSS class for index page styling
         start_chat_button = start_chat_button,
         user_data = user_data
     }

@@ -1,18 +1,20 @@
 -- =============================================================================
--- nginx/lua/manage_template.lua - JS CACHE WITH INDIVIDUAL JS LOADING SUPPORT
+-- nginx/lua/manage_template.lua - ENHANCED WITH CSS AND JS CACHE SUPPORT
 -- =============================================================================
 
 -- Configuration
 local TEMPLATE_CACHE = {}
 local JS_CACHE = {}
+local CSS_CACHE = {}
 local CACHE_INITIALIZED = false
 local CSS_VERSION = os.time() -- Use timestamp as version, or set manually
 
--- FIXED: Use the correct JS path from Dockerfile
+-- FIXED: Use the correct paths from Dockerfile
 local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
+local CSS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/css/"
 
 -- =============================================
--- CACHE INITIALIZATION - LOADS ALL JS AT STARTUP INCLUDING NEW CHAT FILES
+-- CACHE INITIALIZATION - LOADS ALL JS AND CSS AT STARTUP
 -- =============================================
 
 local function load_js_assets()
@@ -46,17 +48,46 @@ local function load_js_assets()
     end
 end
 
+local function load_css_assets()
+    local css_files = {
+        "view_base.css",        -- Core shared styles
+        "view_index.css",       -- Index page styles
+        "view_chat.css",        -- Chat page styles
+        "view_auth.css",        -- Auth pages styles (login/register)
+        "view_dash.css",        -- Dashboard page styles
+        "view_error.css"        -- Error pages styles
+    }
+    
+    ngx.log(ngx.INFO, "Loading CSS files into permanent cache...")
+    
+    for _, filename in ipairs(css_files) do
+        local filepath = CSS_BASE_PATH .. filename
+        local file = io.open(filepath, "r")
+        
+        if file then
+            local content = file:read("*all")
+            file:close()
+            CSS_CACHE[filename] = content
+            ngx.log(ngx.INFO, "✅ Loaded CSS: " .. filename .. " (" .. string.len(content) .. " bytes)")
+        else
+            ngx.log(ngx.WARN, "❌ CSS file not found: " .. filepath)
+            CSS_CACHE[filename] = "" -- Store empty string to avoid repeated file system checks
+        end
+    end
+end
+
 local function initialize_cache()
     if CACHE_INITIALIZED then
         return
     end
     
-    ngx.log(ngx.INFO, "🚀 Initializing permanent JS cache...")
+    ngx.log(ngx.INFO, "🚀 Initializing permanent JS and CSS cache...")
     
     load_js_assets()
+    load_css_assets()
     
     CACHE_INITIALIZED = true
-    ngx.log(ngx.INFO, "✅ Permanent JS cache initialized successfully")
+    ngx.log(ngx.INFO, "✅ Permanent JS and CSS cache initialized successfully")
 end
 
 -- =============================================
@@ -85,7 +116,7 @@ local function read_file(path)
 end
 
 -- =============================================
--- JS RETRIEVAL AND BUILDING
+-- JS AND CSS RETRIEVAL AND BUILDING
 -- =============================================
 
 local function get_js_content(filename)
@@ -95,6 +126,36 @@ local function get_js_content(filename)
     end
     
     return JS_CACHE[filename] or ""
+end
+
+local function get_css_content(filename)
+    -- Initialize cache if not done yet
+    if not CACHE_INITIALIZED then
+        initialize_cache()
+    end
+    
+    return CSS_CACHE[filename] or ""
+end
+
+local function build_css_block(css_files)
+    if not css_files or type(css_files) ~= "table" or #css_files == 0 then
+        return ""
+    end
+    
+    local css_content = {}
+    
+    for _, filename in ipairs(css_files) do
+        local content = get_css_content(filename)
+        if content and content ~= "" then
+            table.insert(css_content, content)
+        end
+    end
+    
+    if #css_content == 0 then
+        return ""
+    end
+    
+    return "<style>\n" .. table.concat(css_content, "\n\n") .. "\n</style>"
 end
 
 local function build_js_block(js_files)
@@ -118,6 +179,27 @@ local function build_js_block(js_files)
     return "<script>\n(function() {\n'use strict';\n\n" .. 
            table.concat(js_content, "\n\n") .. 
            "\n\n})();\n</script>"
+end
+
+-- NEW: Build individual CSS blocks for ordered loading
+local function build_individual_css_blocks(css_files)
+    if not css_files or type(css_files) ~= "table" or #css_files == 0 then
+        return {}
+    end
+    
+    local css_blocks = {}
+    
+    for _, filename in ipairs(css_files) do
+        local content = get_css_content(filename)
+        if content and content ~= "" then
+            local block = "<style>\n" .. content .. "\n</style>"
+            css_blocks[filename] = block
+        else
+            css_blocks[filename] = ""
+        end
+    end
+    
+    return css_blocks
 end
 
 -- NEW: Build individual JS blocks for ordered loading
@@ -144,7 +226,7 @@ local function build_individual_js_blocks(js_files)
 end
 
 -- =============================================
--- ENHANCED TEMPLATE RENDERING
+-- ENHANCED TEMPLATE RENDERING WITH CSS SUPPORT
 -- =============================================
 
 local function render_template(path, context, depth)
@@ -161,6 +243,11 @@ local function render_template(path, context, depth)
     -- Process js_files if provided (for backward compatibility)
     if context.js_files and not context.js then
         context.js = build_js_block(context.js_files)
+    end
+    
+    -- Process css_files if provided
+    if context.css_files and not context.css then
+        context.css = build_css_block(context.css_files)
     end
     
     -- Original template processing logic
@@ -188,8 +275,28 @@ local function render_template(path, context, depth)
 end
 
 -- =============================================
--- CONVENIENCE FUNCTIONS - UPDATED FOR CHAT PAGES
+-- CONVENIENCE FUNCTIONS - UPDATED FOR CSS AND CHAT PAGES
 -- =============================================
+
+-- Helper function to get appropriate CSS files for user type and page
+local function get_css_files_for_context(user_type, page_type)
+    local css_files = {"view_base.css"}  -- Always include core shared styles
+    
+    -- Add page-specific styles
+    if page_type == "index" then
+        table.insert(css_files, "view_index.css")
+    elseif page_type == "chat" then
+        table.insert(css_files, "view_chat.css")
+    elseif page_type == "auth" then
+        table.insert(css_files, "view_auth.css")
+    elseif page_type == "dashboard" then
+        table.insert(css_files, "view_dash.css")
+    elseif page_type == "error" then
+        table.insert(css_files, "view_error.css")
+    end
+    
+    return css_files
+end
 
 -- Helper function to get appropriate JS files for user type and page
 local function get_js_files_for_context(user_type, page_type)
@@ -218,9 +325,12 @@ local function get_js_files_for_context(user_type, page_type)
     return js_files
 end
 
--- Enhanced render function that includes CSS versioning
+-- Enhanced render function that includes CSS and JS versioning
 local function render_with_versioned_assets(template_path, user_type, page_type, context)
     context.css_version = os.time()
+    
+    -- Auto-inject appropriate CSS assets
+    context.css_files = get_css_files_for_context(user_type, page_type)
     
     -- Auto-inject appropriate JS assets (existing logic)
     context.js_files = get_js_files_for_context(user_type, page_type)
@@ -250,9 +360,26 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
         
         -- Clear the combined js field for chat pages
         context.js = ""
+        
+        -- For chat pages, also create individual CSS blocks for ordered loading
+        local css_blocks = build_individual_css_blocks(context.css_files)
+        context.css_base = css_blocks["view_base.css"] or ""
+        context.css_chat = css_blocks["view_chat.css"] or ""
+        
+        -- Clear the combined css field for chat pages
+        context.css = ""
     else
-        -- For non-chat pages, use combined JS block
+        -- For non-chat pages, use combined JS and CSS blocks
         context.js = build_js_block(context.js_files)
+        context.css = build_css_block(context.css_files)
+        
+        -- Also create individual CSS blocks for flexibility
+        local css_blocks = build_individual_css_blocks(context.css_files)
+        context.css_base = css_blocks["view_base.css"] or ""
+        context.css_index = css_blocks["view_index.css"] or ""
+        context.css_auth = css_blocks["view_auth.css"] or ""
+        context.css_dash = css_blocks["view_dash.css"] or ""
+        context.css_error = css_blocks["view_error.css"] or ""
     end
     
     -- Call standard render function
@@ -267,7 +394,7 @@ local function render_page_with_base(page_content_path, user_type, page_type, co
     -- Set the content in context
     context.content = content
     
-    -- Use render_with_versioned_assets to handle JS and render with base template
+    -- Use render_with_versioned_assets to handle CSS/JS and render with base template
     render_with_versioned_assets("/usr/local/openresty/nginx/dynamic_content/base.html", user_type, page_type, context)
 end
 
@@ -281,6 +408,7 @@ local function force_reload_cache()
     -- Clear existing caches
     TEMPLATE_CACHE = {}
     JS_CACHE = {}
+    CSS_CACHE = {}
     CACHE_INITIALIZED = false
     
     -- Reinitialize
@@ -304,6 +432,7 @@ local function get_cache_stats()
     
     local template_count, template_size = count_cache(TEMPLATE_CACHE)
     local js_count, js_size = count_cache(JS_CACHE)
+    local css_count, css_size = count_cache(CSS_CACHE)
     
     return {
         initialized = CACHE_INITIALIZED,
@@ -315,7 +444,11 @@ local function get_cache_stats()
             count = js_count,
             size_bytes = js_size
         },
-        total_size_bytes = template_size + js_size
+        css = {
+            count = css_count,
+            size_bytes = css_size
+        },
+        total_size_bytes = template_size + js_size + css_size
     }
 end
 
@@ -361,8 +494,11 @@ return {
     
     -- Asset builders
     build_js_block = build_js_block,
+    build_css_block = build_css_block,
     build_individual_js_blocks = build_individual_js_blocks,
+    build_individual_css_blocks = build_individual_css_blocks,
     get_js_files_for_context = get_js_files_for_context,
+    get_css_files_for_context = get_css_files_for_context,
     
     -- Cache management
     initialize_cache = initialize_cache,
@@ -370,6 +506,7 @@ return {
     force_reload_cache = force_reload_cache,
     get_cache_stats = get_cache_stats,
     
-    -- Direct JS access
-    get_js_content = get_js_content
+    -- Direct asset access
+    get_js_content = get_js_content,
+    get_css_content = get_css_content
 }

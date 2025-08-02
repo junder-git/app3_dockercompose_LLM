@@ -1,0 +1,180 @@
+/* =============================================================================
+   nginx/static/css/view_dash.css - DASHBOARD PAGE SPECIFIC STYLES
+   ============================================================================= */
+
+/* Dashboard Layout */
+.dashboard-container {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    min-height: calc(100vh - 60px);
+}
+
+.dashboard-header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+.dashboard-header h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.dashboard-header p {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+}
+
+/* Dashboard Cards */
+.dashboard-container .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.dashboard-container .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-container .card-body {
+    padding: 2rem;
+}
+
+.dashboard-container .card-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Status Cards */
+.pending-header {
+    margin-bottom: 3rem;
+}
+
+.pending-header h2 {
+    font-size: 2.2rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* Action Buttons */
+.dashboard-container .btn {
+    margin: 0.25rem;
+    padding: 10px 20px;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.dashboard-container .btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Lists */
+.dashboard-container .list-unstyled {
+    margin-bottom: 1.5rem;
+}
+
+.dashboard-container .list-unstyled li {
+    padding: 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Stats Display */
+#system-stats, #user-management-content {
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+#system-stats .stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#system-stats .stat-item:last-child {
+    border-bottom: none;
+}
+
+#system-stats .stat-value {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+/* Admin specific styling */
+.admin-features .card {
+    border-color: var(--danger-color);
+}
+
+.approved-features .card {
+    border-color: var(--success-color);
+}
+
+/* Badges */
+.badge {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.bg-success {
+    background-color: var(--success-color) !important;
+}
+
+.bg-warning {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+.bg-danger {
+    background-color: var(--danger-color) !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .dashboard-container {
+        padding: 1rem;
+    }
+    
+    .dashboard-header h2 {
+        font-size: 2rem;
+    }
+    
+    .dashboard-container .card-body {
+        padding: 1.5rem;
+    }
+    
+    .pending-header h2 {
+        font-size: 1.8rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .dashboard-container {
+        padding: 0.5rem;
+    }
+    
+    .dashboard-header {
+        margin-bottom: 2rem;
+    }
+    
+    .dashboard-header h2 {
+        font-size: 1.8rem;
+    }
+    
+    .dashboard-container .card-body {
+        padding: 1rem;
+    }
+}

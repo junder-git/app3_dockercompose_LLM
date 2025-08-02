@@ -1,0 +1,144 @@
+/* =============================================================================
+   nginx/static/css/view_auth.css - AUTH PAGES SPECIFIC STYLES
+   ============================================================================= */
+
+/* Auth Container */
+.auth-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 60px);
+    padding: 2rem;
+    background: linear-gradient(135deg, #0d1421 0%, #1a2332 100%);
+}
+
+.auth-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.auth-header h2 {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.auth-header p {
+    color: var(--text-secondary);
+    margin-bottom: 0;
+}
+
+/* Form Styling */
+.auth-card .form-label {
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.auth-card .form-control {
+    margin-bottom: 1rem;
+}
+
+.auth-card .input-group {
+    margin-bottom: 1rem;
+}
+
+.auth-card .input-group .btn {
+    border: 2px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.auth-card .input-group .btn:hover {
+    background: var(--bg-quaternary);
+}
+
+/* Form Controls */
+.form-check {
+    margin: 1rem 0;
+}
+
+.form-check-input {
+    background-color: var(--bg-tertiary);
+    border: 2px solid var(--border-color);
+}
+
+.form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.form-check-label {
+    color: var(--text-secondary);
+    margin-left: 0.5rem;
+}
+
+/* Buttons */
+.auth-card .btn {
+    padding: 12px 24px;
+    font-weight: 600;
+}
+
+.auth-card .btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), #6610f2);
+    border: none;
+}
+
+.auth-card .btn-primary:hover {
+    background: linear-gradient(135deg, var(--primary-hover), #5a0fb5);
+    transform: translateY(-1px);
+}
+
+.auth-card .btn-outline-primary {
+    border: 2px solid var(--primary-color);
+    color: var(--primary-color);
+    background: transparent;
+}
+
+.auth-card .btn-outline-primary:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Links and Text */
+.auth-card .text-center {
+    margin-top: 1.5rem;
+}
+
+.auth-card .text-muted {
+    color: var(--text-muted) !important;
+}
+
+.auth-card hr {
+    border-color: var(--border-color);
+    margin: 2rem 0;
+}
+
+/* Alert Messages */
+.auth-message {
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .auth-container {
+        padding: 1rem;
+    }
+    
+    .auth-card {
+        padding: 1.5rem;
+    }
+}

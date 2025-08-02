@@ -15,67 +15,109 @@
 </div>
 <canvas id="bg-canvas"></canvas>
 <script>
-    // Neural net animation
-    const canvas = document.getElementById('bg-canvas');
-    const ctx = canvas.getContext('2d');
-    let points = [];
+    // Neural net animation - Optimized to load after CSS is ready
+    (function() {
+        'use strict';
+        
+        // Wait for CSS to be loaded before starting animation
+        function initCanvas() {
+            const canvas = document.getElementById('bg-canvas');
+            if (!canvas) {
+                console.warn('Canvas element not found');
+                return;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            let points = [];
+            let animationFrameId;
 
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
 
-    function createPoints() {
-        points = [];
-        const density = 100;
-        for (let i = 0; i < density; i++) {
-            points.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                vx: (Math.random() - 0.5) * 0.5,
-                vy: (Math.random() - 0.5) * 0.5
-            });
-        }
-    }
-
-    function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        for (let i = 0; i < points.length; i++) {
-            let p = points[i];
-            p.x += p.vx;
-            p.y += p.vy;
-
-            if (p.x < 0 || p.x > canvas.width) p.vx = -p.vx;
-            if (p.y < 0 || p.y > canvas.height) p.vy = -p.vy;
-
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-            ctx.fill();
-        }
-
-        for (let i = 0; i < points.length; i++) {
-            for (let j = i + 1; j < points.length; j++) {
-                let dx = points[i].x - points[j].x;
-                let dy = points[i].y - points[j].y;
-                let dist = Math.sqrt(dx * dx + dy * dy);
-
-                if (dist < 120) {
-                    ctx.beginPath();
-                    ctx.moveTo(points[i].x, points[i].y);
-                    ctx.lineTo(points[j].x, points[j].y);
-                    ctx.strokeStyle = 'rgba(0, 200, 255, 0.2)';
-                    ctx.stroke();
+            function createPoints() {
+                points = [];
+                const density = Math.min(100, Math.floor((canvas.width * canvas.height) / 15000));
+                for (let i = 0; i < density; i++) {
+                    points.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: (Math.random() - 0.5) * 0.5,
+                        vy: (Math.random() - 0.5) * 0.5
+                    });
                 }
             }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Update and draw points
+                for (let i = 0; i < points.length; i++) {
+                    let p = points[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    if (p.x < 0 || p.x > canvas.width) p.vx = -p.vx;
+                    if (p.y < 0 || p.y > canvas.height) p.vy = -p.vy;
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
+                    ctx.fill();
+                }
+
+                // Draw connections
+                for (let i = 0; i < points.length; i++) {
+                    for (let j = i + 1; j < points.length; j++) {
+                        let dx = points[i].x - points[j].x;
+                        let dy = points[i].y - points[j].y;
+                        let dist = Math.sqrt(dx * dx + dy * dy);
+
+                        if (dist < 120) {
+                            ctx.beginPath();
+                            ctx.moveTo(points[i].x, points[i].y);
+                            ctx.lineTo(points[j].x, points[j].y);
+                            ctx.strokeStyle = `rgba(0, 200, 255, ${0.3 * (1 - dist/120)})`;
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+                        }
+                    }
+                }
+
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            // Initialize points and start animation
+            createPoints();
+            animate();
+            
+            // Mark as loaded for potential CSS animations
+            document.body.classList.add('loaded');
+            
+            console.log('✨ Neural network canvas animation initialized');
+            
+            // Cleanup function
+            window.cleanupCanvas = function() {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                window.removeEventListener('resize', resizeCanvas);
+            };
         }
 
-        requestAnimationFrame(animate);
-    }
-
-    createPoints();
-    animate();
+        // Start animation when DOM is ready and CSS is likely loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                // Small delay to ensure CSS is processed
+                setTimeout(initCanvas, 100);
+            });
+        } else {
+            // DOM already ready
+            setTimeout(initCanvas, 100);
+        }
+    })();
 </script>

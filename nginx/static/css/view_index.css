@@ -1,0 +1,93 @@
+/* =============================================================================
+   nginx/static/css/view_index.css - INDEX PAGE SPECIFIC STYLES
+   ============================================================================= */
+
+/* Index Page Hero - FIXED LAYOUT */
+body.index-page {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+}
+
+body.index-page .navbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background-color: rgba(26, 26, 26, 0.95) !important;
+    backdrop-filter: blur(10px);
+}
+
+/* Background canvas - FIXED to not interfere with content */
+body.index-page canvas#bg-canvas {
+    position: fixed !important;
+    top: 0px !important;
+    left: 0px !important;
+    width: 100%;
+    height: 100%;
+    z-index: -1 !important;
+    pointer-events: none;
+    opacity: 0;
+}
+
+body.index-page .hero-section {
+    position: relative;
+    z-index: 10;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0d1421 0%, #1a2332 100%);
+    padding: 0 2rem;
+    box-sizing: border-box;
+}
+
+body.index-page .hero-content {
+    position: relative;
+    z-index: 10;
+    max-width: 800px;
+    text-align: center;
+    margin-top: 60px; /* Account for navbar height */
+}
+
+body.index-page .hero-title {
+    font-size: clamp(2rem, 8vw, 4rem);
+    font-weight: 700;
+    background: linear-gradient(135deg, #0d6efd, #6610f2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 1.5rem;
+    line-height: 1.2;
+}
+
+body.index-page .hero-subtitle {
+    font-size: clamp(1.1rem, 3vw, 1.5rem);
+    color: var(--text-secondary);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+body.index-page .hero-subtitle button {
+    background: linear-gradient(135deg, #0d6efd, #6610f2);
+    border: none;
+    padding: 16px 40px;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 200px;
+}
+
+body.index-page .hero-subtitle button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(13, 110, 253, 0.3);
+}
