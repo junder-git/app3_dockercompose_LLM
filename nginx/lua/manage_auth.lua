@@ -1,10 +1,11 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED - NO CIRCULAR DEPENDENCIES
+-- nginx/lua/manage_auth.lua - UPDATED WITH REDIS SESSION MANAGEMENT
 -- =============================================================================
 
 local cjson = require "cjson"
 local jwt = require "resty.jwt"
 local redis = require "resty.redis"
+local session_manager = require "manage_session_redis"
 
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
@@ -96,111 +97,7 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- SIMPLE SESSION MANAGEMENT (INLINE TO AVOID CIRCULAR DEPS)
--- =============================================
-
-local function get_current_session()
-    local red = connect_redis()
-    if not red then
-        return nil, "Redis connection failed"
-    end
-    
-    local session_data = red:get("current_active_session")
-    red:close()
-    
-    if not session_data or session_data == ngx.null then
-        return nil, "No active session"
-    end
-    
-    local ok, session = pcall(cjson.decode, session_data)
-    if not ok then
-        return nil, "Invalid session data"
-    end
-    
-    -- Check expiration
-    local current_time = ngx.time()
-    if session.expires_at and current_time > session.expires_at then
-        -- Clear expired session
-        local red2 = connect_redis()
-        if red2 then
-            red2:del("current_active_session")
-            red2:close()
-        end
-        return nil, "Session expired"
-    end
-    
-    return session, nil
-end
-
-local function create_session(username, user_type)
-    local red = connect_redis()
-    if not red then
-        return false, "Redis connection failed"
-    end
-    
-    local current_time = ngx.time()
-    local session_timeout = (user_type == "admin") and 7200 or 3600 -- 2h for admin, 1h for others
-    
-    -- Check for existing session and handle priority
-    local existing_session, _ = get_current_session()
-    if existing_session then
-        local function get_priority(utype)
-            if utype == "admin" then return 1 end
-            if utype == "approved" then return 2 end
-            if utype == "guest" then return 3 end
-            return 4
-        end
-        
-        local existing_priority = get_priority(existing_session.user_type)
-        local new_priority = get_priority(user_type)
-        
-        -- If new user has lower or equal priority, deny access
-        if new_priority >= existing_priority then
-            red:close()
-            return false, string.format("Sessions full. %s '%s' is logged in.", 
-                existing_session.user_type, existing_session.username)
-        end
-        
-        -- Admin kicks out lower priority user
-        ngx.log(ngx.INFO, string.format("🔨 %s '%s' kicking out %s '%s'",
-            user_type, username, existing_session.user_type, existing_session.username))
-    end
-    
-    -- Create new session
-    local session = {
-        username = username,
-        user_type = user_type,
-        created_at = current_time,
-        last_activity = current_time,
-        expires_at = current_time + session_timeout,
-        remote_addr = ngx.var.remote_addr or "unknown"
-    }
-    
-    local session_json = cjson.encode(session)
-    red:setex("current_active_session", session_timeout + 60, session_json)
-    red:close()
-    
-    ngx.log(ngx.INFO, string.format("✅ Session created for %s '%s'", user_type, username))
-    
-    return true, session
-end
-
-local function validate_session(username, user_type)
-    local current_session, err = get_current_session()
-    if not current_session then
-        return false, err or "No active session"
-    end
-    
-    -- Check if this user owns the session
-    if current_session.username ~= username then
-        return false, "Session belongs to different user"
-    end
-    
-    return true, current_session
-end
-
--- =============================================
--- AUTH CHECK FUNCTION - WITH INLINE SESSION VALIDATION
+-- AUTH CHECK FUNCTION - WITH REDIS SESSION VALIDATION
 -- =============================================
 local function check()
     local token = ngx.var.cookie_access_token
@@ -237,11 +134,11 @@ local function check()
     
     local user_type = user_data.user_type
     
-    -- Validate session for non-guest users
-    if user_type ~= "guest" then
-        local session_valid, session_err = validate_session(username, user_type)
+    -- Validate session for non-guest users using Redis session manager
+    if user_type ~= "is_guest" then
+        local session_valid, session_err = session_manager.validate_session(username, user_type)
         if not session_valid then
-            ngx.log(ngx.WARN, string.format("Session validation failed for %s '%s': %s", 
+            ngx.log(ngx.WARN, string.format("Redis session validation failed for %s '%s': %s", 
                 user_type, username, session_err or "unknown"))
             return "is_none", nil, nil
         end
@@ -263,7 +160,7 @@ local function check()
 end
 
 -- =============================================
--- LOGIN HANDLER WITH INLINE SESSION MANAGEMENT
+-- LOGIN HANDLER WITH REDIS SESSION MANAGEMENT
 -- =============================================
 local function handle_login()
     ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
@@ -304,8 +201,8 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
-    -- CREATE SESSION (with kicking logic)
-    local session_success, session_result = create_session(username, user_data.user_type)
+    -- CREATE REDIS SESSION (with kicking logic)
+    local session_success, session_result = session_manager.create_session(username, user_data.user_type)
     if not session_success then
         ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
             user_data.user_type, username, session_result))
@@ -316,7 +213,7 @@ local function handle_login()
         })
     end
     
-    ngx.log(ngx.INFO, "Login: Session created successfully")
+    ngx.log(ngx.INFO, "Login: Redis session created successfully")
     
     -- Generate JWT
     local payload = {
@@ -347,7 +244,7 @@ local function handle_login()
 end
 
 -- =============================================
--- LOGOUT HANDLER WITH SESSION CLEANUP
+-- LOGOUT HANDLER WITH REDIS SESSION CLEANUP
 -- =============================================
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
@@ -356,13 +253,13 @@ local function handle_logout()
     
     ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
     
-    -- Clear session if authenticated
+    -- Clear Redis session if authenticated
     if username and user_type ~= "is_none" then
-        local red = connect_redis()
-        if red then
-            red:del("current_active_session")
-            red:close()
-            ngx.log(ngx.INFO, "Session cleared successfully")
+        local success, err = session_manager.clear_active_session()
+        if success then
+            ngx.log(ngx.INFO, "Redis session cleared successfully")
+        else
+            ngx.log(ngx.WARN, "Failed to clear Redis session: " .. (err or "unknown"))
         end
     end
     
@@ -389,6 +286,24 @@ local function handle_logout()
 end
 
 -- =============================================
+-- SESSION STATUS API
+-- =============================================
+local function handle_session_status()
+    local session_stats, err = session_manager.get_session_stats()
+    if err then
+        send_json(500, {
+            success = false,
+            error = "Failed to get session status: " .. err
+        })
+    end
+    
+    send_json(200, {
+        success = true,
+        session_stats = session_stats
+    })
+end
+
+-- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
@@ -398,10 +313,10 @@ return {
     verify_password = verify_password,
     handle_login = handle_login,
     handle_logout = handle_logout,
-    get_current_session = get_current_session,
-    create_session = create_session,
-    validate_session = validate_session,
+    handle_session_status = handle_session_status,
     -- Export Redis helper functions for other modules
     redis_to_lua = redis_to_lua,
-    connect_redis = connect_redis
+    connect_redis = connect_redis,
+    -- Export session manager for admin functions
+    session_manager = session_manager
 }

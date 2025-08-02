@@ -135,70 +135,53 @@ end
 -- ADMIN API WITH SESSION VALIDATION
 -- =============================================
 
-function M.handle_admin_api(user_type, username, user_data)
-    -- Admin-only access control
-    if user_type ~= "is_admin" then
-        ngx.status = 403
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Admin access required",
-            user_type = user_type
-        }))
-        return ngx.exit(403)
-    end
-    
+function M.handle_admin_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
-    -- Delegate to admin manager
-    local manage_admin = require "manage_admin"
+    -- Handle session management API requests
+    if uri == "/api/admin/session/status" and method == "GET" then
+        return M.handle_session_status()
+    elseif uri == "/api/admin/session/force-logout" and method == "POST" then
+        return M.handle_force_logout()
+    elseif uri == "/api/admin/session/all" and method == "GET" then
+        return M.handle_all_sessions()
+    elseif uri == "/api/admin/session/cleanup" and method == "POST" then
+        return M.handle_cleanup_sessions()
     
-    if uri == "/api/admin/users" and method == "GET" then
-        return manage_admin.handle_get_all_users()
+    -- Handle other admin API requests
+    elseif uri == "/api/admin/users" and method == "GET" then
+        return M.handle_get_all_users()
     elseif uri == "/api/admin/users/pending" and method == "GET" then
-        return manage_admin.handle_get_pending_users()
+        return M.handle_get_pending_users()
     elseif uri == "/api/admin/users/approve" and method == "POST" then
-        return manage_admin.handle_approve_user()
+        return M.handle_approve_user()
     elseif uri == "/api/admin/users/reject" and method == "POST" then
-        return manage_admin.handle_reject_user()
+        return M.handle_reject_user()
     elseif uri == "/api/admin/stats" and method == "GET" then
-        return manage_admin.handle_system_stats()
+        return M.handle_system_stats()
     elseif uri == "/api/admin/guests/clear" and method == "POST" then
-        return manage_admin.handle_clear_guest_sessions()
+        return M.handle_clear_guest_sessions()
     else
         ngx.status = 404
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
             error = "Admin API endpoint not found",
-            requested = method .. " " .. uri
-        }))
-    end
-end
-
--- =============================================
--- AUTH API HANDLER
--- =============================================
-
-function M.handle_auth_api()
-    local uri = ngx.var.uri
-    local method = ngx.var.request_method
-    
-    if uri == "/api/auth/login" and method == "POST" then
-        return auth.handle_login()
-    elseif uri == "/api/auth/logout" and method == "POST" then
-        return auth.handle_logout()
-    elseif uri == "/api/auth/register" and method == "POST" then
-        local manage_register = require "manage_register"
-        return manage_register.handle_register()
-    else
-        ngx.status = 404
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Auth endpoint not found",
+            requested = method .. " " .. uri,
             available_endpoints = {
-                "POST /api/auth/login",
-                "POST /api/auth/logout", 
-                "POST /api/auth/register"
+                "User Management:",
+                "GET /api/admin/users",
+                "GET /api/admin/users/pending",
+                "POST /api/admin/users/approve",
+                "POST /api/admin/users/reject",
+                "System:",
+                "GET /api/admin/stats",
+                "POST /api/admin/guests/clear",
+                "Session Management (Redis):",
+                "GET /api/admin/session/status",
+                "POST /api/admin/session/force-logout",
+                "GET /api/admin/session/all",
+                "POST /api/admin/session/cleanup"
             }
         }))
     end

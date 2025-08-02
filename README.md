@@ -1,20 +1,22 @@
-is_shared.js (Base functionality)
-├── SharedChatBase (Common chat features)
-├── SharedInterface (Auth, navigation, alerts)
-└── SharedModalUtils (Modal helpers)
+Key Features:
 
-is_guest.js (Extends SharedChatBase)
-├── GuestChat → localStorage, 10 message limit
-└── GuestChallengeResponder → Handle incoming challenges
+No Shared Memory - Completely removed lua_shared_dict declarations
+Redis-only Sessions - All session management handled in Redis
+Complete Admin Routes - All admin API endpoints properly configured:
 
-is_approved.js (Extends SharedChatBase)  
-├── ApprovedChat → Redis storage, unlimited messages
-└── History loading, export functions
+/api/admin/stats - System statistics
+/api/admin/users/* - User management (list, pending, approve, reject)
+/api/admin/session/* - Redis session management (status, force-logout, all, cleanup)
+/api/admin/guests/* - Guest session management
 
-is_admin.js (Extends ApprovedChat)
-├── AdminChat → All approved features + admin UI
-└── User management, system monitoring functions
 
-is_none.js (Independent - guest session creation)
-├── GuestSessionManager → Create guest sessions
-└── GuestStatsDisplay → Show availability
+Centralized Routing - Everything goes through aaa_is_who.lua for permission checking
+Proper URL Patterns - Uses regex patterns to catch all variations:
+
+^/api/admin/users(/|/(pending|approve|reject))?$ catches /api/admin/users, /api/admin/users/pending, etc.
+^/api/admin/session/(status|force-logout|all|cleanup)$ for session management
+
+
+Streamlined - Removed all the old shared memory session references and consolidates similar routes
+
+The configuration now fully supports Redis-based session management with comprehensive admin controls while maintaining the clean routing architecture through aaa_is_who.lua!
