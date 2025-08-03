@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_guest.lua - GUEST SESSION CREATION
+-- nginx/lua/is_guest.lua - GUEST SESSION CREATION - USING send_json PATTERN
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -9,6 +9,14 @@ local auth = require "manage_auth"
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 
 local M = {}
+
+-- Helper function to send JSON response and exit (same pattern as manage_auth)
+local function send_json(status, tbl)
+    ngx.status = status
+    ngx.header.content_type = 'application/json'
+    ngx.say(cjson.encode(tbl))
+    ngx.exit(status)
+end
 
 -- =============================================
 -- GUEST NAME GENERATION
@@ -25,7 +33,7 @@ local function generate_guest_name()
 end
 
 -- =============================================
--- GUEST SESSION CREATION
+-- GUEST SESSION CREATION - USING send_json PATTERN
 -- =============================================
 
 function M.handle_create_session()
@@ -37,13 +45,10 @@ function M.handle_create_session()
     -- Create guest user in Redis with proper structure
     local red = auth.connect_redis()
     if not red then
-        ngx.status = 500
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
+        send_json(500, {
             success = false,
             error = "Database connection failed"
-        }))
-        return
+        })
     end
     
     local user_key = "username:" .. guest_username
@@ -60,18 +65,16 @@ function M.handle_create_session()
     red:close()
     
     if not ok then
-        ngx.status = 500
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
+        send_json(500, {
             success = false,
             error = "Failed to create guest session: " .. tostring(err)
-        }))
-        return
+        })
     end
     
     -- Create JWT token with username field (consistent with regular users)
     local payload = {
         username = guest_username, -- Actual username for Redis lookup
+        user_type = "guest",  -- Add user_type to JWT payload
         display_name = display_name, -- What the client sees
         last_activity = now,
         iat = now,
@@ -85,19 +88,18 @@ function M.handle_create_session()
     
     ngx.log(ngx.INFO, "✅ Guest session created: " .. display_name .. " -> " .. guest_username .. " (slot " .. slot_number .. ")")
     
-    -- Set cookie and return response
+    -- Set cookie and return response using send_json
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"
     
-    ngx.status = 200
-    ngx.header.content_type = 'application/json'
-    ngx.say(cjson.encode({
+    send_json(200, {
         success = true,
         username = display_name,
         internal_username = guest_username,
+        user_type = "guest",
         token = token,
         slot = slot_number,
         redirect = "/chat"
-    }))
+    })
 end
 
 return M
