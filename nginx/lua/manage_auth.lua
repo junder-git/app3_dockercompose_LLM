@@ -99,12 +99,12 @@ end
 -- INLINE SESSION FUNCTIONS (NO EXTERNAL MODULE)
 -- =============================================
 
--- Get priority level based on user type
+-- Get priority level based on user type (with is_ prefix)
 local function get_user_priority(user_type)
-    if user_type == "admin" then return 1 end
-    if user_type == "approved" then return 2 end
-    if user_type == "guest" then return 3 end
-    return 4  -- pending, none, etc.
+    if user_type == "is_admin" then return 1 end
+    if user_type == "is_approved" then return 2 end
+    if user_type == "is_guest" then return 3 end
+    return 4  -- is_pending, is_none, etc.
 end
 
 -- Get the currently active user (if any)
@@ -288,7 +288,7 @@ local function check_user_type()
     if user_type == "admin" then
         return "is_admin", username, user_data
     elseif user_type == "approved" then
-        return "is_approved", username, user_data
+        return "is_approved", username, user_data  
     elseif user_type == "pending" then
         return "is_pending", username, user_data
     elseif user_type == "guest" then
@@ -308,10 +308,8 @@ local function check_is_active(username, user_type)
         return true -- Guests and unauthenticated users don't need active session check
     end
     
-    -- Convert is_ prefix back to plain user_type for session manager
-    local plain_user_type = user_type:gsub("^is_", "")
-    
-    local session_valid, session_err = validate_session(username, plain_user_type)
+    -- Use user_type directly (already has is_ prefix)
+    local session_valid, session_err = validate_session(username, user_type)
     if not session_valid then
         ngx.log(ngx.WARN, string.format("❌ Session validation failed for %s '%s': %s", 
             user_type, username, session_err or "unknown"))
@@ -326,8 +324,73 @@ end
 -- LOGIN AND LOGOUT HANDLERS
 -- =============================================
 
+-- Handle GET login (for form submissions with URL parameters)
+local function handle_login_get()
+    ngx.log(ngx.INFO, "=== GET LOGIN ATTEMPT START ===")
+    
+    local username = ngx.var.arg_username
+    local password = ngx.var.arg_password
+    
+    if not username or not password then
+        ngx.log(ngx.WARN, "GET Login: Missing credentials in URL")
+        ngx.redirect("/login?error=missing_credentials")
+        return
+    end
+    
+    ngx.log(ngx.INFO, "GET Login: Attempting login for username: " .. username)
+    
+    local user_data = get_user(username)
+    if not user_data then
+        ngx.log(ngx.WARN, "GET Login: User not found: " .. username)
+        ngx.redirect("/login?error=invalid_credentials")
+        return
+    end
+    
+    -- Verify password
+    if not verify_password(password, user_data.password_hash) then
+        ngx.log(ngx.WARN, "GET Login: Invalid password for user: " .. username)
+        ngx.redirect("/login?error=invalid_credentials")
+        return
+    end
+    
+    -- Set user as active (handles priority and kicking)
+    local plain_user_type = user_data.user_type
+    local session_success, session_result = set_user_active(username, plain_user_type)
+    if not session_success then
+        ngx.log(ngx.WARN, string.format("GET Login denied for %s '%s': %s", 
+            plain_user_type, username, session_result))
+        ngx.redirect("/login?error=session_full")
+        return
+    end
+    
+    ngx.log(ngx.INFO, "GET Login: Session activated successfully")
+    
+    -- Generate JWT
+    local payload = {
+        username = username,
+        user_type = user_data.user_type, -- Use Redis user type (is_admin, is_approved, etc.)
+        iat = ngx.time(),
+        exp = ngx.time() + 86400 * 7  -- 7 days
+    }
+    
+    local token = jwt:sign(JWT_SECRET, {
+        header = { typ = "JWT", alg = "HS256" },
+        payload = payload
+    })
+    
+    -- Set secure cookie with proper format
+    local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
+    ngx.header["Set-Cookie"] = cookie_value
+    
+    ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
+    ngx.log(ngx.INFO, string.format("GET Login: Success for %s '%s'", 
+        user_data.user_type, username))
+    
+    -- Redirect to chat page
+    ngx.redirect("/chat")
+end
 local function handle_login()
-    ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
+    ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -366,11 +429,10 @@ local function handle_login()
     end
     
     -- Set user as active (handles priority and kicking)
-    local plain_user_type = user_data.user_type
-    local session_success, session_result = set_user_active(username, plain_user_type)
+    local session_success, session_result = set_user_active(username, user_data.user_type)
     if not session_success then
         ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
-            plain_user_type, username, session_result))
+            user_data.user_type, username, session_result))
         send_json(409, { 
             error = "Login not allowed",
             message = session_result,

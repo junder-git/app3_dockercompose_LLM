@@ -36,11 +36,9 @@ echo "✅ Redis is ready!"
 echo "🔐 Generating password hashes..."
 ADMIN_PASSWORD_HASH=$(printf '%s%s' "$ADMIN_PASSWORD" "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
 GUEST_1_PASSWORD_HASH=$(printf '%s%s' 'nkcukfulnckfckufnckdgjvjgv' "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
-GUEST_2_PASSWORD_HASH=$(printf '%s%s' 'ymbkclhfpbdfbsdfwdsbwfdsbp' "$JWT_SECRET" | openssl dgst -sha256 -hex | awk '{print $2}')
 
 echo "   Admin hash: $ADMIN_PASSWORD_HASH"
 echo "   Guest1 hash: $GUEST_1_PASSWORD_HASH..."
-echo "   Guest2 hash: $GUEST_2_PASSWORD_HASH..."
 
 # Function to create or update user
 create_or_update_user() {
@@ -82,7 +80,6 @@ create_or_update_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD_HASH" "is_admin"
 # Create guest users
 echo "🔧 Creating guest users..."
 create_or_update_user "guest_user_1" "$GUEST_1_PASSWORD_HASH" "is_guest"
-create_or_update_user "guest_user_2" "$GUEST_2_PASSWORD_HASH" "is_guest"
 
 # Final verification
 echo "🔍 Final verification - listing all users:"
@@ -109,7 +106,7 @@ fi
 echo "🎉 Redis initialization complete!"
 echo "📋 Summary:"
 echo "   - Admin user: $ADMIN_USERNAME (password: $ADMIN_PASSWORD)"
-echo "   - Guest users: guest_user_1, guest_user_2"
+echo "   - Guest users: guest_user_1"
 echo "   - All users have clean field names (no colons)"
 echo "   - Data saved to disk"
 
