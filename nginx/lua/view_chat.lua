@@ -1,8 +1,8 @@
 -- =============================================================================
--- nginx/lua/manage_view_chat.lua - CHAT PAGE HANDLER
+-- nginx/lua/view_chat.lua - CHAT PAGE HANDLER - FIXED
 -- =============================================================================
 
-local view_base = require "manage_view_base"
+local view_base = require "view_base"
 
 local M = {}
 

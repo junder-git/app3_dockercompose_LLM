@@ -1,8 +1,8 @@
 -- =============================================================================
--- nginx/lua/manage_view_error.lua - ERROR PAGE HANDLERS
+-- nginx/lua/view_error.lua - ERROR PAGE HANDLERS - FIXED
 -- =============================================================================
 
-local view_base = require "manage_view_base"
+local view_base = require "view_base"
 
 local M = {}
 

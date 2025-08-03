@@ -1,8 +1,8 @@
 -- =============================================================================
--- nginx/lua/manage_view_auth.lua - AUTH PAGES HANDLER
+-- nginx/lua/view_auth.lua - AUTH PAGES HANDLER - FIXED
 -- =============================================================================
 
-local view_base = require "manage_view_base"
+local view_base = require "view_base"
 
 local M = {}
 
