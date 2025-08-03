@@ -54,7 +54,7 @@ function M.handle_create_session()
     local user_key = "username:" .. guest_username
     local ok, err = red:hmset(user_key,
         "username", guest_username,
-        "user_type", "guest",
+        "user_type", "is_guest",  -- Store with is_ prefix consistently
         "display_name", display_name,
         "created_at", os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "last_activity", now
@@ -74,7 +74,7 @@ function M.handle_create_session()
     -- Create JWT token with username field (consistent with regular users)
     local payload = {
         username = guest_username, -- Actual username for Redis lookup
-        user_type = "guest",  -- Add user_type to JWT payload
+        user_type = "is_guest",  -- Store with is_ prefix consistently
         display_name = display_name, -- What the client sees
         last_activity = now,
         iat = now,
@@ -88,17 +88,17 @@ function M.handle_create_session()
     
     ngx.log(ngx.INFO, "✅ Guest session created: " .. display_name .. " -> " .. guest_username .. " (slot " .. slot_number .. ")")
     
-    -- Set cookie and return response using send_json
+    -- Set cookie and return response - let client handle redirect
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"
     
     send_json(200, {
         success = true,
+        message = "Guest session created - cookie set",
         username = display_name,
         internal_username = guest_username,
-        user_type = "guest",
-        token = token,
-        slot = slot_number,
-        redirect = "/chat"
+        user_type = "is_guest",  -- Return with is_ prefix consistently
+        cookie_set = true,
+        slot = slot_number
     })
 end
 
