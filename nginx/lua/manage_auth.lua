@@ -241,20 +241,29 @@ end
 -- Check if user has valid JWT and get user data
 local function check_user_type()
     local token = ngx.var.cookie_access_token
+    
+    ngx.log(ngx.INFO, "🔍 Checking JWT token. Token present: " .. (token and "YES" or "NO"))
+    
     if not token then
+        ngx.log(ngx.INFO, "❌ No JWT token found in cookies")
         return "is_none", nil, nil
     end
+    
+    ngx.log(ngx.INFO, "🔑 JWT token found, length: " .. string.len(token))
     
     -- Verify and decode JWT
     local jwt_obj = jwt:verify(JWT_SECRET, token)
     if not jwt_obj or not jwt_obj.valid or not jwt_obj.payload then
+        ngx.log(ngx.WARN, "❌ JWT verification failed. Valid: " .. tostring(jwt_obj and jwt_obj.valid))
         return "is_none", nil, nil
     end
     
     local payload = jwt_obj.payload
+    ngx.log(ngx.INFO, "✅ JWT valid. Username: " .. tostring(payload.username) .. ", Type: " .. tostring(payload.user_type))
     
     -- Check token expiration
     if payload.exp and payload.exp < ngx.time() then
+        ngx.log(ngx.WARN, "❌ JWT token expired")
         return "is_none", nil, nil
     end
     
@@ -273,6 +282,7 @@ local function check_user_type()
     end
     
     local user_type = user_data.user_type
+    ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(user_type) .. ", Active: " .. tostring(user_data.is_active))
     
     -- Return user type based on fresh data from Redis (with is_ prefix for compatibility)
     if user_type == "admin" then
@@ -291,7 +301,10 @@ end
 
 -- Check if user's session is active (for non-guest users)
 local function check_is_active(username, user_type)
+    ngx.log(ngx.INFO, "🔄 Checking session activity for: " .. tostring(username) .. " (" .. tostring(user_type) .. ")")
+    
     if not username or user_type == "is_guest" or user_type == "is_none" then
+        ngx.log(ngx.INFO, "✅ Skipping session check for guest/none user")
         return true -- Guests and unauthenticated users don't need active session check
     end
     
@@ -300,11 +313,12 @@ local function check_is_active(username, user_type)
     
     local session_valid, session_err = validate_session(username, plain_user_type)
     if not session_valid then
-        ngx.log(ngx.WARN, string.format("Session validation failed for %s '%s': %s", 
+        ngx.log(ngx.WARN, string.format("❌ Session validation failed for %s '%s': %s", 
             user_type, username, session_err or "unknown"))
         return false
     end
     
+    ngx.log(ngx.INFO, "✅ Session active for " .. username)
     return true
 end
 
@@ -379,8 +393,11 @@ local function handle_login()
         payload = payload
     })
     
-    -- Set secure cookie
-    ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
+    -- Set secure cookie with proper format
+    local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
+    ngx.header["Set-Cookie"] = cookie_value
+    
+    ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
     ngx.log(ngx.INFO, string.format("Login: Success for %s '%s'", 
         user_data.user_type, username))
