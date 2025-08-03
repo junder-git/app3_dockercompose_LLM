@@ -328,20 +328,42 @@ end
 local function handle_login()
     ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
-    -- CHECK: If user is already logged in, just redirect them
+    -- CHECK: If user is already logged in, reactivate their session
     local current_user_type, current_username, current_user_data = check_user_type()
     if current_user_type ~= "is_none" and current_username then
         ngx.log(ngx.INFO, "User already logged in: " .. current_username .. " (" .. current_user_type .. ")")
         
-        -- Already logged in - return success and let client redirect
-        send_json(200, {
-            success = true,
-            message = "Already logged in",
-            username = current_username,
-            user_type = current_user_type,
-            cookie_set = true,
-            already_logged_in = true
-        })
+        -- Check if session is active, if not reactivate it
+        local session_active = check_is_active(current_username, current_user_type)
+        if not session_active then
+            ngx.log(ngx.INFO, "Reactivating session for already logged in user")
+            local session_success, session_result = set_user_active(current_username, current_user_type)
+            if not session_success then
+                ngx.log(ngx.WARN, "Failed to reactivate session: " .. (session_result or "unknown"))
+                -- If we can't reactivate, continue with normal login flow
+            else
+                ngx.log(ngx.INFO, "Session reactivated successfully")
+                send_json(200, {
+                    success = true,
+                    message = "Session reactivated",
+                    username = current_username,
+                    user_type = current_user_type:gsub("^is_", ""), -- Remove is_ prefix for response
+                    cookie_set = true,
+                    already_logged_in = true,
+                    session_reactivated = true
+                })
+            end
+        else
+            -- Session is already active
+            send_json(200, {
+                success = true,
+                message = "Already logged in",
+                username = current_username,
+                user_type = current_user_type:gsub("^is_", ""), -- Remove is_ prefix for response
+                cookie_set = true,
+                already_logged_in = true
+            })
+        end
     end
     
     -- Continue with normal login process
