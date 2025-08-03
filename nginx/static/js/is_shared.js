@@ -62,18 +62,32 @@ class SharedInterface {
         }
     }
 
-    // Updated handleLogin function in is_shared.js
+    // =============================================================================
+    // FIXED handleLogin function - Add this to replace the existing one in is_shared.js
+    // =============================================================================
+
     async handleLogin(e) {
         e.preventDefault();
         
-        const form = e.target.closest('form') || document.getElementById('loginForm');
-        if (!form) return;
+        console.log('🚀 Login form submitted');
+        
+        const form = e.target.closest('form') || document.getElementById('login-form');
+        if (!form) {
+            console.error('❌ No form found');
+            return;
+        }
         
         const formData = new FormData(form);
         const credentials = {
             username: formData.get('username'),
             password: formData.get('password')
         };
+
+        console.log('🔑 Extracted credentials:', {
+            username: credentials.username,
+            hasPassword: !!credentials.password,
+            passwordLength: credentials.password ? credentials.password.length : 0
+        });
 
         if (!credentials.username || !credentials.password) {
             this.showError('Please enter both username and password');
@@ -89,13 +103,20 @@ class SharedInterface {
         }
 
         try {
+            const requestBody = JSON.stringify(credentials);
+            console.log('📤 Sending request with body:', requestBody);
+            
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 // CRITICAL: Don't follow redirects automatically
-                redirect: 'manual'
+                redirect: 'manual',
+                // CRITICAL FIX: Add the missing body
+                body: requestBody
             });
+
+            console.log('📡 Response received:', response.status, response.statusText);
 
             // Handle server redirect (302)
             if (response.status === 302) {
@@ -131,15 +152,17 @@ class SharedInterface {
                         errorMessage = `Cannot login: ${data.message || 'Another user is currently logged in.'}`;
                     }
                     
+                    console.error('❌ Login error:', errorMessage);
                     this.showError(errorMessage);
                 }
             } else {
                 // Unexpected response
+                console.error('❌ Unexpected response type');
                 throw new Error(`Unexpected response: ${response.status}`);
             }
             
         } catch (error) {
-            console.error('Login error:', error);
+            console.error('❌ Login error:', error);
             this.showError('Login error: ' + error.message);
         } finally {
             if (submitBtn && originalContent) {
