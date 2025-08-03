@@ -324,6 +324,9 @@ end
 -- FIXED LOGIN HANDLER - POST ONLY WITH SERVER REDIRECT
 -- =============================================
 
+-- SIMPLE: Cookie-only login in manage_auth.lua
+-- Replace your handle_login function with this:
+
 local function handle_login()
     ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
@@ -390,24 +393,23 @@ local function handle_login()
         payload = payload
     })
     
-    -- Set cookie
+    -- SIMPLE: Just set cookie and return success - no redirect at all
     local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
     ngx.header["Set-Cookie"] = cookie_value
     ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
-    -- CRITICAL FIX: Wait for cookie to be set before redirect
-    ngx.log(ngx.INFO, "⏳ Waiting 2 seconds for cookie to be processed...")
-    
-    -- Sleep for 2 seconds to ensure cookie is set
-    ngx.sleep(2)
-    
-    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - now redirecting to /chat", 
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - cookie set, client will handle navigation", 
         user_data.user_type, username))
     
-    -- Now redirect after cookie has been set
-    ngx.status = 302
-    ngx.header["Location"] = "/chat"
-    ngx.exit(302)
+    -- SIMPLE: Just return success - let client detect cookie and navigate
+    send_json(200, {
+        success = true,
+        message = "Login successful - cookie set",
+        username = username,
+        user_type = user_data.user_type,
+        cookie_set = true
+        -- NO redirect field - client will detect cookie
+    })
 end
 
 local function handle_logout()

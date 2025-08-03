@@ -66,6 +66,7 @@ class SharedInterface {
     // FIXED handleLogin function - Add this to replace the existing one in is_shared.js
     // =============================================================================
 
+    // SIMPLE: Client handles everything after cookie is set
     async handleLogin(e) {
         e.preventDefault();
         
@@ -83,12 +84,6 @@ class SharedInterface {
             password: formData.get('password')
         };
 
-        console.log('🔑 Extracted credentials:', {
-            username: credentials.username,
-            hasPassword: !!credentials.password,
-            passwordLength: credentials.password ? credentials.password.length : 0
-        });
-
         if (!credentials.username || !credentials.password) {
             this.showError('Please enter both username and password');
             return;
@@ -103,62 +98,40 @@ class SharedInterface {
         }
 
         try {
-            const requestBody = JSON.stringify(credentials);
-            console.log('📤 Sending request with body:', requestBody);
-            
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                // CRITICAL: Don't follow redirects automatically
-                redirect: 'manual',
-                // CRITICAL FIX: Add the missing body
-                body: requestBody
+                body: JSON.stringify(credentials)
             });
 
-            console.log('📡 Response received:', response.status, response.statusText);
-
-            // Handle server redirect (302)
-            if (response.status === 302) {
-                const location = response.headers.get('Location');
-                console.log('✅ Server redirect to:', location);
-                
-                this.showSuccess('Login successful! Redirecting...');
-                
-                // Small delay to ensure cookie is processed
-                setTimeout(() => {
-                    window.location.href = location || '/chat';
-                }, 500);
-                return;
-            }
-
-            // Handle JSON responses (errors)
-            if (response.headers.get('content-type')?.includes('application/json')) {
+            if (response.ok) {
                 const data = await response.json();
                 
-                if (data.success) {
-                    // Fallback JSON success (shouldn't happen with new code)
+                if (data.success && data.cookie_set) {
+                    console.log('✅ Login successful - cookie has been set by server');
                     this.showSuccess('Login successful! Redirecting...');
+                    
+                    // SIMPLE: Cookie is set, just navigate - browser will send it automatically
                     setTimeout(() => {
-                        window.location.href = data.redirect || '/chat';
-                    }, 1000);
+                        console.log('🚀 Navigating to chat page');
+                        window.location.href = '/chat';
+                    }, 1000); // Small delay for user feedback
+                    
                 } else {
-                    // Handle error responses
-                    let errorMessage = data.error || 'Login failed';
-                    
-                    if (data.reason === 'sessions_full') {
-                        errorMessage = `Login blocked: ${data.message || 'Sessions are currently full.'}`;
-                    } else if (data.reason === 'concurrent_session_limit') {
-                        errorMessage = `Cannot login: ${data.message || 'Another user is currently logged in.'}`;
-                    }
-                    
-                    console.error('❌ Login error:', errorMessage);
-                    this.showError(errorMessage);
+                    this.showError(data.error || 'Login failed');
                 }
             } else {
-                // Unexpected response
-                console.error('❌ Unexpected response type');
-                throw new Error(`Unexpected response: ${response.status}`);
+                // Handle HTTP errors
+                let errorMessage = 'Login failed';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    errorMessage = `Login failed (${response.status})`;
+                }
+                
+                this.showError(errorMessage);
             }
             
         } catch (error) {
@@ -400,6 +373,17 @@ class SharedModalUtils {
 // =============================================================================
 
 let sharedInterface = null;
+// BONUS: Add a function to check if user is logged in
+function checkAuthStatus() {
+    // Check if access_token cookie exists
+    const cookies = document.cookie.split(';');
+    const hasAuthCookie = cookies.some(cookie => 
+        cookie.trim().startsWith('access_token=')
+    );
+    
+    console.log('🍪 Auth cookie present:', hasAuthCookie);
+    return hasAuthCookie;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Initializing simplified shared interface...');
@@ -411,6 +395,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.SharedModalUtils = SharedModalUtils;
     
     console.log('✅ Simplified shared interface initialized');
+
+    // If we're on login page but already have auth cookie, redirect to chat
+    if (window.location.pathname === '/login' && checkAuthStatus()) {
+        console.log('🔄 Already logged in, redirecting to chat');
+        window.location.href = '/chat';
+    }
 });
 
 // Global error handler
