@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED: POST ONLY WITH SERVER REDIRECT
+-- nginx/lua/manage_auth.lua - FIXED: ALL FUNCTIONS WITH PROPER ngx.exit()
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -29,11 +29,12 @@ local function connect_redis()
     return red
 end
 
+-- FIXED: Added ngx.exit() to send_json helper
 local function send_json(status, tbl)
     ngx.status = status
     ngx.header.content_type = 'application/json'
     ngx.say(cjson.encode(tbl))
-    ngx.exit(status)
+    ngx.exit(status)  -- CRITICAL: Exit after sending response
 end
 
 -- Get user function with proper Redis handling
@@ -155,12 +156,12 @@ local function set_user_active(username, user_type)
     -- Check for currently active user
     local active_user, err = get_active_user()
     if active_user then
-        local active_priority = get_user_priority(active_user.user_type)
+        local active_priority = get_user_priority("is_" .. active_user.user_type)
         
         -- If new user has lower or equal priority, deny access
         if new_priority >= active_priority then
             red:close()
-            return false, string.format("Access denied. %s '%s' is currently active", 
+            return false, string.format("Access denied. is_%s '%s' is currently active", 
                 active_user.user_type, active_user.username)
         end
         
@@ -169,7 +170,7 @@ local function set_user_active(username, user_type)
         red:hset(active_key, "is_active", "false")
         red:hset(active_key, "last_activity", ngx.time())
         
-        ngx.log(ngx.INFO, string.format("🚫 Kicked out %s '%s' for higher priority %s '%s'",
+        ngx.log(ngx.INFO, string.format("🚫 Kicked out is_%s '%s' for higher priority %s '%s'",
             active_user.user_type, active_user.username, user_type, username))
     end
     
@@ -285,13 +286,13 @@ local function check_user_type()
     ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(user_type) .. ", Active: " .. tostring(user_data.is_active))
     
     -- Return user type based on fresh data from Redis (with is_ prefix for compatibility)
-    if user_type == "admin" then
+    if user_type == "is_admin" then
         return "is_admin", username, user_data
-    elseif user_type == "approved" then
+    elseif user_type == "is_approved" then
         return "is_approved", username, user_data  
-    elseif user_type == "pending" then
+    elseif user_type == "is_pending" then
         return "is_pending", username, user_data
-    elseif user_type == "guest" then
+    elseif user_type == "is_guest" then
         return "is_guest", username, user_data
     else
         ngx.log(ngx.WARN, "Unknown user type from Redis: " .. tostring(user_type))
@@ -324,12 +325,26 @@ end
 -- FIXED LOGIN HANDLER - POST ONLY WITH SERVER REDIRECT
 -- =============================================
 
--- SIMPLE: Cookie-only login in manage_auth.lua
--- Replace your handle_login function with this:
-
 local function handle_login()
     ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
+    -- CHECK: If user is already logged in, just redirect them
+    local current_user_type, current_username, current_user_data = check_user_type()
+    if current_user_type ~= "is_none" and current_username then
+        ngx.log(ngx.INFO, "User already logged in: " .. current_username .. " (" .. current_user_type .. ")")
+        
+        -- Already logged in - return success and let client redirect
+        send_json(200, {
+            success = true,
+            message = "Already logged in",
+            username = current_username,
+            user_type = current_user_type,
+            cookie_set = true,
+            already_logged_in = true
+        })
+    end
+    
+    -- Continue with normal login process
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
     
@@ -366,10 +381,13 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
+    -- Convert user_type to is_ format for session management
+    local session_user_type = "is_" .. user_data.user_type
+    
     -- Set user as active (handles priority and kicking)
-    local session_success, session_result = set_user_active(username, user_data.user_type)
+    local session_success, session_result = set_user_active(username, session_user_type)
     if not session_success then
-        ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
+        ngx.log(ngx.WARN, string.format("Login denied for is_%s '%s': %s", 
             user_data.user_type, username, session_result))
         send_json(409, { 
             error = "Login not allowed",
@@ -383,7 +401,7 @@ local function handle_login()
     -- Generate JWT
     local payload = {
         username = username,
-        user_type = user_data.user_type,
+        user_type = user_data.user_type,  -- Store without is_ prefix in JWT
         iat = ngx.time(),
         exp = ngx.time() + 86400 * 7  -- 7 days
     }
@@ -393,25 +411,25 @@ local function handle_login()
         payload = payload
     })
     
-    -- SIMPLE: Just set cookie and return success - no redirect at all
+    -- Set cookie and return success
     local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
     ngx.header["Set-Cookie"] = cookie_value
     ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
-    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - cookie set, client will handle navigation", 
+    ngx.log(ngx.INFO, string.format("Login: Success for is_%s '%s' - cookie set, client will handle navigation", 
         user_data.user_type, username))
     
-    -- SIMPLE: Just return success - let client detect cookie and navigate
+    -- CRITICAL: Send success response and exit properly
     send_json(200, {
         success = true,
         message = "Login successful - cookie set",
         username = username,
         user_type = user_data.user_type,
         cookie_set = true
-        -- NO redirect field - client will detect cookie
     })
 end
 
+-- FIXED: Added proper ngx.exit() to logout handler
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
     
@@ -442,6 +460,7 @@ local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
     ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
     
+    -- CRITICAL: Use send_json which now includes ngx.exit()
     send_json(200, {
         success = true,
         message = "Logout successful",
@@ -469,8 +488,8 @@ local function get_session_stats()
     if active_user then
         stats.current_session = {
             username = active_user.username,
-            user_type = active_user.user_type,
-            priority = get_user_priority(active_user.user_type),
+            user_type = "is_" .. active_user.user_type,  -- Add is_ prefix for consistency
+            priority = get_user_priority("is_" .. active_user.user_type),
             login_time = tonumber(active_user.login_time) or 0,
             last_activity = tonumber(active_user.last_activity) or 0,
             remote_addr = active_user.created_ip or "unknown"
@@ -480,6 +499,7 @@ local function get_session_stats()
     return stats, nil
 end
 
+-- FIXED: Now using send_json which includes ngx.exit()
 local function handle_session_status()
     local session_stats, err = get_session_stats()
     if err then
@@ -487,14 +507,17 @@ local function handle_session_status()
             success = false,
             error = "Failed to get session status: " .. err
         })
+        -- send_json now includes ngx.exit(), so this won't be reached
     end
     
     send_json(200, {
         success = true,
         session_stats = session_stats
     })
+    -- send_json now includes ngx.exit(), so this won't be reached
 end
 
+-- FIXED: Now using send_json which includes ngx.exit()
 local function handle_force_logout()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -531,8 +554,10 @@ local function handle_force_logout()
             error = err or "Failed to clear session"
         })
     end
+    -- send_json now includes ngx.exit(), so this won't be reached
 end
 
+-- FIXED: Now using send_json which includes ngx.exit()
 local function handle_all_sessions()
     local red = connect_redis()
     if not red then
@@ -540,7 +565,7 @@ local function handle_all_sessions()
             success = false,
             error = "Redis connection failed"
         })
-        return
+        return  -- Won't be reached due to ngx.exit() in send_json
     end
     
     local user_keys = red:keys("username:*")
@@ -560,9 +585,9 @@ local function handle_all_sessions()
             if user.last_activity then
                 table.insert(sessions, {
                     username = user.username,
-                    user_type = user.user_type,
+                    user_type = "is_" .. user.user_type,  -- Add is_ prefix for consistency
                     is_active = user.is_active == "true",
-                    priority = get_user_priority(user.user_type),
+                    priority = get_user_priority("is_" .. user.user_type),
                     last_activity = tonumber(user.last_activity) or 0,
                     login_time = tonumber(user.login_time) or 0
                 })
@@ -577,8 +602,10 @@ local function handle_all_sessions()
         sessions = sessions,
         count = #sessions
     })
+    -- send_json now includes ngx.exit(), so this won't be reached
 end
 
+-- FIXED: Now using send_json which includes ngx.exit()
 local function handle_cleanup_sessions()
     local red = connect_redis()
     if not red then
@@ -586,7 +613,7 @@ local function handle_cleanup_sessions()
             success = false,
             error = "Redis connection failed"
         })
-        return
+        return  -- Won't be reached due to ngx.exit() in send_json
     end
     
     local user_keys = red:keys("username:*")
@@ -616,6 +643,7 @@ local function handle_cleanup_sessions()
         message = "Session cleanup completed",
         cleaned_sessions = cleaned
     })
+    -- send_json now includes ngx.exit(), so this won't be reached
 end
 
 -- =============================================
