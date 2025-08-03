@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_chat.lua - CLEAN CHAT HANDLERS (AUTH ALREADY DONE)
+-- nginx/lua/manage_chat.lua - COMPLETE CHAT HANDLERS (NO EXTERNAL DEPENDENCIES)
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -374,12 +374,12 @@ function M.handle_search(user_type, username, user_data)
 end
 
 function M.handle_stats(user_type, username, user_data)
-    if user_type ~= "is_approved" then
+    if user_type ~= "is_admin" and user_type ~= "is_approved" then
         ngx.status = 403
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
             error = "Access denied",
-            message = "Chat stats only available for approved users"
+            message = "Chat stats only available for admin and approved users"
         }))
         return
     end

@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - UPDATED WITH REDIS SESSION MANAGEMENT
+-- nginx/lua/manage_auth.lua - UPDATED WITH SIMPLIFIED REDIS SESSION MANAGEMENT
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -97,9 +97,11 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- AUTH CHECK FUNCTION - WITH REDIS SESSION VALIDATION
+-- SEPARATED AUTH CHECK FUNCTIONS
 -- =============================================
-local function check()
+
+-- Check if user has valid JWT and get user data
+local function check_user_type()
     local token = ngx.var.cookie_access_token
     if not token then
         return "is_none", nil, nil
@@ -134,17 +136,7 @@ local function check()
     
     local user_type = user_data.user_type
     
-    -- Validate session for non-guest users using Redis session manager
-    if user_type ~= "is_guest" then
-        local session_valid, session_err = session_manager.validate_session(username, user_type)
-        if not session_valid then
-            ngx.log(ngx.WARN, string.format("Redis session validation failed for %s '%s': %s", 
-                user_type, username, session_err or "unknown"))
-            return "is_none", nil, nil
-        end
-    end
-    
-    -- Return user type based on fresh data from Redis
+    -- Return user type based on fresh data from Redis (with is_ prefix for compatibility)
     if user_type == "admin" then
         return "is_admin", username, user_data
     elseif user_type == "approved" then
@@ -159,8 +151,29 @@ local function check()
     end
 end
 
+-- Check if user's session is active (for non-guest users)
+local function check_is_active(username, user_type)
+    if not username or user_type == "is_guest" or user_type == "is_none" then
+        return true -- Guests and unauthenticated users don't need active session check
+    end
+    
+    -- Convert is_ prefix back to plain user_type for session manager
+    local plain_user_type = user_type:gsub("^is_", "")
+    
+    local session_valid, session_err = session_manager.validate_session(username, plain_user_type)
+    if not session_valid then
+        ngx.log(ngx.WARN, string.format("Session validation failed for %s '%s': %s", 
+            user_type, username, session_err or "unknown"))
+        return false
+    end
+    
+    return true
+end
+
+
+
 -- =============================================
--- LOGIN HANDLER WITH REDIS SESSION MANAGEMENT
+-- SIMPLIFIED LOGIN HANDLER
 -- =============================================
 local function handle_login()
     ngx.log(ngx.INFO, "=== LOGIN ATTEMPT START ===")
@@ -201,11 +214,13 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
-    -- CREATE REDIS SESSION (with kicking logic)
-    local session_success, session_result = session_manager.create_session(username, user_data.user_type)
+    -- Set user as active (handles priority and kicking)
+    -- Convert is_ prefix to plain user_type for session manager
+    local plain_user_type = user_data.user_type
+    local session_success, session_result = session_manager.set_user_active(username, plain_user_type)
     if not session_success then
         ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
-            user_data.user_type, username, session_result))
+            plain_user_type, username, session_result))
         send_json(409, { 
             error = "Login not allowed",
             message = session_result,
@@ -213,7 +228,7 @@ local function handle_login()
         })
     end
     
-    ngx.log(ngx.INFO, "Login: Redis session created successfully")
+    ngx.log(ngx.INFO, "Login: Session activated successfully")
     
     -- Generate JWT
     local payload = {
@@ -244,7 +259,7 @@ local function handle_login()
 end
 
 -- =============================================
--- LOGOUT HANDLER WITH REDIS SESSION CLEANUP
+-- SIMPLIFIED LOGOUT HANDLER
 -- =============================================
 local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
@@ -253,13 +268,13 @@ local function handle_logout()
     
     ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
     
-    -- Clear Redis session if authenticated
+    -- Clear session if authenticated
     if username and user_type ~= "is_none" then
-        local success, err = session_manager.clear_active_session()
+        local success, err = session_manager.clear_user_session(username)
         if success then
-            ngx.log(ngx.INFO, "Redis session cleared successfully")
+            ngx.log(ngx.INFO, "Session cleared successfully")
         else
-            ngx.log(ngx.WARN, "Failed to clear Redis session: " .. (err or "unknown"))
+            ngx.log(ngx.WARN, "Failed to clear session: " .. (err or "unknown"))
         end
     end
     
@@ -303,17 +318,88 @@ local function handle_session_status()
     })
 end
 
+-- Force logout current user (admin function)
+local function handle_force_logout()
+    ngx.req.read_body()
+    local body = ngx.req.get_body_data()
+    
+    local target_username = nil
+    if body then
+        local ok, data = pcall(cjson.decode, body)
+        if ok and data.username then
+            target_username = data.username
+        end
+    end
+    
+    local success, err
+    if target_username then
+        success, err = session_manager.admin_force_logout(target_username)
+    else
+        success, err = session_manager.clear_active_session()
+    end
+    
+    if success then
+        send_json(200, {
+            success = true,
+            message = "Session cleared successfully"
+        })
+    else
+        send_json(400, {
+            success = false,
+            error = err or "Failed to clear session"
+        })
+    end
+end
+
+-- Get all sessions (admin function)
+local function handle_all_sessions()
+    local sessions, err = session_manager.admin_get_all_sessions()
+    if err then
+        send_json(500, {
+            success = false,
+            error = "Failed to get sessions: " .. err
+        })
+    end
+    
+    send_json(200, {
+        success = true,
+        sessions = sessions,
+        count = #sessions
+    })
+end
+
+-- Cleanup sessions (admin function)
+local function handle_cleanup_sessions()
+    local cleaned_count, err = session_manager.cleanup_sessions()
+    if err then
+        send_json(500, {
+            success = false,
+            error = "Failed to cleanup sessions: " .. err
+        })
+    end
+    
+    send_json(200, {
+        success = true,
+        message = "Session cleanup completed",
+        cleaned_sessions = cleaned_count
+    })
+end
+
 -- =============================================
 -- MODULE EXPORTS
 -- =============================================
 
 return {
-    check = check,
+    check_user_type = check_user_type,
+    check_is_active = check_is_active,
     get_user = get_user,
     verify_password = verify_password,
     handle_login = handle_login,
     handle_logout = handle_logout,
     handle_session_status = handle_session_status,
+    handle_force_logout = handle_force_logout,
+    handle_all_sessions = handle_all_sessions,
+    handle_cleanup_sessions = handle_cleanup_sessions,
     -- Export Redis helper functions for other modules
     redis_to_lua = redis_to_lua,
     connect_redis = connect_redis,

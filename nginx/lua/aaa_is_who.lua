@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - FIXED - NO CIRCULAR DEPENDENCIES
+-- nginx/lua/aaa_is_who.lua - UPDATED WITH SIMPLIFIED SESSIONS
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -15,12 +15,19 @@ local M = {}
 -- =============================================
 
 function M.set_user()
-    local user_type, username, user_data = auth.check()
+    local user_type, username, user_data = auth.check_user_type()
+    
     if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" or user_type == "is_guest" then
-       return user_type, username, user_data
+        -- Check if session is active for authenticated users
+        if not auth.check_is_active(username, user_type) then
+            username = "guest"
+            user_type = "is_none"
+            user_data = nil
+        end
     else
         username = "guest"
         user_type = "is_none"
+        user_data = nil
     end
     return user_type, username, user_data
 end
@@ -36,8 +43,8 @@ function M.handle_guest_api(user_type, username, user_data)
     ngx.log(ngx.INFO, "🎮 Guest API: " .. method .. " " .. uri .. " (user: " .. user_type .. ")")
     
     if (uri == "/api/guest/create" or uri == "/api/guest/create-session") and method == "POST" then
-        -- Check if guest sessions are allowed
-        local current_session, _ = auth.get_current_session()
+        -- Check if someone else is currently active
+        local current_session, _ = auth.session_manager.get_active_user()
         if current_session and (current_session.user_type == "admin" or current_session.user_type == "approved") then
             ngx.status = 409
             ngx.header.content_type = 'application/json'
@@ -61,8 +68,8 @@ function M.handle_guest_api(user_type, username, user_data)
             return
         end
         
-        local manage_guest = require "manage_guest"
-        return manage_guest.handle_create_session()
+        local is_guest = require "is_guest"
+        return is_guest.handle_create_session()
         
     else
         ngx.status = 404
@@ -132,36 +139,95 @@ function M.handle_chat_api(user_type, username, user_data)
 end
 
 -- =============================================
+-- AUTH API HANDLER
+-- =============================================
+
+function M.handle_auth_api()
+    local uri = ngx.var.uri
+    local method = ngx.var.request_method
+    
+    if uri == "/api/auth/login" and method == "POST" then
+        return auth.handle_login()
+    elseif uri == "/api/auth/logout" and method == "POST" then
+        return auth.handle_logout()
+    elseif uri == "/api/auth/register" and method == "POST" then
+        local manage_register = require "manage_register"
+        return manage_register.handle_register()
+    elseif uri == "/api/auth/status" and method == "GET" then
+        local user_type, username, user_data = M.set_user()
+        ngx.status = 200
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = true,
+            user_type = user_type,
+            username = username,
+            authenticated = user_type ~= "is_none"
+        }))
+    else
+        ngx.status = 404
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Auth API endpoint not found",
+            requested = method .. " " .. uri,
+            available_endpoints = {
+                "POST /api/auth/login",
+                "POST /api/auth/logout",
+                "POST /api/auth/register",
+                "GET /api/auth/status"
+            }
+        }))
+    end
+end
+
+-- =============================================
 -- ADMIN API WITH SESSION VALIDATION
 -- =============================================
 
 function M.handle_admin_api()
+    -- Check if user is admin
+    local user_type, username, user_data = M.set_user()
+    if user_type ~= "is_admin" then
+        ngx.status = 403
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Admin access required",
+            current_user_type = user_type
+        }))
+        return
+    end
+    
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
     -- Handle session management API requests
     if uri == "/api/admin/session/status" and method == "GET" then
-        return M.handle_session_status()
+        return auth.handle_session_status()
     elseif uri == "/api/admin/session/force-logout" and method == "POST" then
-        return M.handle_force_logout()
+        return auth.handle_force_logout()
     elseif uri == "/api/admin/session/all" and method == "GET" then
-        return M.handle_all_sessions()
+        return auth.handle_all_sessions()
     elseif uri == "/api/admin/session/cleanup" and method == "POST" then
-        return M.handle_cleanup_sessions()
+        return auth.handle_cleanup_sessions()
     
     -- Handle other admin API requests
     elseif uri == "/api/admin/users" and method == "GET" then
-        return M.handle_get_all_users()
+        local is_admin = require "is_admin"
+        return is_admin.handle_get_all_users()
     elseif uri == "/api/admin/users/pending" and method == "GET" then
-        return M.handle_get_pending_users()
+        local is_admin = require "is_admin"
+        return is_admin.handle_get_pending_users()
     elseif uri == "/api/admin/users/approve" and method == "POST" then
-        return M.handle_approve_user()
+        local is_admin = require "is_admin"
+        return is_admin.handle_approve_user()
     elseif uri == "/api/admin/users/reject" and method == "POST" then
-        return M.handle_reject_user()
+        local is_admin = require "is_admin"
+        return is_admin.handle_reject_user()
     elseif uri == "/api/admin/stats" and method == "GET" then
-        return M.handle_system_stats()
+        local is_admin = require "is_admin"
+        return is_admin.handle_system_stats()
     elseif uri == "/api/admin/guests/clear" and method == "POST" then
-        return M.handle_clear_guest_sessions()
+        local is_admin = require "is_admin"
+        return is_admin.handle_clear_guest_sessions()
     else
         ngx.status = 404
         ngx.header.content_type = 'application/json'
@@ -186,97 +252,3 @@ function M.handle_admin_api()
         }))
     end
 end
-
--- =============================================
--- MAIN ROUTING HANDLER
--- =============================================
-
-function M.route_to_handler(route_type)
-    local user_type, username, user_data = M.set_user()
-    
-    -- Handle API routes first
-    if route_type == "chat_api" then
-        return M.handle_chat_api(user_type, username, user_data)
-    elseif route_type == "admin_api" then
-        return M.handle_admin_api(user_type, username, user_data)
-    elseif route_type == "auth_api" then
-        return M.handle_auth_api()
-    elseif route_type == "guest_api" then
-        return M.handle_guest_api(user_type, username, user_data)
-    end
-    
-    -- Handle page routes - delegate to page managers with access control
-    if route_type == "index" then
-        local manage_view_index = require "manage_view_index"
-        return manage_view_index.handle(user_type, username, user_data)
-        
-    elseif route_type == "chat" then
-        -- Access control for chat page
-        if user_type == "is_none" then
-            return ngx.redirect("/")
-        elseif user_type == "is_pending" then
-            return ngx.redirect("/")
-        end
-        local manage_view_chat = require "manage_view_chat"
-        return manage_view_chat.handle(user_type, username, user_data)
-        
-    elseif route_type == "dash" then
-        -- Access control for dashboard
-        if user_type == "is_none" or user_type == "is_guest" or user_type == "is_pending" then
-            return ngx.redirect("/")
-        end
-        local manage_view_dash = require "manage_view_dash"
-        return manage_view_dash.handle(user_type, username, user_data)
-        
-    elseif route_type == "login" then
-        -- Redirect authenticated users
-        if user_type == "is_admin" or user_type == "is_approved" then
-            return ngx.redirect("/chat")
-        elseif user_type == "is_pending" then
-            return ngx.redirect("/")
-        end
-        local manage_view_auth = require "manage_view_auth"
-        return manage_view_auth.handle_login(user_type, username, user_data)
-        
-    elseif route_type == "register" then
-        -- Redirect authenticated users
-        if user_type == "is_admin" or user_type == "is_approved" then
-            return ngx.redirect("/chat")
-        elseif user_type == "is_pending" then
-            return ngx.redirect("/")
-        end
-        local manage_view_auth = require "manage_view_auth"
-        return manage_view_auth.handle_register(user_type, username, user_data)
-        
-    else
-        -- Unknown route
-        ngx.status = 404
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            error = "Route not found",
-            route = route_type,
-            user_type = user_type
-        }))
-    end
-end
-
--- =============================================
--- ERROR HANDLERS
--- =============================================
-
-function M.handle_404()
-    local manage_view_error = require "manage_view_error"
-    return manage_view_error.handle_404()
-end
-
-function M.handle_429()
-    local manage_view_error = require "manage_view_error"
-    return manage_view_error.handle_429()
-end
-
-function M.handle_50x()
-    local manage_view_error = require "manage_view_error"
-    return manage_view_error.handle_50x()
-end
-
-return M
