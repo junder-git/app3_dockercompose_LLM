@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - UPDATED WITH SIMPLIFIED SESSIONS
+-- nginx/lua/aaa_is_who.lua - MAIN ROUTER MODULE - COMPLETE AND FIXED
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -252,3 +252,98 @@ function M.handle_admin_api()
         }))
     end
 end
+
+-- =============================================
+-- MAIN ROUTING HANDLER
+-- =============================================
+
+function M.route_to_handler(route_type)
+    local user_type, username, user_data = M.set_user()
+    
+    -- Handle API routes first
+    if route_type == "chat_api" then
+        return M.handle_chat_api(user_type, username, user_data)
+    elseif route_type == "admin_api" then
+        return M.handle_admin_api()
+    elseif route_type == "auth_api" then
+        return M.handle_auth_api()
+    elseif route_type == "guest_api" then
+        return M.handle_guest_api(user_type, username, user_data)
+    end
+    
+    -- Handle page routes - delegate to page managers with access control
+    if route_type == "index" then
+        local view_index = require "view_index"
+        return view_index.handle(user_type, username, user_data)
+        
+    elseif route_type == "chat" then
+        -- Access control for chat page
+        if user_type == "is_none" then
+            return ngx.redirect("/")
+        elseif user_type == "is_pending" then
+            return ngx.redirect("/")
+        end
+        local view_chat = require "view_chat"
+        return view_chat.handle(user_type, username, user_data)
+        
+    elseif route_type == "dash" then
+        -- Access control for dashboard
+        if user_type == "is_none" or user_type == "is_guest" or user_type == "is_pending" then
+            return ngx.redirect("/")
+        end
+        local view_dash = require "view_dash"
+        return view_dash.handle(user_type, username, user_data)
+        
+    elseif route_type == "login" then
+        -- Redirect authenticated users
+        if user_type == "is_admin" or user_type == "is_approved" then
+            return ngx.redirect("/chat")
+        elseif user_type == "is_pending" then
+            return ngx.redirect("/")
+        end
+        local view_auth = require "view_auth"
+        return view_auth.handle_login(user_type, username, user_data)
+        
+    elseif route_type == "register" then
+        -- Redirect authenticated users
+        if user_type == "is_admin" or user_type == "is_approved" then
+            return ngx.redirect("/chat")
+        elseif user_type == "is_pending" then
+            return ngx.redirect("/")
+        end
+        local view_auth = require "view_auth"
+        return view_auth.handle_register(user_type, username, user_data)
+        
+    else
+        -- Unknown route
+        ngx.status = 404
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            error = "Route not found",
+            route = route_type,
+            user_type = user_type
+        }))
+    end
+end
+
+-- =============================================
+-- ERROR HANDLERS
+-- =============================================
+
+function M.handle_404()
+    local view_error = require "view_error"
+    return view_error.handle_404()
+end
+
+function M.handle_429()
+    local view_error = require "view_error"
+    return view_error.handle_429()
+end
+
+function M.handle_50x()
+    local view_error = require "view_error"
+    return view_error.handle_50x()
+end
+
+
+return M
