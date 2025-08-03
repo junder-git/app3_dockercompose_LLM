@@ -390,16 +390,21 @@ local function handle_login()
         payload = payload
     })
     
-    -- CRITICAL FIX: Set cookie and redirect using server-side redirect
+    -- Set cookie
     local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
-    
     ngx.header["Set-Cookie"] = cookie_value
     ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
-    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - redirecting to /chat", 
+    -- CRITICAL FIX: Wait for cookie to be set before redirect
+    ngx.log(ngx.INFO, "⏳ Waiting 2 seconds for cookie to be processed...")
+    
+    -- Sleep for 2 seconds to ensure cookie is set
+    ngx.sleep(2)
+    
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - now redirecting to /chat", 
         user_data.user_type, username))
     
-    -- FIXED: Use server-side redirect with proper cookie setting
+    -- Now redirect after cookie has been set
     ngx.status = 302
     ngx.header["Location"] = "/chat"
     ngx.exit(302)
