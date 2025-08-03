@@ -62,6 +62,7 @@ class SharedInterface {
         }
     }
 
+    // Updated handleLogin function in is_shared.js
     async handleLogin(e) {
         e.preventDefault();
         
@@ -92,30 +93,51 @@ class SharedInterface {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify(credentials)
+                // CRITICAL: Don't follow redirects automatically
+                redirect: 'manual'
             });
 
-            const data = await response.json();
-            
-            if (data.success) {
+            // Handle server redirect (302)
+            if (response.status === 302) {
+                const location = response.headers.get('Location');
+                console.log('✅ Server redirect to:', location);
+                
                 this.showSuccess('Login successful! Redirecting...');
                 
-                // Direct redirect - let server handle auth state
+                // Small delay to ensure cookie is processed
                 setTimeout(() => {
-                    window.location.href = data.redirect || '/chat';
-                }, 1000);
-            } else {
-                // Handle session conflicts specifically
-                let errorMessage = data.error || 'Login failed';
-                
-                if (data.reason === 'sessions_full') {
-                    errorMessage = `Login blocked: ${data.message || 'Sessions are currently full.'}`;
-                } else if (data.reason === 'concurrent_session_limit') {
-                    errorMessage = `Cannot login: ${data.message || 'Another user is currently logged in.'}`;
-                }
-                
-                this.showError(errorMessage);
+                    window.location.href = location || '/chat';
+                }, 500);
+                return;
             }
+
+            // Handle JSON responses (errors)
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Fallback JSON success (shouldn't happen with new code)
+                    this.showSuccess('Login successful! Redirecting...');
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/chat';
+                    }, 1000);
+                } else {
+                    // Handle error responses
+                    let errorMessage = data.error || 'Login failed';
+                    
+                    if (data.reason === 'sessions_full') {
+                        errorMessage = `Login blocked: ${data.message || 'Sessions are currently full.'}`;
+                    } else if (data.reason === 'concurrent_session_limit') {
+                        errorMessage = `Cannot login: ${data.message || 'Another user is currently logged in.'}`;
+                    }
+                    
+                    this.showError(errorMessage);
+                }
+            } else {
+                // Unexpected response
+                throw new Error(`Unexpected response: ${response.status}`);
+            }
+            
         } catch (error) {
             console.error('Login error:', error);
             this.showError('Login error: ' + error.message);

@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED CIRCULAR DEPENDENCY AND SYNTAX
+-- nginx/lua/manage_auth.lua - FIXED: POST ONLY WITH SERVER REDIRECT
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -321,74 +321,9 @@ local function check_is_active(username, user_type)
 end
 
 -- =============================================
--- LOGIN AND LOGOUT HANDLERS
+-- FIXED LOGIN HANDLER - POST ONLY WITH SERVER REDIRECT
 -- =============================================
 
--- Handle GET login (for form submissions with URL parameters)
-local function handle_login_get()
-    ngx.log(ngx.INFO, "=== GET LOGIN ATTEMPT START ===")
-    
-    local username = ngx.var.arg_username
-    local password = ngx.var.arg_password
-    
-    if not username or not password then
-        ngx.log(ngx.WARN, "GET Login: Missing credentials in URL")
-        ngx.redirect("/login?error=missing_credentials")
-        return
-    end
-    
-    ngx.log(ngx.INFO, "GET Login: Attempting login for username: " .. username)
-    
-    local user_data = get_user(username)
-    if not user_data then
-        ngx.log(ngx.WARN, "GET Login: User not found: " .. username)
-        ngx.redirect("/login?error=invalid_credentials")
-        return
-    end
-    
-    -- Verify password
-    if not verify_password(password, user_data.password_hash) then
-        ngx.log(ngx.WARN, "GET Login: Invalid password for user: " .. username)
-        ngx.redirect("/login?error=invalid_credentials")
-        return
-    end
-    
-    -- Set user as active (handles priority and kicking)
-    local plain_user_type = user_data.user_type
-    local session_success, session_result = set_user_active(username, plain_user_type)
-    if not session_success then
-        ngx.log(ngx.WARN, string.format("GET Login denied for %s '%s': %s", 
-            plain_user_type, username, session_result))
-        ngx.redirect("/login?error=session_full")
-        return
-    end
-    
-    ngx.log(ngx.INFO, "GET Login: Session activated successfully")
-    
-    -- Generate JWT
-    local payload = {
-        username = username,
-        user_type = user_data.user_type, -- Use Redis user type (is_admin, is_approved, etc.)
-        iat = ngx.time(),
-        exp = ngx.time() + 86400 * 7  -- 7 days
-    }
-    
-    local token = jwt:sign(JWT_SECRET, {
-        header = { typ = "JWT", alg = "HS256" },
-        payload = payload
-    })
-    
-    -- Set secure cookie with proper format
-    local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
-    ngx.header["Set-Cookie"] = cookie_value
-    
-    ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
-    ngx.log(ngx.INFO, string.format("GET Login: Success for %s '%s'", 
-        user_data.user_type, username))
-    
-    -- Redirect to chat page
-    ngx.redirect("/chat")
-end
 local function handle_login()
     ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
@@ -455,22 +390,19 @@ local function handle_login()
         payload = payload
     })
     
-    -- Set secure cookie with proper format
+    -- CRITICAL FIX: Set cookie and redirect using server-side redirect
     local cookie_value = string.format("access_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", token)
-    ngx.header["Set-Cookie"] = cookie_value
     
+    ngx.header["Set-Cookie"] = cookie_value
     ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
-    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s'", 
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - redirecting to /chat", 
         user_data.user_type, username))
     
-    send_json(200, {
-        success = true,
-        message = "Login successful",
-        username = username,
-        user_type = user_data.user_type,
-        redirect = "/chat"
-    })
+    -- FIXED: Use server-side redirect with proper cookie setting
+    ngx.status = 302
+    ngx.header["Location"] = "/chat"
+    ngx.exit(302)
 end
 
 local function handle_logout()
