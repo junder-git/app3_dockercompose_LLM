@@ -1,4 +1,4 @@
-<!-- base.html - Base template with individual CSS loading -->
+<!-- base.html - Base template with individual CSS and JS loading -->
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
 <head>
@@ -20,9 +20,6 @@
     {{ css_dash }}
     {{ css_error }}
     
-    <!-- Combined CSS fallback for non-individual loading -->
-    <!--  css  -->
-    
     <!-- External libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -37,9 +34,27 @@
             </div>
         </div>
     </nav>
+    
     <!-- Main content area -->
     {{ content }}
-    <!-- Dynamic JavaScript from cache -->
-    {{ js }}
+    
+    <!-- Individual JavaScript modules loaded in dependency order -->
+    
+    <!-- Core shared functionality - always loaded first -->
+    {{ js_shared }}
+    
+    <!-- Specialized modules for chat pages - load in correct order -->
+    {{ js_sse }}
+    {{ js_code }}
+    {{ js_chat }}
+    
+    <!-- User-type specific JavaScript - loaded last -->
+    {{ js_admin }}
+    {{ js_approved }}
+    {{ js_guest }}
+    {{ js_none }}
+    {{ js_pending }}
+    {{ js_user }}
+    
 </body>
 </html>

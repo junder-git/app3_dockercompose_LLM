@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_template.lua - ENHANCED WITH CSS AND JS CACHE SUPPORT
+-- nginx/lua/manage_template.lua - ENHANCED WITH CACHE BUSTING AND INDIVIDUAL JS LOADING
 -- =============================================================================
 
 -- Configuration
@@ -7,7 +7,7 @@ local TEMPLATE_CACHE = {}
 local JS_CACHE = {}
 local CSS_CACHE = {}
 local CACHE_INITIALIZED = false
-local CSS_VERSION = os.time() -- Use timestamp as version, or set manually
+local CACHE_VERSION = os.time() -- Use timestamp as version for cache busting
 
 -- FIXED: Use the correct paths from Dockerfile
 local JS_BASE_PATH = "/usr/local/openresty/nginx/dynamic_content/js/"
@@ -116,7 +116,7 @@ local function read_file(path)
 end
 
 -- =============================================
--- JS AND CSS RETRIEVAL AND BUILDING
+-- JS AND CSS RETRIEVAL AND BUILDING WITH CACHE BUSTING
 -- =============================================
 
 local function get_js_content(filename)
@@ -181,7 +181,7 @@ local function build_js_block(js_files)
            "\n\n})();\n</script>"
 end
 
--- NEW: Build individual CSS blocks for ordered loading
+-- NEW: Build individual CSS blocks for ordered loading with cache busting
 local function build_individual_css_blocks(css_files)
     if not css_files or type(css_files) ~= "table" or #css_files == 0 then
         return {}
@@ -192,7 +192,7 @@ local function build_individual_css_blocks(css_files)
     for _, filename in ipairs(css_files) do
         local content = get_css_content(filename)
         if content and content ~= "" then
-            local block = "<style>\n" .. content .. "\n</style>"
+            local block = "<style data-css-file=\"" .. filename .. "\" data-version=\"" .. CACHE_VERSION .. "\">\n" .. content .. "\n</style>"
             css_blocks[filename] = block
         else
             css_blocks[filename] = ""
@@ -202,7 +202,7 @@ local function build_individual_css_blocks(css_files)
     return css_blocks
 end
 
--- NEW: Build individual JS blocks for ordered loading
+-- NEW: Build individual JS blocks for ordered loading with cache busting
 local function build_individual_js_blocks(js_files)
     if not js_files or type(js_files) ~= "table" or #js_files == 0 then
         return {}
@@ -213,7 +213,7 @@ local function build_individual_js_blocks(js_files)
     for _, filename in ipairs(js_files) do
         local content = get_js_content(filename)
         if content and content ~= "" then
-            local block = "<script>\n(function() {\n'use strict';\n\n" .. 
+            local block = "<script data-js-file=\"" .. filename .. "\" data-version=\"" .. CACHE_VERSION .. "\">\n(function() {\n'use strict';\n\n" .. 
                          content .. 
                          "\n\n})();\n</script>"
             js_blocks[filename] = block
@@ -226,7 +226,7 @@ local function build_individual_js_blocks(js_files)
 end
 
 -- =============================================
--- ENHANCED TEMPLATE RENDERING WITH CSS SUPPORT
+-- ENHANCED TEMPLATE RENDERING WITH CSS AND JS SUPPORT
 -- =============================================
 
 local function render_template(path, context, depth)
@@ -275,7 +275,7 @@ local function render_template(path, context, depth)
 end
 
 -- =============================================
--- CONVENIENCE FUNCTIONS - UPDATED FOR CSS AND CHAT PAGES
+-- CONVENIENCE FUNCTIONS - UPDATED FOR CSS, JS CACHE BUSTING, AND CHAT PAGES
 -- =============================================
 
 -- Helper function to get appropriate CSS files for user type and page
@@ -325,9 +325,10 @@ local function get_js_files_for_context(user_type, page_type)
     return js_files
 end
 
--- Enhanced render function that includes CSS and JS versioning
+-- Enhanced render function that includes CSS and JS versioning with cache busting
 local function render_with_versioned_assets(template_path, user_type, page_type, context)
-    context.css_version = os.time()
+    context.css_version = CACHE_VERSION
+    context.js_version = CACHE_VERSION
     
     -- Auto-inject appropriate CSS assets
     context.css_files = get_css_files_for_context(user_type, page_type)
@@ -343,6 +344,19 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
     context.css_dash = ""
     context.css_error = ""
     context.css = ""
+    
+    -- Initialize ALL JS placeholders as empty first
+    context.js_shared = ""
+    context.js_sse = ""
+    context.js_code = ""
+    context.js_chat = ""
+    context.js_admin = ""
+    context.js_approved = ""
+    context.js_guest = ""
+    context.js_none = ""
+    context.js_pending = ""
+    context.js_user = ""
+    context.js = ""
     
     -- For chat pages, create individual JS blocks for ordered loading
     if page_type == "chat" then
@@ -363,12 +377,20 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
         
         if user_js_map[user_type] then
             context.js_user = js_blocks[user_js_map[user_type]] or ""
-        else
-            context.js_user = ""
+            
+            -- Also populate specific user type JS placeholder
+            if user_type == "is_admin" then
+                context.js_admin = context.js_user
+            elseif user_type == "is_approved" then
+                context.js_approved = context.js_user
+            elseif user_type == "is_guest" then
+                context.js_guest = context.js_user
+            elseif user_type == "is_none" then
+                context.js_none = context.js_user
+            elseif user_type == "is_pending" then
+                context.js_pending = context.js_user
+            end
         end
-        
-        -- Clear the combined js field for chat pages
-        context.js = ""
         
         -- For chat pages, create individual CSS blocks
         local css_blocks = build_individual_css_blocks(context.css_files)
@@ -376,8 +398,35 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
         context.css_chat = css_blocks["view_chat.css"] or ""
         
     else
-        -- For non-chat pages, use combined JS block
-        context.js = build_js_block(context.js_files)
+        -- For non-chat pages, use individual JS blocks for ALL pages now
+        local js_blocks = build_individual_js_blocks(context.js_files)
+        context.js_shared = js_blocks["is_shared.js"] or ""
+        
+        -- Add user-specific JS for non-chat pages too
+        local user_js_map = {
+            is_admin = "is_admin.js",
+            is_approved = "is_approved.js",
+            is_guest = "is_guest.js", 
+            is_none = "is_none.js",
+            is_pending = "is_pending.js"
+        }
+        
+        if user_js_map[user_type] then
+            context.js_user = js_blocks[user_js_map[user_type]] or ""
+            
+            -- Also populate specific user type JS placeholder
+            if user_type == "is_admin" then
+                context.js_admin = context.js_user
+            elseif user_type == "is_approved" then
+                context.js_approved = context.js_user
+            elseif user_type == "is_guest" then
+                context.js_guest = context.js_user
+            elseif user_type == "is_none" then
+                context.js_none = context.js_user
+            elseif user_type == "is_pending" then
+                context.js_pending = context.js_user
+            end
+        end
         
         -- For non-chat pages, populate only the relevant CSS placeholders
         local css_blocks = build_individual_css_blocks(context.css_files)
@@ -394,7 +443,7 @@ local function render_with_versioned_assets(template_path, user_type, page_type,
             context.css_error = css_blocks["view_error.css"] or ""
         end
         
-        -- Also provide combined CSS as fallback
+        -- Also provide combined CSS and JS as fallback
         context.css = build_css_block(context.css_files)
     end
     
@@ -415,11 +464,11 @@ local function render_page_with_base(page_content_path, user_type, page_type, co
 end
 
 -- =============================================
--- CACHE MANAGEMENT
+-- CACHE MANAGEMENT WITH VERSION UPDATING
 -- =============================================
 
 local function force_reload_cache()
-    ngx.log(ngx.INFO, "🔄 Force reloading permanent cache...")
+    ngx.log(ngx.INFO, "🔄 Force reloading permanent cache with new version...")
     
     -- Clear existing caches
     TEMPLATE_CACHE = {}
@@ -427,10 +476,13 @@ local function force_reload_cache()
     CSS_CACHE = {}
     CACHE_INITIALIZED = false
     
+    -- Update cache version for cache busting
+    CACHE_VERSION = os.time()
+    
     -- Reinitialize
     initialize_cache()
     
-    ngx.log(ngx.INFO, "✅ Cache reloaded successfully")
+    ngx.log(ngx.INFO, "✅ Cache reloaded successfully with version: " .. CACHE_VERSION)
 end
 
 local function get_cache_stats()
@@ -452,6 +504,7 @@ local function get_cache_stats()
     
     return {
         initialized = CACHE_INITIALIZED,
+        cache_version = CACHE_VERSION,
         templates = {
             count = template_count,
             size_bytes = template_size
@@ -495,20 +548,23 @@ local function warm_up_cache()
         end
     end
     
-    ngx.log(ngx.INFO, "🔥 Cache warm-up completed")
+    ngx.log(ngx.INFO, "🔥 Cache warm-up completed with version: " .. CACHE_VERSION)
 end
 
--- Update your module exports
+-- =============================================
+-- MODULE EXPORTS WITH CACHE BUSTING SUPPORT
+-- =============================================
+
 return {
     -- Original API (backwards compatible)
     render_template = render_template,
     read_file = read_file,
     
-    -- Enhanced rendering with automatic asset injection AND versioning
-    render_with_versioned_assets = render_with_versioned_assets, -- Updated function
+    -- Enhanced rendering with automatic asset injection AND versioning with cache busting
+    render_with_versioned_assets = render_with_versioned_assets,
     render_page_with_base = render_page_with_base,
     
-    -- Asset builders
+    -- Asset builders with cache busting
     build_js_block = build_js_block,
     build_css_block = build_css_block,
     build_individual_js_blocks = build_individual_js_blocks,
@@ -516,11 +572,12 @@ return {
     get_js_files_for_context = get_js_files_for_context,
     get_css_files_for_context = get_css_files_for_context,
     
-    -- Cache management
+    -- Cache management with versioning
     initialize_cache = initialize_cache,
     warm_up_cache = warm_up_cache,
     force_reload_cache = force_reload_cache,
     get_cache_stats = get_cache_stats,
+    get_cache_version = function() return CACHE_VERSION end,
     
     -- Direct asset access
     get_js_content = get_js_content,
