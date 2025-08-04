@@ -85,7 +85,8 @@ function M.handle_create_session()
     local session_manager = require "manage_redis_sessions"
     local active_user, err = session_manager.get_active_user()
     
-    if err then
+    -- "No active user" is actually GOOD - it means session is available!
+    if err and err ~= "No active user" then
         ngx.log(ngx.ERR, "Session check failed: " .. err)
         send_json(500, {
             success = false,
@@ -94,13 +95,15 @@ function M.handle_create_session()
         })
     end
     
-    -- Step 2: Check for blocking sessions
+    -- Step 2: Check for blocking sessions (only if there IS an active user)
     if active_user then
         local blocking_type = active_user.user_type
         local blocking_username = active_user.username
         local last_activity = tonumber(active_user.last_activity) or 0
         local current_time = ngx.time()
         local session_age = current_time - last_activity
+        
+        ngx.log(ngx.INFO, string.format("🔍 Found active user: %s '%s' (age: %ds)", blocking_type, blocking_username, session_age))
         
         -- If there's an active admin or approved user, deny guest session
         if blocking_type == "is_admin" or blocking_type == "is_approved" then
@@ -127,6 +130,8 @@ function M.handle_create_session()
         end
         
         ngx.log(ngx.INFO, string.format("♻️ Can reuse session - previous user inactive for %ds", session_age))
+    else
+        ngx.log(ngx.INFO, "✅ No active sessions - guest session can be created")
     end
     
     -- Step 3: Generate display name and prepare session data
@@ -144,6 +149,8 @@ function M.handle_create_session()
             message = session_result or "Could not activate guest session"
         })
     end
+    
+    ngx.log(ngx.INFO, "✅ Session activated successfully via session manager")
     
     -- Step 5: Update the guest user record with session-specific data
     local red = auth.connect_redis()
