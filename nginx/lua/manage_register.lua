@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_register.lua - COMPLETE WITH GUEST USER PROTECTION
+-- nginx/lua/manage_register.lua - FIXED: NO SHARED MEMORY DEPENDENCY
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -34,6 +34,64 @@ local function redis_to_lua(value)
         return nil
     end
     return value
+end
+
+-- =============================================================================
+-- REDIS-BASED RATE LIMITING (NO SHARED MEMORY)
+-- =============================================================================
+
+local function check_rate_limit(ip_address, max_attempts, window_seconds)
+    local red = connect_redis()
+    if not red then
+        -- If Redis is down, allow the request (fail open)
+        ngx.log(ngx.WARN, "Redis connection failed for rate limiting - allowing request")
+        return true, 0
+    end
+    
+    local rate_key = "rate_limit:register:" .. (ip_address or "unknown")
+    local current_time = ngx.time()
+    
+    -- Get current attempt count
+    local attempts = tonumber(red:get(rate_key)) or 0
+    
+    red:close()
+    
+    -- Check if rate limit exceeded
+    if attempts >= max_attempts then
+        return false, attempts
+    end
+    
+    return true, attempts
+end
+
+local function increment_rate_limit(ip_address, window_seconds)
+    local red = connect_redis()
+    if not red then
+        return -- Silently fail if Redis is down
+    end
+    
+    local rate_key = "rate_limit:register:" .. (ip_address or "unknown")
+    
+    -- Increment counter
+    local new_count = red:incr(rate_key)
+    
+    -- Set expiry on first increment
+    if new_count == 1 then
+        red:expire(rate_key, window_seconds)
+    end
+    
+    red:close()
+end
+
+local function clear_rate_limit(ip_address)
+    local red = connect_redis()
+    if not red then
+        return -- Silently fail if Redis is down
+    end
+    
+    local rate_key = "rate_limit:register:" .. (ip_address or "unknown")
+    red:del(rate_key)
+    red:close()
 end
 
 -- Count pending users (is_approved = false, is_admin = false)
@@ -192,7 +250,7 @@ local function create_user(username, password_hash, ip_address)
     return true, "User created successfully"
 end
 
--- CRITICAL: Registration with pending user limits and guest protection
+-- FIXED: Registration with Redis-based rate limiting (no shared memory)
 local function handle_register()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -208,19 +266,24 @@ local function handle_register()
         send_json(400, { error = "Username and password required" })
     end
 
-    -- SECURITY: Rate limit registration attempts per IP
-    local register_key = "register_attempts:" .. (ngx.var.remote_addr or "unknown")
-    local attempts = ngx.shared.guest_sessions:get(register_key) or 0
+    local client_ip = ngx.var.remote_addr or "unknown"
+
+    -- SECURITY: Redis-based rate limiting (3 attempts per 10 minutes)
+    local rate_allowed, current_attempts = check_rate_limit(client_ip, 3, 600)
     
-    if attempts >= 3 then
-        ngx.log(ngx.WARN, "Too many registration attempts from " .. (ngx.var.remote_addr or "unknown"))
-        send_json(429, { error = "Too many registration attempts, please try again later" })
+    if not rate_allowed then
+        ngx.log(ngx.WARN, "Too many registration attempts from " .. client_ip .. " (" .. current_attempts .. " attempts)")
+        send_json(429, { 
+            error = "Too many registration attempts",
+            message = "Please try again later (10 minute cooldown)",
+            retry_after = 600
+        })
     end
 
     -- ENHANCED SECURITY: Validate input with guest protection
     local username_valid, username_error = validate_username(username)
     if not username_valid then
-        ngx.shared.guest_sessions:set(register_key, attempts + 1, 600) -- 10 minute lockout
+        increment_rate_limit(client_ip, 600) -- 10 minute lockout
         ngx.log(ngx.WARN, "Registration blocked - invalid username: " .. username .. " (" .. username_error .. ")")
         send_json(400, { 
             error = username_error,
@@ -231,13 +294,13 @@ local function handle_register()
 
     local password_valid, password_error = validate_password(password)
     if not password_valid then
-        ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
+        increment_rate_limit(client_ip, 600)
         send_json(400, { error = password_error })
     end
 
     -- ANTI-SPAM: Check if user already exists
     if user_exists(username) then
-        ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
+        increment_rate_limit(client_ip, 600)
         ngx.log(ngx.WARN, "Registration attempt with existing username: " .. username)
         send_json(409, { error = "Username already taken" })
     end
@@ -250,7 +313,7 @@ local function handle_register()
     end
     
     if pending_count >= MAX_PENDING_USERS then
-        ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
+        increment_rate_limit(client_ip, 600)
         ngx.log(ngx.WARN, "Registration blocked - pending user limit reached (" .. pending_count .. "/" .. MAX_PENDING_USERS .. ")")
         send_json(429, { 
             error = "Registration temporarily unavailable",
@@ -268,16 +331,16 @@ local function handle_register()
     local password_hash = hash_password(password)
 
     -- CRITICAL: Create user as PENDING (is_pending = true)
-    local success, message = create_user(username, password_hash, ngx.var.remote_addr)
+    local success, message = create_user(username, password_hash, client_ip)
     
     if not success then
-        ngx.shared.guest_sessions:set(register_key, attempts + 1, 600)
+        increment_rate_limit(client_ip, 600)
         ngx.log(ngx.ERR, "Registration failed for " .. username .. ": " .. message)
         send_json(500, { error = "Registration failed: " .. message })
     end
 
-    -- SECURITY: Clear failed attempts on successful registration
-    ngx.shared.guest_sessions:delete(register_key)
+    -- SECURITY: Clear rate limit on successful registration
+    clear_rate_limit(client_ip)
 
     -- Log successful registration with pending count
     ngx.log(ngx.INFO, "New user registered (pending approval): " .. username .. 
@@ -363,7 +426,9 @@ local function handle_registration_stats()
             guest_usernames_blocked = true,
             reserved_patterns = {"guest*", "*_user_*", "admin", "system"},
             min_username_length = 3,
-            max_username_length = 20
+            max_username_length = 20,
+            rate_limit = "3 attempts per 10 minutes per IP",
+            storage = "Redis-based (no shared memory)"
         }
     })
 end
