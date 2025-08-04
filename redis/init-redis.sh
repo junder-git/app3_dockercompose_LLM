@@ -80,7 +80,9 @@ create_or_update_user() {
 echo "🔧 Creating admin user..."
 create_or_update_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD_HASH" "is_admin"
 
-# DON'T create guest users here - they should be created dynamically by nginx
+# CRITICAL FIX: Create guest user with correct user_type
+echo "🔧 Creating admin user..."
+create_or_update_user "guest_user_1" "ettmcntpkcneknhckhckhnfcbcmssicwox57eyiwcei" "is_guest"
 
 # Final verification
 echo "🔍 Final verification - listing all users:"
