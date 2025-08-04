@@ -370,7 +370,7 @@ function M.cleanup_stale_sessions()
     return cleaned, nil
 end
 
--- Clean up expired guest sessions
+-- Clean up expired guest sessions but preserve hardcoded guest_user_1 account
 function M.cleanup_expired_guest_sessions()
     local red = connect_redis()
     if not red then
@@ -382,10 +382,128 @@ function M.cleanup_expired_guest_sessions()
     local cleaned = 0
     
     for _, key in ipairs(guest_keys) do
-        local user_data = red:hgetall(key)
+        local username = string.match(key, "username:(.+)")
+        
+        -- SPECIAL HANDLING: Never delete the hardcoded guest_user_1 account
+        if username == "guest_user_1" then
+            -- Just check if session is expired and deactivate it
+            local last_activity = tonumber(red:hget(key, "last_activity")) or 0
+            local session_age = current_time - last_activity
+            
+            if session_age > 3600 and red:hget(key, "is_active") == "true" then
+                -- Deactivate expired session but keep the account
+                red:hset(key, "is_active", "false")
+                red:hdel(key, "display_name", "session_start", "session_id")
+                cleaned = cleaned + 1
+                ngx.log(ngx.INFO, "🧹 Deactivated expired guest_user_1 session (age: " .. session_age .. "s)")
+            end
+        else
+            -- For any other guest users (if they exist), clean them up normally
+            local user_data = red:hgetall(key)
+            if user_data and #user_data > 0 then
+                local session = {}
+                for i = 1, #user_data, 2 do
+                    local field = user_data[i]
+                    local value = redis_to_lua(user_data[i + 1])
+                    session[field] = value
+                end
+                
+                -- Check for incomplete records (missing required fields)
+                if not session.username or not session.user_type then
+                    red:del(key)
+                    cleaned = cleaned + 1
+                    ngx.log(ngx.INFO, "🧹 Cleaned incomplete guest record: " .. key)
+                else
+                    local last_activity = tonumber(session.last_activity) or 0
+                    local session_age = current_time - last_activity
+                    
+                    -- Remove expired sessions (>1 hour old)
+                    if session_age > 3600 then
+                        red:del(key)
+                        cleaned = cleaned + 1
+                        ngx.log(ngx.INFO, "🧹 Cleaned expired guest session: " .. key .. " (age: " .. session_age .. "s)")
+                    end
+                end
+            else
+                -- Empty or corrupted record
+                red:del(key)
+                cleaned = cleaned + 1
+                ngx.log(ngx.INFO, "🧹 Cleaned empty guest record: " .. key)
+            end
+        end
+    end
+    
+    red:close()
+    return cleaned, nil
+end 2 do
+                local field = user_data[i]
+                local value = redis_to_lua(user_data[i + 1])
+                session[field] = value
+            end
+            
+            -- Check for incomplete records (missing required fields)
+            if not session.username or not session.user_type then
+                red:del(key)
+                cleaned = cleaned + 1
+                ngx.log(ngx.INFO, "🧹 Cleaned incomplete guest record: " .. key)
+            else
+                local last_activity = tonumber(session.last_activity) or 0
+                local session_age = current_time - last_activity
+                
+                -- Remove expired sessions (>1 hour old)
+                if session_age > 3600 then
+                    red:del(key)
+                    cleaned = cleaned + 1
+                    ngx.log(ngx.INFO, "🧹 Cleaned expired guest session: " .. key .. " (age: " .. session_age .. "s)")
+                end
+            end
+        else
+            -- Empty or corrupted record
+            red:del(key)
+            cleaned = cleaned + 1
+            ngx.log(ngx.INFO, "🧹 Cleaned empty guest record: " .. key)
+        end
+    end
+    
+    red:close()
+    return cleaned, nil
+endd:hgetall(key)
         if user_data and #user_data > 0 then
-            local session = {}
-            for i = 1, #user_data, 2 do
+                local session = {}
+                for i = 1, #user_data, 2 do
+                    local field = user_data[i]
+                    local value = redis_to_lua(user_data[i + 1])
+                    session[field] = value
+                end
+                
+                -- Check for incomplete records (missing required fields)
+                if not session.username or not session.user_type then
+                    red:del(key)
+                    cleaned = cleaned + 1
+                    ngx.log(ngx.INFO, "🧹 Cleaned incomplete guest record: " .. key)
+                else
+                    local last_activity = tonumber(session.last_activity) or 0
+                    local session_age = current_time - last_activity
+                    
+                    -- Remove expired sessions (>1 hour old)
+                    if session_age > 3600 then
+                        red:del(key)
+                        cleaned = cleaned + 1
+                        ngx.log(ngx.INFO, "🧹 Cleaned expired guest session: " .. key .. " (age: " .. session_age .. "s)")
+                    end
+                end
+            else
+                -- Empty or corrupted record
+                red:del(key)
+                cleaned = cleaned + 1
+                ngx.log(ngx.INFO, "🧹 Cleaned empty guest record: " .. key)
+            end
+        end
+    end
+    
+    red:close()
+    return cleaned, nil
+end 2 do
                 local field = user_data[i]
                 local value = redis_to_lua(user_data[i + 1])
                 session[field] = value

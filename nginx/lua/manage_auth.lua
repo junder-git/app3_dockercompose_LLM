@@ -166,37 +166,59 @@ function M.check_user_type()
     
     -- Get fresh user data from Redis
     local user_data = M.get_user(username)
+    
+    -- SPECIAL HANDLING FOR GUEST USERS - They use the hardcoded guest_user_1 account
+    if string.match(username, "^guest_user_") then
+        local jwt_user_type = payload.user_type
+        
+        if jwt_user_type ~= "is_guest" then
+            ngx.log(ngx.WARN, "❌ Guest username with invalid JWT user_type: " .. tostring(jwt_user_type))
+            return "is_none", nil, nil
+        end
+        
+        -- Only allow guest_user_1 (the hardcoded account)
+        if username ~= "guest_user_1" then
+            ngx.log(ngx.WARN, "❌ Invalid guest username - only guest_user_1 is supported: " .. username)
+            return "is_none", nil, nil
+        end
+        
+        -- Get the hardcoded guest account
+        if not user_data then
+            ngx.log(ngx.WARN, "❌ Hardcoded guest_user_1 account not found in Redis")
+            return "is_none", nil, nil
+        end
+        
+        -- Check if guest user record has required fields (the hardcoded account should have password_hash)
+        if not user_data.password_hash then
+            ngx.log(ngx.WARN, "❌ Hardcoded guest_user_1 account missing password_hash")
+            return "is_none", nil, nil
+        end
+        
+        -- Validate guest user type consistency
+        if user_data.user_type ~= "is_guest" then
+            ngx.log(ngx.WARN, "❌ Hardcoded guest_user_1 has wrong type in Redis: " .. tostring(user_data.user_type))
+            return "is_none", nil, nil
+        end
+        
+        ngx.log(ngx.INFO, "✅ Hardcoded guest_user_1 validation passed")
+        return "is_guest", username, user_data
+    end
+    
+    -- FOR NON-GUEST USERS - Standard validation
     if not user_data then
         ngx.log(ngx.WARN, "User from JWT not found in Redis: " .. username)
         return "is_none", nil, nil
     end
     
-    -- CRITICAL: Cross-validate JWT user_type with Redis user_type
-    local redis_user_type = user_data.user_type
-    local jwt_user_type = payload.user_type
-    
-    -- For guest users, ensure consistency
-    if string.match(username, "^guest_user_") then
-        if redis_user_type ~= "is_guest" then
-            ngx.log(ngx.WARN, "❌ Guest user has wrong type in Redis: " .. tostring(redis_user_type))
-            return "is_none", nil, nil
-        end
-        
-        if jwt_user_type ~= "is_guest" then
-            ngx.log(ngx.WARN, "❌ Guest user has wrong type in JWT: " .. tostring(jwt_user_type))
-            return "is_none", nil, nil
-        end
-    end
-    
-    -- For non-guest users, ensure they're not using guest usernames
-    if not string.match(username, "^guest_user_") and redis_user_type == "is_guest" then
+    -- Ensure non-guest users don't have guest user_type
+    if user_data.user_type == "is_guest" then
         ngx.log(ngx.WARN, "❌ Non-guest username with guest user_type: " .. username)
         return "is_none", nil, nil
     end
     
-    ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(redis_user_type) .. ", Active: " .. tostring(user_data.is_active))
+    ngx.log(ngx.INFO, "📊 User data validated. Type: " .. tostring(user_data.user_type) .. ", Active: " .. tostring(user_data.is_active))
     
-    return redis_user_type, username, user_data
+    return user_data.user_type, username, user_data
 end
 
 -- =============================================
