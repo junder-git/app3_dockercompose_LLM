@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - COMPLETE WITH COLLISION DETECTION AND PROTECTION
+-- nginx/lua/is_guest.lua - UPDATED TO USE EXISTING HARDCODED GUEST_USER_1 ACCOUNT
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -19,13 +19,13 @@ local function send_json(status, tbl)
 end
 
 -- =============================================
--- GUEST NAME GENERATION
+-- GUEST NAME GENERATION FOR DISPLAY
 -- =============================================
 
 local ADJECTIVES = {"Quick", "Silent", "Bright", "Swift", "Clever", "Bold", "Calm", "Sharp", "Wise", "Cool", "Neon", "Digital", "Cyber", "Quantum", "Electric", "Plasma", "Stellar", "Virtual", "Neural", "Cosmic"}
 local ANIMALS = {"Fox", "Eagle", "Wolf", "Tiger", "Hawk", "Bear", "Lion", "Owl", "Cat", "Dog", "Phoenix", "Dragon", "Falcon", "Panther", "Raven", "Shark", "Viper", "Lynx", "Gecko", "Mantis"}
 
-local function generate_guest_name()
+local function generate_guest_display_name()
     local adjective = ADJECTIVES[math.random(#ADJECTIVES)]
     local animal = ANIMALS[math.random(#ANIMALS)]
     local number = math.random(100, 999)
@@ -33,174 +33,119 @@ local function generate_guest_name()
 end
 
 -- =============================================
--- COLLISION DETECTION AND SESSION MANAGEMENT
+-- SESSION COLLISION DETECTION (USING REDIS SESSIONS)
 -- =============================================
 
-local function check_existing_guest_session()
-    local red = auth.connect_redis()
-    if not red then
-        return nil, "Redis connection failed"
+local function check_session_availability()
+    local session_manager = require "manage_redis_sessions"
+    
+    -- Check for any active high-priority users (admin/approved)
+    local active_user, err = session_manager.get_active_user()
+    if err then
+        return false, "Session check failed: " .. err
     end
     
-    local current_time = ngx.time()
-    local guest_username = "guest_user_1"  -- Our single guest slot
-    local user_key = "username:" .. guest_username
-    
-    -- Check if guest_user_1 exists
-    local existing_data = red:hgetall(user_key)
-    
-    if existing_data and #existing_data > 0 then
-        -- Parse existing session data
-        local session = {}
-        for i = 1, #existing_data, 2 do
-            local field = existing_data[i]
-            local value = existing_data[i + 1]
-            if value == ngx.null then value = nil end
-            session[field] = value
+    if active_user then
+        local blocking_type = active_user.user_type
+        local blocking_username = active_user.username
+        
+        -- If there's an active admin or approved user, deny guest session
+        if blocking_type == "is_admin" or blocking_type == "is_approved" then
+            return false, string.format("%s '%s' is currently active", 
+                blocking_type == "is_admin" and "Administrator" or "Approved User", 
+                blocking_username)
         end
         
-        local last_activity = tonumber(session.last_activity) or 0
-        local is_active = session.is_active == "true"
-        local session_age = current_time - last_activity
-        
-        ngx.log(ngx.INFO, string.format("🔍 Found existing guest_user_1: active=%s, age=%ds", 
-            tostring(is_active), session_age))
-        
-        red:close()
-        
-        -- Return session analysis
-        return {
-            exists = true,
-            is_active = is_active,
-            session_age = session_age,
-            last_activity = last_activity,
-            can_reuse = not is_active or session_age > 60,  -- Can reuse if inactive or old
-            should_block = is_active and session_age <= 60,  -- Block if recently active
-            session_data = session
-        }, nil
-    else
-        red:close()
-        ngx.log(ngx.INFO, "✨ No existing guest_user_1 found")
-        return {
-            exists = false,
-            can_reuse = true,
-            should_block = false
-        }, nil
-    end
-end
-
-local function check_high_priority_sessions()
-    local red = auth.connect_redis()
-    if not red then
-        return {}, "Redis connection failed"
-    end
-    
-    local current_time = ngx.time()
-    local user_keys = red:keys("username:*")
-    local high_priority_sessions = {}
-    
-    for _, key in ipairs(user_keys) do
-        local is_active = red:hget(key, "is_active")
-        local user_type = red:hget(key, "user_type")
-        local username = red:hget(key, "username")
-        local last_activity = tonumber(red:hget(key, "last_activity")) or 0
-        
-        -- Check for active admin or approved users
-        if is_active == "true" and (user_type == "is_admin" or user_type == "is_approved") then
+        -- If there's an active guest, check activity to prevent collision
+        if blocking_type == "is_guest" then
+            local last_activity = tonumber(active_user.last_activity) or 0
+            local current_time = ngx.time()
             local session_age = current_time - last_activity
             
-            -- Only consider recently active (within 1 minute) as blocking
+            -- If guest session is recently active (within 60 seconds), block
             if session_age <= 60 then
-                table.insert(high_priority_sessions, {
-                    username = username,
-                    user_type = user_type,
-                    last_activity = last_activity,
-                    session_age = session_age,
-                    priority = user_type == "is_admin" and 1 or 2
-                })
+                return false, string.format("Another guest user is currently active (last seen %d seconds ago)", session_age)
             end
+            
+            ngx.log(ngx.INFO, string.format("♻️ Guest session available - previous guest inactive for %ds", session_age))
         end
     end
     
-    red:close()
-    return high_priority_sessions, nil
+    return true, "Session available"
 end
 
 -- =============================================
--- SMART GUEST SESSION CREATION WITH COMPREHENSIVE COLLISION DETECTION
+-- ACTIVATE EXISTING GUEST_USER_1 ACCOUNT WITH REDIS SESSIONS
 -- =============================================
 
 function M.handle_create_session()
-    ngx.log(ngx.INFO, "✅ is_guest: Smart guest session creation with collision detection")
+    ngx.log(ngx.INFO, "✅ is_guest: Activating hardcoded guest_user_1 account")
     
-    -- Step 1: Check for high priority users (admin/approved) that would block guest creation
-    local high_priority_sessions, hp_err = check_high_priority_sessions()
-    if hp_err then
-        ngx.log(ngx.ERR, "Failed to check high priority sessions: " .. hp_err)
+    -- Step 1: Check session availability using Redis session manager
+    local session_manager = require "manage_redis_sessions"
+    local active_user, err = session_manager.get_active_user()
+    
+    if err then
+        ngx.log(ngx.ERR, "Session check failed: " .. err)
         send_json(500, {
             success = false,
             error = "Session check failed",
-            message = "Unable to verify current session state"
+            message = err
         })
     end
     
-    if #high_priority_sessions > 0 then
-        local blocking_session = high_priority_sessions[1]  -- Get the first (highest priority) blocking session
-        local priority_name = blocking_session.user_type == "is_admin" and "Administrator" or "Approved User"
+    -- Step 2: Check for blocking sessions
+    if active_user then
+        local blocking_type = active_user.user_type
+        local blocking_username = active_user.username
+        local last_activity = tonumber(active_user.last_activity) or 0
+        local current_time = ngx.time()
+        local session_age = current_time - last_activity
         
-        ngx.log(ngx.INFO, string.format("❌ Guest session blocked by %s '%s' (active %ds ago)", 
-            priority_name, blocking_session.username, blocking_session.session_age))
+        -- If there's an active admin or approved user, deny guest session
+        if blocking_type == "is_admin" or blocking_type == "is_approved" then
+            ngx.log(ngx.INFO, string.format("❌ Guest session blocked by %s '%s'", blocking_type, blocking_username))
+            send_json(409, {
+                success = false,
+                error = "Sessions are currently full",
+                message = string.format("%s '%s' is currently active", 
+                    blocking_type == "is_admin" and "Administrator" or "Approved User", 
+                    blocking_username),
+                reason = "high_priority_user_active"
+            })
+        end
         
-        send_json(409, {
-            success = false,
-            error = "Sessions are currently full",
-            message = string.format("%s '%s' is currently active (last seen %d seconds ago)", 
-                priority_name, blocking_session.username, blocking_session.session_age),
-            reason = "high_priority_user_active",
-            blocking_info = {
-                user_type = blocking_session.user_type,
-                priority = blocking_session.priority,
-                session_age = blocking_session.session_age
-            },
-            suggestion = "Please try again in a few minutes when the current session becomes inactive"
-        })
-    end
-    
-    -- Step 2: Check existing guest session for collision
-    local guest_session_info, guest_err = check_existing_guest_session()
-    if guest_err then
-        ngx.log(ngx.ERR, "Failed to check guest session: " .. guest_err)
-        send_json(500, {
-            success = false,
-            error = "Guest session check failed",
-            message = "Unable to verify guest session state"
-        })
-    end
-    
-    if guest_session_info.should_block then
-        ngx.log(ngx.INFO, string.format("❌ Guest session blocked - another guest active %ds ago", 
-            guest_session_info.session_age))
+        -- If there's an active guest, check if it's recently active
+        if blocking_type == "is_guest" and session_age <= 60 then
+            ngx.log(ngx.INFO, string.format("❌ Guest session blocked - another guest active %ds ago", session_age))
+            send_json(409, {
+                success = false,
+                error = "Guest session already active",
+                message = string.format("Another guest user is currently active (last seen %d seconds ago)", session_age),
+                reason = "guest_recently_active"
+            })
+        end
         
-        send_json(409, {
-            success = false,
-            error = "Guest session already active",
-            message = string.format("Another guest user is currently active (last seen %d seconds ago). Please wait a moment.", 
-                guest_session_info.session_age),
-            reason = "guest_session_active",
-            session_info = {
-                session_age = guest_session_info.session_age,
-                time_until_available = math.max(0, 60 - guest_session_info.session_age)
-            },
-            suggestion = "Please try again in " .. math.max(1, math.ceil((60 - guest_session_info.session_age) / 60)) .. " minute(s)"
-        })
+        ngx.log(ngx.INFO, string.format("♻️ Can reuse session - previous user inactive for %ds", session_age))
     end
     
-    -- Step 3: Session creation is allowed - proceed with creation/reuse
+    -- Step 3: Generate display name and prepare session data
+    local display_name = generate_guest_display_name()
+    local guest_username = "guest_user_1"  -- Use the hardcoded account
     local now = ngx.time()
-    local guest_username = "guest_user_1"
-    local display_name = generate_guest_name()
     
-    -- Create/overwrite guest user in Redis
+    -- Step 4: Use Redis session manager to activate the session (this handles priority and kicking)
+    local session_success, session_result = session_manager.set_user_active(guest_username, "is_guest")
+    if not session_success then
+        ngx.log(ngx.WARN, "Session activation failed: " .. (session_result or "unknown"))
+        send_json(409, {
+            success = false,
+            error = "Session activation failed",
+            message = session_result or "Could not activate guest session"
+        })
+    end
+    
+    -- Step 5: Update the guest user record with session-specific data
     local red = auth.connect_redis()
     if not red then
         send_json(500, {
@@ -211,43 +156,30 @@ function M.handle_create_session()
     
     local user_key = "username:" .. guest_username
     
-    -- CRITICAL: Always delete the old session first to prevent conflicts
-    if guest_session_info.exists then
-        ngx.log(ngx.INFO, "♻️ Reusing guest slot - deleting old session first")
-        red:del(user_key)
-    end
-    
-    -- Create fresh session with all required fields
+    -- Update session-specific fields (the session manager already set is_active and last_activity)
     local ok, err = red:hmset(user_key,
-        "username", guest_username,
-        "user_type", "is_guest",
         "display_name", display_name,
-        "created_at", os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        "last_activity", now,
-        "is_active", "true",  -- CRITICAL: Set as active
+        "session_start", now,
         "created_ip", ngx.var.remote_addr or "unknown",
-        "session_id", tostring(now) .. "_" .. math.random(1000, 9999),  -- Unique session ID
-        "creation_method", "guest_api"
+        "session_id", tostring(now) .. "_" .. math.random(1000, 9999)
     )
     
     if not ok then
         red:close()
         send_json(500, {
             success = false,
-            error = "Failed to create guest session: " .. tostring(err)
+            error = "Failed to update guest session: " .. tostring(err)
         })
     end
     
-    -- Set expiration for guest user (1 hour)
-    red:expire(user_key, 3600)
     red:close()
     
-    -- Create JWT token with proper structure
+    -- Step 6: Create JWT token for the existing account
     local payload = {
         username = guest_username,
         user_type = "is_guest",
         display_name = display_name,
-        last_activity = now,
+        session_start = now,
         iat = now,
         exp = now + 3600  -- 1 hour expiration
     }
@@ -260,20 +192,18 @@ function M.handle_create_session()
     -- Set cookie and return success response
     ngx.header["Set-Cookie"] = "access_token=" .. token .. "; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"
     
-    local action_taken = guest_session_info.exists and "reused_inactive_session" or "created_new_session"
-    
-    ngx.log(ngx.INFO, "✅ Guest session " .. action_taken .. ": " .. display_name .. " -> " .. guest_username)
+    ngx.log(ngx.INFO, "🍪 Setting guest cookie: access_token=" .. string.sub(token, 1, 50) .. "... (length: " .. string.len(token) .. ")")
+    ngx.log(ngx.INFO, "✅ Guest session activated using hardcoded account: " .. display_name .. " -> " .. guest_username)
     
     send_json(200, {
         success = true,
-        message = "Guest session created successfully",
+        message = "Guest session activated successfully",
         username = display_name,
         internal_username = guest_username,
         user_type = "is_guest",
         cookie_set = true,
-        slot = 1,
         session_expires_in = 3600,
-        action_taken = action_taken,
+        action_taken = "activated_existing_account",
         session_info = {
             display_name = display_name,
             expires_at = os.date("!%Y-%m-%dT%H:%M:%SZ", now + 3600),
@@ -288,12 +218,12 @@ function M.handle_create_session()
 end
 
 -- =============================================
--- GUEST SESSION VALIDATION AND UTILITIES
+-- GUEST SESSION VALIDATION (USING EXISTING ACCOUNT)
 -- =============================================
 
 function M.validate_guest_session(username)
-    if not username or not string.match(username, "^guest_user_") then
-        return false, "Invalid guest username"
+    if username ~= "guest_user_1" then
+        return false, "Invalid guest username - only guest_user_1 supported"
     end
     
     local red = auth.connect_redis()
@@ -306,7 +236,7 @@ function M.validate_guest_session(username)
     
     if not user_data or #user_data == 0 then
         red:close()
-        return false, "Guest session not found"
+        return false, "Guest account not found"
     end
     
     -- Parse session data
@@ -340,71 +270,48 @@ function M.validate_guest_session(username)
     return true, session
 end
 
-function M.cleanup_expired_guest_sessions()
-    local red = auth.connect_redis()
-    if not red then
-        return 0, "Redis connection failed"
-    end
+-- =============================================
+-- CLEANUP FUNCTIONS (FOR EXISTING ACCOUNT)
+-- =============================================
+
+function M.cleanup_guest_session()
+    local guest_username = "guest_user_1"
     
-    local current_time = ngx.time()
-    local guest_keys = red:keys("username:guest_user_*")
-    local cleaned = 0
+    -- Use Redis session manager to properly clear session
+    local session_manager = require "manage_redis_sessions"
+    local success, message = session_manager.clear_user_session(guest_username)
     
-    for _, key in ipairs(guest_keys) do
-        local user_data = red:hgetall(key)
-        if user_data and #user_data > 0 then
-            local session = {}
-            for i = 1, #user_data, 2 do
-                local field = user_data[i]
-                local value = user_data[i + 1]
-                if value == ngx.null then value = nil end
-                session[field] = value
-            end
-            
-            local last_activity = tonumber(session.last_activity) or 0
-            local session_age = current_time - last_activity
-            
-            -- Remove expired sessions (>1 hour old)
-            if session_age > 3600 then
-                red:del(key)
-                cleaned = cleaned + 1
-                ngx.log(ngx.INFO, "🧹 Cleaned expired guest session: " .. key .. " (age: " .. session_age .. "s)")
-            end
+    if success then
+        -- Also clear session-specific fields from the user record
+        local red = auth.connect_redis()
+        if red then
+            local user_key = "username:" .. guest_username
+            red:hdel(user_key, "display_name", "session_start", "session_id")
+            red:hset(user_key, "last_activity", ngx.time())
+            red:close()
+            ngx.log(ngx.INFO, "🧹 Guest session cleaned up: " .. guest_username)
         end
     end
     
-    red:close()
-    return cleaned, nil
+    return success, message
 end
 
 -- =============================================
--- GUEST SESSION STATUS AND DEBUG INFO
+-- STATUS AND DEBUG INFO
 -- =============================================
 
 function M.get_guest_session_status()
-    local guest_session_info, err1 = check_existing_guest_session()
-    local high_priority_sessions, err2 = check_high_priority_sessions()
-    
-    if err1 or err2 then
-        return {
-            success = false,
-            error = err1 or err2
-        }
-    end
-    
-    local cleaned_sessions, _ = M.cleanup_expired_guest_sessions()
+    local session_available, availability_message = check_session_availability()
     
     return {
         success = true,
-        guest_session = guest_session_info,
-        high_priority_sessions = high_priority_sessions,
-        can_create_guest = not guest_session_info.should_block and #high_priority_sessions == 0,
-        blocking_reason = guest_session_info.should_block and "guest_recently_active" or 
-                         (#high_priority_sessions > 0 and "high_priority_user_active" or nil),
-        cleaned_expired_sessions = cleaned_sessions,
+        guest_account = "guest_user_1",
+        session_available = session_available,
+        availability_message = availability_message,
+        account_type = "hardcoded_in_redis",
         system_info = {
-            max_guest_sessions = 1,
-            guest_session_timeout = 3600,
+            guest_account_name = "guest_user_1",
+            session_timeout = 3600,
             inactivity_threshold = 60,
             current_timestamp = ngx.time()
         }
