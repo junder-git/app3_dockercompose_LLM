@@ -1,4 +1,7 @@
--- nginx/lua/manage_register.lua - SECURE user registration handler with pending user limits
+-- =============================================================================
+-- nginx/lua/manage_register.lua - COMPLETE WITH GUEST USER PROTECTION
+-- =============================================================================
+
 local cjson = require "cjson"
 local auth = require "manage_auth"
 local redis = require "resty.redis"
@@ -75,7 +78,7 @@ local function count_pending_users()
     return pending_count, nil
 end
 
--- SECURITY: Validate username format
+-- ENHANCED USERNAME VALIDATION WITH GUEST PROTECTION
 local function validate_username(username)
     if not username or type(username) ~= "string" then
         return false, "Username must be a string"
@@ -89,17 +92,31 @@ local function validate_username(username)
         return false, "Username can only contain letters, numbers, and underscores"
     end
     
+    -- CRITICAL: Block guest username patterns
+    if string.match(string.lower(username), "^guest") then
+        return false, "Usernames starting with 'guest' are reserved for temporary sessions"
+    end
+    
+    if string.match(string.lower(username), "guest_user") then
+        return false, "This username pattern is reserved for guest sessions"
+    end
+    
     -- Reserved usernames (including guest patterns)
-    local reserved = {"admin", "root", "system", "api", "www", "mail", "ftp", "guest", "anonymous", "test", "demo"}
+    local reserved = {
+        "admin", "root", "system", "api", "www", "mail", "ftp", "guest", "anonymous", "test", "demo",
+        "guest_user_1", "guest_user_2", "guest_user_3", "guest_user_4", "guest_user_5",
+        "guestuser", "guest1", "guest2", "temp", "temporary", "temp_user", "tmpuser"
+    }
+    
     for _, reserved_name in ipairs(reserved) do
         if string.lower(username) == reserved_name then
-            return false, "Username is reserved"
+            return false, "Username '" .. reserved_name .. "' is reserved"
         end
     end
     
-    -- Block guest-style usernames
-    if string.match(string.lower(username), "^guest") then
-        return false, "Usernames starting with 'guest' are reserved"
+    -- Additional pattern checks
+    if string.match(string.lower(username), "_user_[0-9]+$") then
+        return false, "This username pattern is reserved for system accounts"
     end
     
     return true, "Valid username"
@@ -175,7 +192,7 @@ local function create_user(username, password_hash, ip_address)
     return true, "User created successfully"
 end
 
--- CRITICAL: Registration with pending user limits
+-- CRITICAL: Registration with pending user limits and guest protection
 local function handle_register()
     ngx.req.read_body()
     local body = ngx.req.get_body_data()
@@ -200,11 +217,16 @@ local function handle_register()
         send_json(429, { error = "Too many registration attempts, please try again later" })
     end
 
-    -- SECURITY: Validate input
+    -- ENHANCED SECURITY: Validate input with guest protection
     local username_valid, username_error = validate_username(username)
     if not username_valid then
         ngx.shared.guest_sessions:set(register_key, attempts + 1, 600) -- 10 minute lockout
-        send_json(400, { error = username_error })
+        ngx.log(ngx.WARN, "Registration blocked - invalid username: " .. username .. " (" .. username_error .. ")")
+        send_json(400, { 
+            error = username_error,
+            details = "Username validation failed",
+            suggestion = username_error:find("guest") and "Guest accounts are created automatically using the 'Guest Chat' button" or nil
+        })
     end
 
     local password_valid, password_error = validate_password(password)
@@ -237,7 +259,8 @@ local function handle_register()
                 pending_users = pending_count,
                 max_pending = MAX_PENDING_USERS,
                 retry_suggestion = "Please try again in a few hours when existing registrations are processed"
-            }
+            },
+            alternative = "You can use the 'Guest Chat' button for immediate access with limited features"
         })
     end
 
@@ -280,13 +303,17 @@ local function handle_register()
             "You will be able to login once approved",
             "Approval usually takes 24-48 hours"
         },
+        alternative = {
+            message = "Need immediate access?",
+            action = "Use the 'Guest Chat' button for limited features without waiting for approval"
+        },
         redirect = "/login"
     })
 end
 
 -- SECURITY: Registration status check (for pending users)
 local function handle_registration_status()
-    local user_type, username, user_data = auth.check()
+    local user_type, username, user_data = auth.check_user_type()
     
     if user_type == "is_pending" then
         -- User has JWT but not approved
@@ -331,7 +358,13 @@ local function handle_registration_stats()
         },
         message = pending_count >= MAX_PENDING_USERS and 
                   "Registration temporarily closed" or 
-                  "Registration open"
+                  "Registration open",
+        protection_info = {
+            guest_usernames_blocked = true,
+            reserved_patterns = {"guest*", "*_user_*", "admin", "system"},
+            min_username_length = 3,
+            max_username_length = 20
+        }
     })
 end
 
@@ -361,5 +394,7 @@ end
 return {
     handle_register = handle_register,
     handle_register_api = handle_register_api,
-    count_pending_users = count_pending_users
+    count_pending_users = count_pending_users,
+    validate_username = validate_username,  -- Export for other modules
+    validate_password = validate_password   -- Export for other modules
 }

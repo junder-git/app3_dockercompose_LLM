@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - FIXED: ALL FUNCTIONS WITH PROPER ngx.exit()
+-- nginx/lua/manage_auth.lua - COMPLETE WITH GUEST USER PROTECTION
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -236,10 +236,9 @@ local function clear_user_session(username)
 end
 
 -- =============================================
--- SEPARATED AUTH CHECK FUNCTIONS
+-- ENHANCED JWT VALIDATION WITH GUEST PROTECTION
 -- =============================================
 
--- Check if user has valid JWT and get user data
 local function check_user_type()
     local token = ngx.var.cookie_access_token
     
@@ -275,6 +274,27 @@ local function check_user_type()
         return "is_none", nil, nil
     end
     
+    -- CRITICAL: Additional validation for guest users
+    if string.match(username, "^guest_user_") then
+        -- For guest users, validate the JWT more strictly
+        local guest_user_type = payload.user_type
+        
+        if guest_user_type ~= "is_guest" then
+            ngx.log(ngx.WARN, "❌ Guest username with invalid user_type: " .. tostring(guest_user_type))
+            return "is_none", nil, nil
+        end
+        
+        -- Check if guest session is still valid (shorter expiry)
+        local guest_exp = payload.exp or 0
+        local guest_max_age = 3600 -- 1 hour
+        local issued_at = payload.iat or 0
+        
+        if ngx.time() - issued_at > guest_max_age then
+            ngx.log(ngx.WARN, "❌ Guest JWT token too old")
+            return "is_none", nil, nil
+        end
+    end
+    
     -- Get fresh user data from Redis
     local user_data = get_user(username)
     if not user_data then
@@ -282,34 +302,84 @@ local function check_user_type()
         return "is_none", nil, nil
     end
     
-    local user_type = user_data.user_type
-    ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(user_type) .. ", Active: " .. tostring(user_data.is_active))
+    -- CRITICAL: Cross-validate JWT user_type with Redis user_type
+    local redis_user_type = user_data.user_type
+    local jwt_user_type = payload.user_type
+    
+    -- For guest users, ensure consistency
+    if string.match(username, "^guest_user_") then
+        if redis_user_type ~= "is_guest" then
+            ngx.log(ngx.WARN, "❌ Guest user has wrong type in Redis: " .. tostring(redis_user_type))
+            return "is_none", nil, nil
+        end
+        
+        if jwt_user_type ~= "is_guest" then
+            ngx.log(ngx.WARN, "❌ Guest user has wrong type in JWT: " .. tostring(jwt_user_type))
+            return "is_none", nil, nil
+        end
+    end
+    
+    -- For non-guest users, ensure they're not using guest usernames
+    if not string.match(username, "^guest_user_") and redis_user_type == "is_guest" then
+        ngx.log(ngx.WARN, "❌ Non-guest username with guest user_type: " .. username)
+        return "is_none", nil, nil
+    end
+    
+    ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(redis_user_type) .. ", Active: " .. tostring(user_data.is_active))
     
     -- Return user type based on fresh data from Redis (with is_ prefix for compatibility)
-    if user_type == "is_admin" then
+    if redis_user_type == "is_admin" then
         return "is_admin", username, user_data
-    elseif user_type == "is_approved" then
+    elseif redis_user_type == "is_approved" then
         return "is_approved", username, user_data  
-    elseif user_type == "is_pending" then
+    elseif redis_user_type == "is_pending" then
         return "is_pending", username, user_data
-    elseif user_type == "is_guest" then
+    elseif redis_user_type == "is_guest" then
         return "is_guest", username, user_data
     else
-        ngx.log(ngx.WARN, "Unknown user type from Redis: " .. tostring(user_type))
+        ngx.log(ngx.WARN, "Unknown user type from Redis: " .. tostring(redis_user_type))
         return "is_none", nil, nil
     end
 end
 
--- Check if user's session is active (for non-guest users)
+-- Check if user's session is active (with enhanced guest session checking)
 local function check_is_active(username, user_type)
     ngx.log(ngx.INFO, "🔄 Checking session activity for: " .. tostring(username) .. " (" .. tostring(user_type) .. ")")
     
-    if not username or user_type == "is_guest" or user_type == "is_none" then
-        ngx.log(ngx.INFO, "✅ Skipping session check for guest/none user")
-        return true -- Guests and unauthenticated users don't need active session check
+    if not username then
+        ngx.log(ngx.WARN, "❌ No username provided for session check")
+        return false
     end
     
-    -- Use user_type directly (already has is_ prefix)
+    -- Guest users have special handling - check expiration
+    if user_type == "is_guest" then
+        local red = connect_redis()
+        if not red then
+            ngx.log(ngx.ERR, "❌ Redis connection failed for guest session check")
+            return false
+        end
+        
+        local user_key = "username:" .. username
+        local last_activity = tonumber(red:hget(user_key, "last_activity")) or 0
+        local current_time = ngx.time()
+        
+        red:close()
+        
+        -- Check if guest session expired (1 hour = 3600 seconds)
+        if current_time - last_activity > 3600 then
+            ngx.log(ngx.INFO, "❌ Guest session expired for " .. username)
+            return false
+        end
+        
+        ngx.log(ngx.INFO, "✅ Guest session active for " .. username)
+        return true
+    end
+    
+    -- For non-guest users, check is_active flag
+    if user_type == "is_none" then
+        return true -- No session needed for unauthenticated users
+    end
+    
     local session_valid, session_err = validate_session(username, user_type)
     if not session_valid then
         ngx.log(ngx.WARN, string.format("❌ Session validation failed for %s '%s': %s", 
@@ -322,7 +392,7 @@ local function check_is_active(username, user_type)
 end
 
 -- =============================================
--- FIXED LOGIN HANDLER - POST ONLY WITH SERVER REDIRECT
+-- ENHANCED LOGIN HANDLER WITH GUEST PROTECTION
 -- =============================================
 
 local function handle_login()
@@ -389,12 +459,32 @@ local function handle_login()
         send_json(400, { error = "Username and password required" })
     end
     
+    -- CRITICAL: Block guest user login attempts
+    if string.match(username, "^guest_user_") then
+        ngx.log(ngx.WARN, "Login: Blocked guest user login attempt: " .. username)
+        send_json(403, { 
+            error = "Guest users cannot login manually",
+            message = "Guest accounts are created automatically. Please use the 'Guest Chat' button instead.",
+            suggestion = "Use the 'Guest Chat' button to start a guest session"
+        })
+    end
+    
     ngx.log(ngx.INFO, "Login: Attempting login for username: " .. username)
     
     local user_data = get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "Login: User not found: " .. username)
         send_json(401, { error = "Invalid credentials" })
+    end
+    
+    -- ADDITIONAL: Block if user_type is is_guest (in case someone manually created a guest in Redis)
+    if user_data.user_type == "is_guest" then
+        ngx.log(ngx.WARN, "Login: Blocked guest user type login: " .. username)
+        send_json(403, { 
+            error = "Guest accounts cannot login manually",
+            message = "This is a guest account. Guest sessions are created automatically.",
+            suggestion = "Use the 'Guest Chat' button to start a guest session"
+        })
     end
     
     -- Verify password
