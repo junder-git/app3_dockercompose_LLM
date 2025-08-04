@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_stream_ollama.lua - UPDATED WITH HISTORY CALLBACK SUPPORT
+-- nginx/lua/manage_stream_ollama.lua - FIXED: USE EXISTING manage_chat MODULE
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -253,12 +253,12 @@ function M.handle_chat_stream_common(stream_context)
     -- Build messages for Ollama
     local messages = {}
     
-    -- Add chat history if enabled
+    -- Add chat history if enabled - FIXED: Use existing manage_chat module
     if stream_context.include_history and stream_context.history_limit > 0 then
         -- Load chat history from Redis for admin/approved users
         if stream_context.user_type == "is_admin" or stream_context.user_type == "is_approved" then
-            local chat_history = require "manage_chat_history"
-            local history_messages, err = chat_history.load_history(stream_context.username, stream_context.history_limit)
+            local manage_chat = require "manage_chat"  -- FIXED: Use existing module
+            local history_messages, err = manage_chat.load_history(stream_context.username, stream_context.history_limit)
             
             if not err and history_messages then
                 for _, hist_msg in ipairs(history_messages) do
