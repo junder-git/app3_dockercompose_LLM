@@ -100,7 +100,6 @@ end
 -- INLINE SESSION FUNCTIONS (NO EXTERNAL MODULE)
 -- =============================================
 
--- Get priority level based on user type (with is_ prefix)
 local function get_user_priority(user_type)
     if user_type == "is_admin" then return 1 end
     if user_type == "is_approved" then return 2 end
@@ -156,7 +155,7 @@ local function set_user_active(username, user_type)
     -- Check for currently active user
     local active_user, err = get_active_user()
     if active_user then
-        local active_priority = get_user_priority("is_" .. active_user.user_type)
+        local active_priority = get_user_priority(active_user.user_type)
         
         -- If new user has lower or equal priority, deny access
         if new_priority >= active_priority then
@@ -326,20 +325,6 @@ local function check_user_type()
     end
     
     ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(redis_user_type) .. ", Active: " .. tostring(user_data.is_active))
-    
-    -- Return user type based on fresh data from Redis (with is_ prefix for compatibility)
-    if redis_user_type == "is_admin" then
-        return "is_admin", username, user_data
-    elseif redis_user_type == "is_approved" then
-        return "is_approved", username, user_data  
-    elseif redis_user_type == "is_pending" then
-        return "is_pending", username, user_data
-    elseif redis_user_type == "is_guest" then
-        return "is_guest", username, user_data
-    else
-        ngx.log(ngx.WARN, "Unknown user type from Redis: " .. tostring(redis_user_type))
-        return "is_none", nil, nil
-    end
 end
 
 -- Check if user's session is active (with enhanced guest session checking)
@@ -417,7 +402,7 @@ local function handle_login()
                     success = true,
                     message = "Session reactivated",
                     username = current_username,
-                    user_type = current_user_type:gsub("^is_", ""), -- Remove is_ prefix for response
+                    user_type = current_user_type,
                     cookie_set = true,
                     already_logged_in = true,
                     session_reactivated = true
@@ -429,7 +414,7 @@ local function handle_login()
                 success = true,
                 message = "Already logged in",
                 username = current_username,
-                user_type = current_user_type:gsub("^is_", ""), -- Remove is_ prefix for response
+                user_type = current_user_type,
                 cookie_set = true,
                 already_logged_in = true
             })
@@ -493,8 +478,7 @@ local function handle_login()
         send_json(401, { error = "Invalid credentials" })
     end
     
-    -- Convert user_type to is_ format for session management
-    local session_user_type = "is_" .. user_data.user_type
+    local session_user_type = user_data.user_type
     
     -- Set user as active (handles priority and kicking)
     local session_success, session_result = set_user_active(username, session_user_type)
@@ -513,7 +497,7 @@ local function handle_login()
     -- Generate JWT
     local payload = {
         username = username,
-        user_type = user_data.user_type,  -- Store without is_ prefix in JWT
+        user_type = user_data.user_type,
         iat = ngx.time(),
         exp = ngx.time() + 86400 * 7  -- 7 days
     }
@@ -600,8 +584,8 @@ local function get_session_stats()
     if active_user then
         stats.current_session = {
             username = active_user.username,
-            user_type = "is_" .. active_user.user_type,  -- Add is_ prefix for consistency
-            priority = get_user_priority("is_" .. active_user.user_type),
+            user_type = active_user.user_type,
+            priority = get_user_priority(active_user.user_type),
             login_time = tonumber(active_user.login_time) or 0,
             last_activity = tonumber(active_user.last_activity) or 0,
             remote_addr = active_user.created_ip or "unknown"
@@ -697,9 +681,9 @@ local function handle_all_sessions()
             if user.last_activity then
                 table.insert(sessions, {
                     username = user.username,
-                    user_type = "is_" .. user.user_type,  -- Add is_ prefix for consistency
+                    user_type = user.user_type,
                     is_active = user.is_active == "true",
-                    priority = get_user_priority("is_" .. user.user_type),
+                    priority = get_user_priority(user.user_type),
                     last_activity = tonumber(user.last_activity) or 0,
                     login_time = tonumber(user.login_time) or 0
                 })
