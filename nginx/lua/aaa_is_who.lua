@@ -32,54 +32,43 @@ function M.set_user()
     return user_type, username, user_data
 end
 
--- =============================================
--- GUEST API WITH SESSION CHECKING
--- =============================================
+-- =============================================================================
+-- GUEST API HANDLER
+-- =============================================================================
 
 function M.handle_guest_api(user_type, username, user_data)
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
-    ngx.log(ngx.INFO, "🎮 Guest API: " .. method .. " " .. uri .. " (user: " .. user_type .. ")")
+    ngx.log(ngx.INFO, "🎮 Guest API: " .. method .. " " .. uri .. " (user: " .. tostring(user_type) .. ")")
     
-    if (uri == "/api/guest/create" or uri == "/api/guest/create-session") and method == "POST" then
-        -- Check if someone else is currently active
-        local current_session, _ = auth.session_manager.get_active_user()
-        if current_session and (current_session.user_type == "admin" or current_session.user_type == "approved") then
-            ngx.status = 409
-            ngx.header.content_type = 'application/json'
-            ngx.say(cjson.encode({
-                error = "Sessions are currently full",
-                message = string.format("%s '%s' is logged in", 
-                    current_session.user_type, current_session.username),
-                reason = "sessions_full"
-            }))
-            return
-        end
-        
-        -- Only is_none users can create guest sessions
-        if user_type ~= "is_none" then
-            ngx.status = 400
-            ngx.header.content_type = 'application/json'
-            ngx.say(cjson.encode({
-                error = "Already authenticated",
-                current_user_type = user_type
-            }))
-            return
-        end
-        
-        local is_guest = require "is_guest"
-        return is_guest.handle_create_session()
-        
-    else
-        ngx.status = 404
+    -- Only is_none users can access guest API
+    if user_type ~= "is_none" then
+        ngx.status = 400
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
-            error = "Guest API endpoint not found",
-            requested = method .. " " .. uri,
-            available_endpoints = {
-                "POST /api/guest/create-session"
-            }
+            success = false,
+            error = "Already authenticated",
+            current_user_type = user_type,
+            message = "You are already logged in. Please logout first to start a guest session."
+        }))
+        return
+    end
+    
+    -- Delegate to is_none.lua for smart session management
+    local success, result = pcall(function()
+        local is_none = require "is_none"
+        return is_none.handle_api(uri, method)
+    end)
+    
+    if not success then
+        ngx.log(ngx.ERR, "❌ is_none API handler failed: " .. tostring(result))
+        ngx.status = 500
+        ngx.header.content_type = 'application/json'
+        ngx.say(cjson.encode({
+            success = false,
+            error = "Internal server error",
+            message = "Smart session management failed. Please try again."
         }))
     end
 end

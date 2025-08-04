@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/is_guest.lua - GUEST SESSION CREATION - USING send_json PATTERN
+-- nginx/lua/is_guest.lua - UPDATED WITH is_active FIELD
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -33,10 +33,12 @@ local function generate_guest_name()
 end
 
 -- =============================================
--- GUEST SESSION CREATION - USING send_json PATTERN
+-- GUEST SESSION CREATION - UPDATED WITH is_active
 -- =============================================
 
 function M.handle_create_session()
+    ngx.log(ngx.INFO, "✅ is_guest: Creating guest session (called by is_none.lua)")
+    
     local now = ngx.time()
     local slot_number = 1
     local guest_username = "guest_user_" .. slot_number
@@ -57,7 +59,9 @@ function M.handle_create_session()
         "user_type", "is_guest",  -- Store with is_ prefix consistently
         "display_name", display_name,
         "created_at", os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        "last_activity", now
+        "last_activity", now,
+        "is_active", "true",  -- CRITICAL: Set as active
+        "created_ip", ngx.var.remote_addr or "unknown"
     )
     
     -- Set expiration for guest user (1 hour)
@@ -98,7 +102,8 @@ function M.handle_create_session()
         internal_username = guest_username,
         user_type = "is_guest",  -- Return with is_ prefix consistently
         cookie_set = true,
-        slot = slot_number
+        slot = slot_number,
+        session_expires_in = 3600
     })
 end
 
