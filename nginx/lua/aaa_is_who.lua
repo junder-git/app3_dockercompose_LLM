@@ -33,7 +33,7 @@ function M.set_user()
 end
 
 -- =============================================================================
--- GUEST API HANDLER
+-- FIXED GUEST API HANDLER - Replace in aaa_is_who.lua handle_guest_api function
 -- =============================================================================
 
 function M.handle_guest_api(user_type, username, user_data)
@@ -42,37 +42,53 @@ function M.handle_guest_api(user_type, username, user_data)
     
     ngx.log(ngx.INFO, "🎮 Guest API: " .. method .. " " .. uri .. " (user: " .. tostring(user_type) .. ")")
     
-    -- Only is_none users can access guest API
-    if user_type ~= "is_none" then
-        ngx.status = 400
+    if (uri == "/api/guest/create" or uri == "/api/guest/create-session") and method == "POST" then
+        -- Only is_none users can create guest sessions
+        if user_type ~= "is_none" then
+            ngx.status = 400
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "Already authenticated",
+                current_user_type = user_type,
+                message = "You are already logged in. Please logout first to start a guest session."
+            }))
+            return
+        end
+        
+        -- CRITICAL: Use is_none.lua for smart session management, NOT is_guest.lua directly
+        ngx.log(ngx.INFO, "✅ Delegating to is_none.lua for smart session management")
+        
+        local success, result = pcall(function()
+            local is_none = require "is_none"
+            return is_none.handle_create_session()  -- This will call is_guest.lua if allowed
+        end)
+        
+        if not success then
+            ngx.log(ngx.ERR, "❌ is_none handler failed: " .. tostring(result))
+            ngx.status = 500
+            ngx.header.content_type = 'application/json'
+            ngx.say(cjson.encode({
+                success = false,
+                error = "Internal server error",
+                message = "Smart session management failed. Please try again."
+            }))
+        end
+        
+    else
+        -- Return proper JSON error for unknown endpoints
+        ngx.status = 404
         ngx.header.content_type = 'application/json'
         ngx.say(cjson.encode({
             success = false,
-            error = "Already authenticated",
-            current_user_type = user_type,
-            message = "You are already logged in. Please logout first to start a guest session."
-        }))
-        return
-    end
-    
-    -- Delegate to is_none.lua for smart session management
-    local success, result = pcall(function()
-        local is_none = require "is_none"
-        return is_none.handle_api(uri, method)
-    end)
-    
-    if not success then
-        ngx.log(ngx.ERR, "❌ is_none API handler failed: " .. tostring(result))
-        ngx.status = 500
-        ngx.header.content_type = 'application/json'
-        ngx.say(cjson.encode({
-            success = false,
-            error = "Internal server error",
-            message = "Smart session management failed. Please try again."
+            error = "Guest API endpoint not found",
+            requested = method .. " " .. uri,
+            available_endpoints = {
+                "POST /api/guest/create-session"
+            }
         }))
     end
 end
-
 -- =============================================
 -- CHAT API WITH SESSION VALIDATION
 -- =============================================
