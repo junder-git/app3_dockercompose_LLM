@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/aaa_is_who.lua - MAIN ROUTER MODULE - COMPLETE AND FIXED
+-- nginx/lua/aaa_is_who.lua - MAIN ROUTER MODULE - UPDATED FOR REDIS SESSIONS
 -- =============================================================================
 
 local jwt = require "resty.jwt"
@@ -11,15 +11,20 @@ local JWT_SECRET = os.getenv("JWT_SECRET")
 local M = {}
 
 -- =============================================
--- USER TYPE DETERMINATION WITH SESSION VALIDATION
+-- USER TYPE DETERMINATION WITH REDIS SESSION VALIDATION
 -- =============================================
 
 function M.set_user()
     local user_type, username, user_data = auth.check_user_type()
     
     if user_type == "is_admin" or user_type == "is_approved" or user_type == "is_pending" or user_type == "is_guest" then
-        -- Check if session is active for authenticated users
-        if not auth.check_is_active(username, user_type) then
+        -- DELEGATE session check to Redis session manager
+        local session_manager = require "manage_redis_sessions"
+        local session_active = session_manager.check_session_active(username, user_type)
+        
+        if not session_active then
+            ngx.log(ngx.WARN, string.format("Session not active for %s '%s' - reverting to is_none", 
+                user_type, username or "unknown"))
             username = "guest"
             user_type = "is_none"
             user_data = nil
@@ -33,7 +38,7 @@ function M.set_user()
 end
 
 -- =============================================================================
--- FIXED GUEST API HANDLER - Replace in aaa_is_who.lua handle_guest_api function
+-- ENHANCED GUEST API HANDLER - WITH REDIS SESSION COLLISION DETECTION
 -- =============================================================================
 
 function M.handle_guest_api(user_type, username, user_data)
@@ -56,12 +61,76 @@ function M.handle_guest_api(user_type, username, user_data)
             return
         end
         
-        -- CRITICAL: Use is_none.lua for smart session management, NOT is_guest.lua directly
-        ngx.log(ngx.INFO, "✅ Delegating to is_none.lua for smart session management")
+        -- ENHANCED: Check session manager for collision detection before delegating to is_none.lua
+        local session_manager = require "manage_redis_sessions"
+        local active_user, err = session_manager.get_active_user()
+        
+        if active_user then
+            local blocking_type = active_user.user_type
+            local blocking_username = active_user.username
+            
+            -- If there's an active admin or approved user, deny guest session
+            if blocking_type == "is_admin" or blocking_type == "is_approved" then
+                ngx.log(ngx.INFO, string.format("❌ Guest session blocked by active %s '%s'", 
+                    blocking_type, blocking_username))
+                
+                ngx.status = 409
+                ngx.header.content_type = 'application/json'
+                ngx.say(cjson.encode({
+                    success = false,
+                    error = "Sessions are currently full",
+                    message = string.format("%s '%s' is currently active", 
+                        blocking_type == "is_admin" and "Administrator" or "Approved User", 
+                        blocking_username),
+                    reason = "high_priority_user_active",
+                    blocking_info = {
+                        user_type = blocking_type,
+                        username = blocking_username,
+                        priority = blocking_type == "is_admin" and 1 or 2
+                    },
+                    suggestion = "Please try again when the current session becomes inactive"
+                }))
+                return
+            end
+            
+            -- If there's an active guest, check activity to prevent collision
+            if blocking_type == "is_guest" then
+                local last_activity = tonumber(active_user.last_activity) or 0
+                local current_time = ngx.time()
+                local session_age = current_time - last_activity
+                
+                -- If guest session is recently active (within 60 seconds), block
+                if session_age <= 60 then
+                    ngx.log(ngx.INFO, string.format("❌ Guest session blocked - another guest active %ds ago", 
+                        session_age))
+                    
+                    ngx.status = 409
+                    ngx.header.content_type = 'application/json'
+                    ngx.say(cjson.encode({
+                        success = false,
+                        error = "Guest session already active",
+                        message = string.format("Another guest user is currently active (last seen %d seconds ago). Please wait a moment.", 
+                            session_age),
+                        reason = "guest_session_active",
+                        session_info = {
+                            session_age = session_age,
+                            time_until_available = math.max(0, 60 - session_age)
+                        },
+                        suggestion = "Please try again in " .. math.max(1, math.ceil((60 - session_age) / 60)) .. " minute(s)"
+                    }))
+                    return
+                end
+                
+                ngx.log(ngx.INFO, string.format("♻️ Guest session allowed - previous guest inactive for %ds", session_age))
+            end
+        end
+        
+        -- CRITICAL: Use is_none.lua for smart session management with Redis collision detection
+        ngx.log(ngx.INFO, "✅ Delegating to is_none.lua for smart session management with Redis validation")
         
         local success, result = pcall(function()
             local is_none = require "is_none"
-            return is_none.handle_create_session()  -- This will call is_guest.lua if allowed
+            return is_none.handle_create_session()  -- This will call is_guest.lua with Redis integration
         end)
         
         if not success then
@@ -89,8 +158,9 @@ function M.handle_guest_api(user_type, username, user_data)
         }))
     end
 end
+
 -- =============================================
--- CHAT API WITH SESSION VALIDATION
+-- CHAT API WITH REDIS SESSION VALIDATION
 -- =============================================
 
 function M.handle_chat_api(user_type, username, user_data)
@@ -144,7 +214,7 @@ function M.handle_chat_api(user_type, username, user_data)
 end
 
 -- =============================================
--- AUTH API HANDLER
+-- AUTH API HANDLER (DELEGATES TO SIMPLIFIED AUTH)
 -- =============================================
 
 function M.handle_auth_api()
@@ -185,11 +255,11 @@ function M.handle_auth_api()
 end
 
 -- =============================================
--- ADMIN API WITH SESSION VALIDATION
+-- ADMIN API WITH REDIS SESSION VALIDATION
 -- =============================================
 
 function M.handle_admin_api()
-    -- Check if user is admin
+    -- Check if user is admin using Redis session validation
     local user_type, username, user_data = M.set_user()
     if user_type ~= "is_admin" then
         ngx.status = 403
@@ -204,15 +274,15 @@ function M.handle_admin_api()
     local uri = ngx.var.uri
     local method = ngx.var.request_method
     
-    -- Handle session management API requests
+    -- Handle Redis session management API requests (DELEGATE TO SESSION MANAGER)
     if uri == "/api/admin/session/status" and method == "GET" then
-        return auth.handle_session_status()
+        return auth.handle_session_status()  -- This now delegates to session manager
     elseif uri == "/api/admin/session/force-logout" and method == "POST" then
-        return auth.handle_force_logout()
+        return auth.handle_force_logout()    -- This now delegates to session manager
     elseif uri == "/api/admin/session/all" and method == "GET" then
-        return auth.handle_all_sessions()
+        return auth.handle_all_sessions()    -- This now delegates to session manager
     elseif uri == "/api/admin/session/cleanup" and method == "POST" then
-        return auth.handle_cleanup_sessions()
+        return auth.handle_cleanup_sessions() -- This now delegates to session manager
     
     -- Handle other admin API requests
     elseif uri == "/api/admin/users" and method == "GET" then
@@ -248,7 +318,7 @@ function M.handle_admin_api()
                 "System:",
                 "GET /api/admin/stats",
                 "POST /api/admin/guests/clear",
-                "Session Management (Redis):",
+                "Redis Session Management:",
                 "GET /api/admin/session/status",
                 "POST /api/admin/session/force-logout",
                 "GET /api/admin/session/all",
@@ -259,7 +329,7 @@ function M.handle_admin_api()
 end
 
 -- =============================================
--- MAIN ROUTING HANDLER
+-- MAIN ROUTING HANDLER WITH REDIS SESSION INTEGRATION
 -- =============================================
 
 function M.route_to_handler(route_type)
@@ -282,7 +352,7 @@ function M.route_to_handler(route_type)
         return view_index.handle(user_type, username, user_data)
         
     elseif route_type == "chat" then
-        -- Access control for chat page
+        -- Access control for chat page with Redis session validation
         if user_type == "is_none" then
             return ngx.redirect("/")
         elseif user_type == "is_pending" then
@@ -292,7 +362,7 @@ function M.route_to_handler(route_type)
         return view_chat.handle(user_type, username, user_data)
         
     elseif route_type == "dash" then
-        -- Access control for dashboard
+        -- Access control for dashboard with Redis session validation
         if user_type == "is_none" or user_type == "is_guest" or user_type == "is_pending" then
             return ngx.redirect("/")
         end
@@ -300,7 +370,7 @@ function M.route_to_handler(route_type)
         return view_dash.handle(user_type, username, user_data)
         
     elseif route_type == "login" then
-        -- Redirect authenticated users
+        -- Redirect authenticated users (with Redis session validation)
         if user_type == "is_admin" or user_type == "is_approved" then
             return ngx.redirect("/chat")
         elseif user_type == "is_pending" then
@@ -310,7 +380,7 @@ function M.route_to_handler(route_type)
         return view_auth.handle_login(user_type, username, user_data)
         
     elseif route_type == "register" then
-        -- Redirect authenticated users
+        -- Redirect authenticated users (with Redis session validation)
         if user_type == "is_admin" or user_type == "is_approved" then
             return ngx.redirect("/chat")
         elseif user_type == "is_pending" then
@@ -349,6 +419,5 @@ function M.handle_50x()
     local view_error = require "view_error"
     return view_error.handle_50x()
 end
-
 
 return M

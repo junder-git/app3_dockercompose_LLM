@@ -1,5 +1,5 @@
 -- =============================================================================
--- nginx/lua/manage_auth.lua - COMPLETE WITH GUEST USER PROTECTION
+-- nginx/lua/manage_auth.lua - SIMPLIFIED AUTH (JWT ONLY - NO SESSION LOGIC)
 -- =============================================================================
 
 local cjson = require "cjson"
@@ -9,6 +9,8 @@ local redis = require "resty.redis"
 local JWT_SECRET = os.getenv("JWT_SECRET") or "super-secret-key-CHANGE"
 local REDIS_HOST = os.getenv("REDIS_HOST") or "redis"
 local REDIS_PORT = tonumber(os.getenv("REDIS_PORT")) or 6379
+
+local M = {}
 
 -- Helper function to handle Redis null values
 local function redis_to_lua(value)
@@ -29,16 +31,19 @@ local function connect_redis()
     return red
 end
 
--- FIXED: Added ngx.exit() to send_json helper
+-- Helper function to send JSON response and exit
 local function send_json(status, tbl)
     ngx.status = status
     ngx.header.content_type = 'application/json'
     ngx.say(cjson.encode(tbl))
-    ngx.exit(status)  -- CRITICAL: Exit after sending response
+    ngx.exit(status)
 end
 
--- Get user function with proper Redis handling
-local function get_user(username)
+-- =============================================
+-- USER DATA RETRIEVAL
+-- =============================================
+
+function M.get_user(username)
     if not username or username == "" then
         ngx.log(ngx.WARN, "get_user called with empty username")
         return nil
@@ -79,7 +84,10 @@ local function get_user(username)
     return user
 end
 
--- Password verification with exact same method as Redis init script
+-- =============================================
+-- PASSWORD VERIFICATION
+-- =============================================
+
 local function verify_password(password, stored_hash)
     if not password or not stored_hash then
         ngx.log(ngx.WARN, "verify_password: Missing password or hash")
@@ -97,148 +105,10 @@ local function verify_password(password, stored_hash)
 end
 
 -- =============================================
--- INLINE SESSION FUNCTIONS (NO EXTERNAL MODULE)
+-- JWT VALIDATION WITH GUEST PROTECTION
 -- =============================================
 
-local function get_user_priority(user_type)
-    if user_type == "is_admin" then return 1 end
-    if user_type == "is_approved" then return 2 end
-    if user_type == "is_guest" then return 3 end
-    return 4  -- is_pending, is_none, etc.
-end
-
--- Get the currently active user (if any)
-local function get_active_user()
-    local red = connect_redis()
-    if not red then
-        return nil, "Redis connection failed"
-    end
-    
-    -- Find user with is_active = true
-    local user_keys = red:keys("username:*")
-    
-    for _, key in ipairs(user_keys) do
-        local is_active = red:hget(key, "is_active")
-        if is_active == "true" then
-            local user_data = red:hgetall(key)
-            red:close()
-            
-            if user_data and #user_data > 0 then
-                local user = {}
-                for i = 1, #user_data, 2 do
-                    local field = user_data[i]
-                    local value = redis_to_lua(user_data[i + 1])
-                    user[field] = value
-                end
-                return user, nil
-            end
-        end
-    end
-    
-    red:close()
-    return nil, "No active user"
-end
-
--- Set a user as active (handles priority and kicking)
-local function set_user_active(username, user_type)
-    if not username or not user_type then
-        return false, "Missing username or user_type"
-    end
-    
-    local red = connect_redis()
-    if not red then
-        return false, "Redis connection failed"
-    end
-    
-    local new_priority = get_user_priority(user_type)
-    
-    -- Check for currently active user
-    local active_user, err = get_active_user()
-    if active_user then
-        local active_priority = get_user_priority(active_user.user_type)
-        
-        -- If new user has lower or equal priority, deny access
-        if new_priority >= active_priority then
-            red:close()
-            return false, string.format("Access denied. is_%s '%s' is currently active", 
-                active_user.user_type, active_user.username)
-        end
-        
-        -- New user has higher priority - kick out existing user
-        local active_key = "username:" .. active_user.username
-        red:hset(active_key, "is_active", "false")
-        red:hset(active_key, "last_activity", ngx.time())
-        
-        ngx.log(ngx.INFO, string.format("🚫 Kicked out is_%s '%s' for higher priority %s '%s'",
-            active_user.user_type, active_user.username, user_type, username))
-    end
-    
-    -- Set new user as active
-    local user_key = "username:" .. username
-    local current_time = ngx.time()
-    
-    red:hset(user_key, "is_active", "true")
-    red:hset(user_key, "last_activity", current_time)
-    red:hset(user_key, "login_time", current_time)
-    
-    red:close()
-    
-    ngx.log(ngx.INFO, string.format("✅ Session activated for %s '%s'", user_type, username))
-    return true, "Session activated"
-end
-
--- Validate that a user's session is still active
-local function validate_session(username, user_type)
-    if not username then
-        return false, "Missing username"
-    end
-    
-    local red = connect_redis()
-    if not red then
-        return false, "Redis connection failed"
-    end
-    
-    local user_key = "username:" .. username
-    local is_active = red:hget(user_key, "is_active")
-    
-    if is_active ~= "true" then
-        red:close()
-        return false, "Session not active"
-    end
-    
-    -- Update activity timestamp
-    red:hset(user_key, "last_activity", ngx.time())
-    red:close()
-    
-    return true, "Session valid"
-end
-
--- Clear a user's active session
-local function clear_user_session(username)
-    if not username then
-        return false, "Missing username"
-    end
-    
-    local red = connect_redis()
-    if not red then
-        return false, "Redis connection failed"
-    end
-    
-    local user_key = "username:" .. username
-    red:hset(user_key, "is_active", "false")
-    red:hset(user_key, "last_activity", ngx.time())
-    
-    red:close()
-    
-    ngx.log(ngx.INFO, "🗑️ Session cleared for user: " .. username)
-    return true, "Session cleared"
-end
-
--- =============================================
--- ENHANCED JWT VALIDATION WITH GUEST PROTECTION
--- =============================================
-
-local function check_user_type()
+function M.check_user_type()
     local token = ngx.var.cookie_access_token
     
     ngx.log(ngx.INFO, "🔍 Checking JWT token. Token present: " .. (token and "YES" or "NO"))
@@ -295,7 +165,7 @@ local function check_user_type()
     end
     
     -- Get fresh user data from Redis
-    local user_data = get_user(username)
+    local user_data = M.get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "User from JWT not found in Redis: " .. username)
         return "is_none", nil, nil
@@ -325,74 +195,28 @@ local function check_user_type()
     end
     
     ngx.log(ngx.INFO, "📊 Redis user data. Type: " .. tostring(redis_user_type) .. ", Active: " .. tostring(user_data.is_active))
-end
-
--- Check if user's session is active (with enhanced guest session checking)
-local function check_is_active(username, user_type)
-    ngx.log(ngx.INFO, "🔄 Checking session activity for: " .. tostring(username) .. " (" .. tostring(user_type) .. ")")
     
-    if not username then
-        ngx.log(ngx.WARN, "❌ No username provided for session check")
-        return false
-    end
-    
-    -- Guest users have special handling - check expiration
-    if user_type == "is_guest" then
-        local red = connect_redis()
-        if not red then
-            ngx.log(ngx.ERR, "❌ Redis connection failed for guest session check")
-            return false
-        end
-        
-        local user_key = "username:" .. username
-        local last_activity = tonumber(red:hget(user_key, "last_activity")) or 0
-        local current_time = ngx.time()
-        
-        red:close()
-        
-        -- Check if guest session expired (1 hour = 3600 seconds)
-        if current_time - last_activity > 3600 then
-            ngx.log(ngx.INFO, "❌ Guest session expired for " .. username)
-            return false
-        end
-        
-        ngx.log(ngx.INFO, "✅ Guest session active for " .. username)
-        return true
-    end
-    
-    -- For non-guest users, check is_active flag
-    if user_type == "is_none" then
-        return true -- No session needed for unauthenticated users
-    end
-    
-    local session_valid, session_err = validate_session(username, user_type)
-    if not session_valid then
-        ngx.log(ngx.WARN, string.format("❌ Session validation failed for %s '%s': %s", 
-            user_type, username, session_err or "unknown"))
-        return false
-    end
-    
-    ngx.log(ngx.INFO, "✅ Session active for " .. username)
-    return true
+    return redis_user_type, username, user_data
 end
 
 -- =============================================
--- ENHANCED LOGIN HANDLER WITH GUEST PROTECTION
+-- SIMPLIFIED LOGIN HANDLER (JWT + SESSION DELEGATION)
 -- =============================================
 
-local function handle_login()
+function M.handle_login()
     ngx.log(ngx.INFO, "=== POST LOGIN ATTEMPT START ===")
     
     -- CHECK: If user is already logged in, reactivate their session
-    local current_user_type, current_username, current_user_data = check_user_type()
+    local current_user_type, current_username, current_user_data = M.check_user_type()
     if current_user_type ~= "is_none" and current_username then
         ngx.log(ngx.INFO, "User already logged in: " .. current_username .. " (" .. current_user_type .. ")")
         
-        -- Check if session is active, if not reactivate it
-        local session_active = check_is_active(current_username, current_user_type)
+        -- Delegate session activation to session manager
+        local session_manager = require "manage_redis_sessions"
+        local session_active = session_manager.check_session_active(current_username, current_user_type)
         if not session_active then
             ngx.log(ngx.INFO, "Reactivating session for already logged in user")
-            local session_success, session_result = set_user_active(current_username, current_user_type)
+            local session_success, session_result = session_manager.set_user_active(current_username, current_user_type)
             if not session_success then
                 ngx.log(ngx.WARN, "Failed to reactivate session: " .. (session_result or "unknown"))
                 -- If we can't reactivate, continue with normal login flow
@@ -456,7 +280,7 @@ local function handle_login()
     
     ngx.log(ngx.INFO, "Login: Attempting login for username: " .. username)
     
-    local user_data = get_user(username)
+    local user_data = M.get_user(username)
     if not user_data then
         ngx.log(ngx.WARN, "Login: User not found: " .. username)
         send_json(401, { error = "Invalid credentials" })
@@ -480,10 +304,11 @@ local function handle_login()
     
     local session_user_type = user_data.user_type
     
-    -- Set user as active (handles priority and kicking)
-    local session_success, session_result = set_user_active(username, session_user_type)
+    -- DELEGATE session activation to session manager
+    local session_manager = require "manage_redis_sessions"
+    local session_success, session_result = session_manager.set_user_active(username, session_user_type)
     if not session_success then
-        ngx.log(ngx.WARN, string.format("Login denied for is_%s '%s': %s", 
+        ngx.log(ngx.WARN, string.format("Login denied for %s '%s': %s", 
             user_data.user_type, username, session_result))
         send_json(409, { 
             error = "Login not allowed",
@@ -512,10 +337,10 @@ local function handle_login()
     ngx.header["Set-Cookie"] = cookie_value
     ngx.log(ngx.INFO, "🍪 Setting cookie: " .. cookie_value)
     
-    ngx.log(ngx.INFO, string.format("Login: Success for is_%s '%s' - cookie set, client will handle navigation", 
+    ngx.log(ngx.INFO, string.format("Login: Success for %s '%s' - cookie set, client will handle navigation", 
         user_data.user_type, username))
     
-    -- CRITICAL: Send success response and exit properly
+    -- Send success response and exit
     send_json(200, {
         success = true,
         message = "Login successful - cookie set",
@@ -525,17 +350,21 @@ local function handle_login()
     })
 end
 
--- FIXED: Added proper ngx.exit() to logout handler
-local function handle_logout()
+-- =============================================
+-- SIMPLIFIED LOGOUT HANDLER (JWT + SESSION DELEGATION)
+-- =============================================
+
+function M.handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT START ===")
     
-    local user_type, username, user_data = check_user_type()
+    local user_type, username, user_data = M.check_user_type()
     
     ngx.log(ngx.INFO, "Logging out user: " .. (username or "unknown") .. " (type: " .. (user_type or "none") .. ")")
     
-    -- Clear session if authenticated
+    -- DELEGATE session clearing to session manager
     if username and user_type ~= "is_none" then
-        local success, err = clear_user_session(username)
+        local session_manager = require "manage_redis_sessions"
+        local success, err = session_manager.clear_user_session(username)
         if success then
             ngx.log(ngx.INFO, "Session cleared successfully")
         else
@@ -543,7 +372,7 @@ local function handle_logout()
         end
     end
     
-    -- Clear cookies
+    -- Clear JWT cookies
     local cookie_headers = {
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
         "access_token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
@@ -556,7 +385,7 @@ local function handle_logout()
     ngx.log(ngx.INFO, "=== LOGOUT COMPLETE ===")
     ngx.log(ngx.INFO, "User logged out successfully: " .. logout_user .. " (type: " .. logout_type .. ")")
     
-    -- CRITICAL: Use send_json which now includes ngx.exit()
+    -- Send success response and exit
     send_json(200, {
         success = true,
         message = "Logout successful",
@@ -567,204 +396,63 @@ local function handle_logout()
 end
 
 -- =============================================
--- ADMIN SESSION MANAGEMENT APIs
+-- SESSION DELEGATION FUNCTIONS
 -- =============================================
 
-local function get_session_stats()
-    local active_user, err = get_active_user()
-    
-    local stats = {
-        max_concurrent_sessions = 1,
-        priority_system_enabled = true,
-        active_sessions = active_user and 1 or 0,
-        available_slots = active_user and 0 or 1,
-        storage_type = "redis_simple"
-    }
-    
-    if active_user then
-        stats.current_session = {
-            username = active_user.username,
-            user_type = active_user.user_type,
-            priority = get_user_priority(active_user.user_type),
-            login_time = tonumber(active_user.login_time) or 0,
-            last_activity = tonumber(active_user.last_activity) or 0,
-            remote_addr = active_user.created_ip or "unknown"
-        }
-    end
-    
-    return stats, nil
-end
-
--- FIXED: Now using send_json which includes ngx.exit()
-local function handle_session_status()
-    local session_stats, err = get_session_stats()
-    if err then
-        send_json(500, {
-            success = false,
-            error = "Failed to get session status: " .. err
-        })
-        -- send_json now includes ngx.exit(), so this won't be reached
-    end
-    
-    send_json(200, {
-        success = true,
-        session_stats = session_stats
-    })
-    -- send_json now includes ngx.exit(), so this won't be reached
-end
-
--- FIXED: Now using send_json which includes ngx.exit()
-local function handle_force_logout()
-    ngx.req.read_body()
-    local body = ngx.req.get_body_data()
-    
-    local target_username = nil
-    if body then
-        local ok, data = pcall(cjson.decode, body)
-        if ok and data.username then
-            target_username = data.username
-        end
-    end
-    
-    local success, err
-    if target_username then
-        success, err = clear_user_session(target_username)
-    else
-        -- Force logout current active user
-        local active_user, active_err = get_active_user()
-        if active_user then
-            success, err = clear_user_session(active_user.username)
-        else
-            success, err = false, "No active session"
-        end
-    end
-    
-    if success then
-        send_json(200, {
-            success = true,
-            message = "Session cleared successfully"
-        })
-    else
-        send_json(400, {
-            success = false,
-            error = err or "Failed to clear session"
-        })
-    end
-    -- send_json now includes ngx.exit(), so this won't be reached
-end
-
--- FIXED: Now using send_json which includes ngx.exit()
-local function handle_all_sessions()
-    local red = connect_redis()
-    if not red then
-        send_json(500, {
-            success = false,
-            error = "Redis connection failed"
-        })
-        return  -- Won't be reached due to ngx.exit() in send_json
-    end
-    
-    local user_keys = red:keys("username:*")
-    local sessions = {}
-    
-    for _, key in ipairs(user_keys) do
-        local user_data = red:hgetall(key)
-        if user_data and #user_data > 0 then
-            local user = {}
-            for i = 1, #user_data, 2 do
-                local field = user_data[i]
-                local value = redis_to_lua(user_data[i + 1])
-                user[field] = value
-            end
-            
-            -- Only include sessions with activity data
-            if user.last_activity then
-                table.insert(sessions, {
-                    username = user.username,
-                    user_type = user.user_type,
-                    is_active = user.is_active == "true",
-                    priority = get_user_priority(user.user_type),
-                    last_activity = tonumber(user.last_activity) or 0,
-                    login_time = tonumber(user.login_time) or 0
-                })
-            end
-        end
-    end
-    
-    red:close()
-    
-    send_json(200, {
-        success = true,
-        sessions = sessions,
-        count = #sessions
-    })
-    -- send_json now includes ngx.exit(), so this won't be reached
-end
-
--- FIXED: Now using send_json which includes ngx.exit()
-local function handle_cleanup_sessions()
-    local red = connect_redis()
-    if not red then
-        send_json(500, {
-            success = false,
-            error = "Redis connection failed"
-        })
-        return  -- Won't be reached due to ngx.exit() in send_json
-    end
-    
-    local user_keys = red:keys("username:*")
-    local cleaned = 0
-    
-    for _, key in ipairs(user_keys) do
-        local is_active = red:hget(key, "is_active")
-        local last_activity = red:hget(key, "last_activity")
-        
-        -- If active but no activity for over 24 hours, clear session
-        if is_active == "true" and last_activity then
-            local activity_time = tonumber(last_activity) or 0
-            local current_time = ngx.time()
-            
-            if current_time - activity_time > 86400 then -- 24 hours
-                red:hset(key, "is_active", "false")
-                cleaned = cleaned + 1
-                ngx.log(ngx.INFO, "🧹 Cleaned stale session: " .. key)
-            end
-        end
-    end
-    
-    red:close()
-    
-    send_json(200, {
-        success = true,
-        message = "Session cleanup completed",
-        cleaned_sessions = cleaned
-    })
-    -- send_json now includes ngx.exit(), so this won't be reached
+-- Check if user's session is active (delegates to session manager)
+function M.check_is_active(username, user_type)
+    local session_manager = require "manage_redis_sessions"
+    return session_manager.check_session_active(username, user_type)
 end
 
 -- =============================================
--- MODULE EXPORTS
+-- ADMIN SESSION MANAGEMENT API DELEGATION
+-- =============================================
+
+function M.handle_session_status()
+    local session_manager = require "manage_redis_sessions"
+    return session_manager.handle_session_status()
+end
+
+function M.handle_force_logout()
+    local session_manager = require "manage_redis_sessions"
+    return session_manager.handle_force_logout()
+end
+
+function M.handle_all_sessions()
+    local session_manager = require "manage_redis_sessions"
+    return session_manager.handle_all_sessions()
+end
+
+function M.handle_cleanup_sessions()
+    local session_manager = require "manage_redis_sessions"
+    return session_manager.handle_cleanup_sessions()
+end
+
+-- =============================================
+-- MODULE EXPORTS (SIMPLIFIED)
 -- =============================================
 
 return {
-    check_user_type = check_user_type,
-    check_is_active = check_is_active,
-    get_user = get_user,
+    -- Core auth functions
+    check_user_type = M.check_user_type,
+    get_user = M.get_user,
     verify_password = verify_password,
-    handle_login = handle_login,
-    handle_logout = handle_logout,
-    handle_session_status = handle_session_status,
-    handle_force_logout = handle_force_logout,
-    handle_all_sessions = handle_all_sessions,
-    handle_cleanup_sessions = handle_cleanup_sessions,
+    
+    -- Auth handlers
+    handle_login = M.handle_login,
+    handle_logout = M.handle_logout,
+    
+    -- Session delegation functions
+    check_is_active = M.check_is_active,
+    
+    -- Admin session API delegation
+    handle_session_status = M.handle_session_status,
+    handle_force_logout = M.handle_force_logout,
+    handle_all_sessions = M.handle_all_sessions,
+    handle_cleanup_sessions = M.handle_cleanup_sessions,
+    
     -- Export Redis helper functions for other modules
     redis_to_lua = redis_to_lua,
-    connect_redis = connect_redis,
-    -- Export session functions for compatibility
-    session_manager = {
-        get_active_user = get_active_user,
-        set_user_active = set_user_active,
-        validate_session = validate_session,
-        clear_user_session = clear_user_session
-    }
+    connect_redis = connect_redis
 }
